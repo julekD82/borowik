@@ -47,6 +47,12 @@ def fetch_bdl(layer: str, bbox: tuple, page_size: int = 1000,
             break
         start_index += page_size
     result = gpd.GeoDataFrame(pd.concat(pages, ignore_index=True), crs=pages[0].crs if pages else "EPSG:2180")
+    if "part_cd" in result.columns:
+        # The live BDL WFS (GeoJSON/GML attribute typing) returns part_cd as
+        # a string column; pipeline.habitat.score_host and passes_mask both
+        # do numeric arithmetic/comparisons on it, so normalize it here at
+        # the true data-parsing source rather than downstream in every caller.
+        result["part_cd"] = pd.to_numeric(result["part_cd"], errors="coerce")
     return result
 
 

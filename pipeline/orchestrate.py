@@ -23,12 +23,6 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              grid_spacing_m: float = 5000.0, past_days: int = 92) -> gpd.GeoDataFrame:
     stands = bdl_fetcher(layer, bbox_2180)
     stands["stand_id"] = stands["adr_for"] + "@" + stands["a_year"].astype(str)
-    # The real BDL WFS (GeoJSON/GML attribute typing) returns part_cd as a
-    # string column; pipeline.habitat.score_host divides it by 10.0, so
-    # normalize it to numeric here at the fetcher/scoring boundary. Fake
-    # fetchers that already hand back ints (e.g. in tests) pass through
-    # unchanged.
-    stands["part_cd"] = pd.to_numeric(stands["part_cd"], errors="coerce")
 
     grid_points = make_grid(bbox_2180, spacing_m=grid_spacing_m)
     weather_daily = weather_fetcher(grid_points, past_days)

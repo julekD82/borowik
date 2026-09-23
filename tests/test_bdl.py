@@ -1,5 +1,6 @@
 import json
 import geopandas as gpd
+import pandas as pd
 import responses
 
 from pipeline.bdl import build_wfs_url, fetch_bdl, save_bdl_tile, DEFAULT_WFS_URL
@@ -41,6 +42,22 @@ def test_fetch_bdl_paginates_until_short_page():
     assert len(gdf) == 3
     assert list(gdf["adr_for"]) == ["08-01-1-01-108", "08-01-1-01-109", "08-01-1-01-110"]
     assert len(responses.calls) == 2
+
+
+@responses.activate
+def test_fetch_bdl_coerces_string_part_cd_to_numeric():
+    # The live BDL WFS returns part_cd as a string attribute (GeoJSON/GML
+    # typing); fetch_bdl should normalize it to numeric so downstream
+    # arithmetic in pipeline.habitat (score_host, passes_mask) doesn't break.
+    feature = _feature(1, "08-01-1-01-108")
+    feature["properties"]["part_cd"] = "10"
+    page = {"type": "FeatureCollection", "features": [feature]}
+    responses.add(responses.GET, DEFAULT_WFS_URL, json=page, status=200)
+
+    gdf = fetch_bdl(LAYER, BBOX, page_size=10)
+
+    assert pd.api.types.is_numeric_dtype(gdf["part_cd"])
+    assert gdf["part_cd"].iloc[0] == 10
 
 
 def test_save_bdl_tile_writes_geoparquet(tmp_path):
