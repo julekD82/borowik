@@ -87,3 +87,21 @@ out_dir.mkdir(parents=True, exist_ok=True)
 out_path = out_dir / "poc_map.html"
 m.save(str(out_path))
 print(f"Saved {out_path}, {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing mask")
+
+import pathlib
+from pipeline.validate import rank_known_points, load_known_points
+
+known_points_path = pathlib.Path("notebooks/known_points.yaml")
+if known_points_path.exists():
+    known_points = load_known_points(str(known_points_path))
+    validation = rank_known_points(scored, known_points)
+    print(validation.to_string(index=False))
+    good = validation[validation["label"] == "good"]
+    if len(good) and good["rank_pct"].mean() < 70:
+        print(
+            "UWAGA: znane dobre miejsca średnio poniżej 70. percentyla - "
+            "przejrzyj S_site/S_host w profiles/boletus_edulis.yaml przed Fazą 2 "
+            "(spec sekcja 9, krok 7)."
+        )
+else:
+    print(f"Brak {known_points_path} - skopiuj notebooks/known_points.example.yaml i uzupełnij 10-20 znanych miejsc.")

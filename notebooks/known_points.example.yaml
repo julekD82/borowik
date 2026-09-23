@@ -1,0 +1,11 @@
+# Copy to known_points.yaml (gitignored — personal foraging spots) and fill in
+# 10-20 real coordinates: places you know have Boletus edulis ("good") and
+# places you've checked and found none ("bad"). lat/lon in EPSG:4326.
+- name: "Przykład - dobre miejsce"
+  label: good
+  lat: 50.5300
+  lon: 18.6100
+- name: "Przykład - puste miejsce"
+  label: bad
+  lat: 50.5200
+  lon: 18.6000
