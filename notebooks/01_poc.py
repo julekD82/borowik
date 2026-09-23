@@ -79,7 +79,16 @@ scored = run_poc(
 )
 
 scored_wgs84 = scored.to_crs("EPSG:4326")
-m = folium.Map(location=[LAT, LON], zoom_start=12, tiles="OpenStreetMap")
+# Folium's "OpenStreetMap" tile alias hits tile.openstreetmap.org, which
+# actively 403s app traffic that doesn't follow its volunteer-run usage
+# policy (osm.wiki/Blocked); the "CartoDB positron" alias now requires an
+# API key too. Esri's World Street Map tile service is free, keyless, and
+# was verified reachable during Faza 1 development.
+m = folium.Map(
+    location=[LAT, LON], zoom_start=12,
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+    attr="Esri, HERE, Garmin, FAO, NOAA, USGS, &copy; OpenStreetMap contributors, and the GIS User Community",
+)
 
 
 def _color(r: float) -> str:
