@@ -64,6 +64,11 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
             stands.loc[idx, "periodic_ban_active"] = bool(banned)
             if banned:
                 stands.loc[idx, "R_final"] = 0.0
+                # Not just a ranking discount: a banned stand is legally
+                # off-limits, so mask_full must go False too, or a consumer
+                # that reads `mask` directly (e.g. the exported scores.json)
+                # would still show it as legal.
+                stands.loc[idx, "mask_full"] = False
 
     confidences, reasons_list = [], []
     for _, row in stands.iterrows():

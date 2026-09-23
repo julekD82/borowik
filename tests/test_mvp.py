@@ -83,6 +83,17 @@ def test_enrich_periodic_ban_zeroes_ranking_for_checked_stand():
     assert result["R_final"].tolist() == pytest.approx([0.0, 0.0])
 
 
+def test_enrich_periodic_ban_also_clears_mask_full():
+    # A banned stand must not still export mask=true (spec §1: recommending
+    # a banned area is worse than not recommending at all) -- R_final=0
+    # alone isn't enough if a consumer filters/colours by mask directly.
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: True, top_n_for_ban_check=10,
+    )
+    assert (result["mask_full"] == False).all()
+
+
 def test_enrich_top_n_larger_than_row_count_does_not_raise():
     result = enrich_with_mvp_layers(
         _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),

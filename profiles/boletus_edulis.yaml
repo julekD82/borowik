@@ -90,7 +90,15 @@ pressure:
 
 osm:
   parking_amenity: "parking"
-  road_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "track"]
+  # spec §4.5 defines d_park against "publicznej drogi utwardzonej" (a public
+  # PAVED road) -- "track" (unpaved forest track, usually closed to cars in
+  # Lasy Panstwowe forests) is deliberately excluded: including it made
+  # d_park (and so P's accessibility term) nearly constant across a tile,
+  # found reviewing a real Faza 2 run (median P ~0.73 across 721 stands).
+  # [E] way distance is still approximated by Overpass "out center" (a way's
+  # bounding-box centroid, not the point nearest the stand) rather than true
+  # point-to-line distance -- accepted simplification, not fixed here.
+  road_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential"]
   place_types: ["city", "town", "village", "hamlet"]
 
 confidence:

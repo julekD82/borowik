@@ -13,8 +13,18 @@ def test_build_overpass_query_includes_bbox_and_configured_filters():
     q = build_overpass_query(BBOX_4326, PROFILE)
     assert "50.5,18.55,50.55,18.65" in q
     assert 'amenity"="parking"' in q
-    assert "track" in q  # from profile.osm.road_highway_types
+    assert "secondary" in q  # from profile.osm.road_highway_types
     assert "village" in q  # from profile.osm.place_types
+
+
+def test_build_overpass_query_excludes_unpaved_tracks():
+    # Spec §4.5 defines d_park against "publicznej drogi utwardzonej" (a
+    # public PAVED road) -- highway=track is an unpaved forest track,
+    # usually closed to cars in Lasy Państwowe forests, and including it
+    # made d_park (and so the accessibility half of P) nearly constant
+    # across an entire tile (found in live review of a real run).
+    q = build_overpass_query(BBOX_4326, PROFILE)
+    assert "track" not in q
 
 
 ELEMENTS = [
