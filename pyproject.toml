@@ -11,6 +11,7 @@ dependencies = [
     "shapely>=2.0",
     "pyogrio>=0.9",
     "pyproj>=3.6",
+    "pyarrow>=17.0",
     "requests>=2.31",
     "requests-cache>=1.2",
     "openmeteo-requests>=1.2",
