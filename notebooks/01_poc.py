@@ -1,11 +1,13 @@
 """Faza 1 PoC: fetch BDL + Open-Meteo for the Kieleczka tile, score, map."""
 import functools
+import pathlib
 import time
 
 import folium
+import geopandas as gpd
 from openmeteo_requests.Client import OpenMeteoRequestsError
 
-from pipeline.bdl import fetch_bdl
+from pipeline.bdl import fetch_bdl, save_bdl_tile
 from pipeline.habitat import load_profile
 from pipeline.orchestrate import run_poc
 from pipeline.tiles import tile_bbox_2180
@@ -49,11 +51,29 @@ def _climatology_call_api(lat, lon, start_year, end_year):
 profile = load_profile("profiles/boletus_edulis.yaml")
 bbox = tile_bbox_2180(LAT, LON, size_km=10.0)
 
+# Read-through GeoParquet cache for the BDL tile (plan Global Constraints:
+# "Faza 1 storage is GeoParquet files under cache/"). Kept here in the
+# notebook script rather than inside run_poc, which stays pure/DI-testable.
+CACHE_DIR = pathlib.Path("cache")
+TILE_ID = f"E{int(bbox[1])}N{int(bbox[0])}"
+_tile_path = CACHE_DIR / f"{TILE_ID}.parquet"
+
+
+def _cached_bdl_fetcher(layer, bbox_2180):
+    if _tile_path.exists():
+        print(f"BDL tile cache hit: {_tile_path}")
+        return gpd.read_parquet(_tile_path)
+    print(f"BDL tile cache miss, fetching from WFS -> {_tile_path}")
+    gdf = fetch_bdl(layer, bbox_2180)
+    save_bdl_tile(gdf, TILE_ID, CACHE_DIR)
+    return gdf
+
+
 scored = run_poc(
     layer=LAYER,
     bbox_2180=bbox,
     profile=profile,
-    bdl_fetcher=fetch_bdl,
+    bdl_fetcher=_cached_bdl_fetcher,
     weather_fetcher=functools.partial(fetch_weather_raw, call_api=_weather_call_api),
     climatology_fetcher=functools.partial(fetch_climatology_raw, call_api=_climatology_call_api),
 )
@@ -81,14 +101,33 @@ folium.GeoJson(
     tooltip=folium.GeoJsonTooltip(fields=["stand_id", "site_type", "species_cd", "spec_age", "H", "F_loc", "R"]),
 ).add_to(m)
 
-import pathlib
 out_dir = pathlib.Path("notebooks/output")
 out_dir.mkdir(parents=True, exist_ok=True)
 out_path = out_dir / "poc_map.html"
 m.save(str(out_path))
-print(f"Saved {out_path}, {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing mask")
+diag = scored.attrs.get("diagnostics", {})
+print(
+    f"Saved {out_path}, {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing mask; "
+    f"unknown site_type (mask-passing): {diag.get('unknown_site_count')}, "
+    f"unknown species_cd (mask-passing): {diag.get('unknown_species_count')}, "
+    f"empty climatology windows: {diag.get('empty_climatology_count')}, "
+    f"non-finite H: {diag.get('nan_h_count')}"
+)
 
-import pathlib
+passing = scored[scored["mask"]]
+if len(passing):
+    print(
+        f"R (mask-passing): min {passing['R'].min():.1f} / "
+        f"median {passing['R'].median():.1f} / max {passing['R'].max():.1f}"
+    )
+    by_site = (
+        passing.groupby("site_type")["R"]
+        .agg(["count", "median", "max"])
+        .sort_values("median", ascending=False)
+    )
+    print("R by site_type (mask-passing, median desc):")
+    print(by_site.to_string())
+
 from pipeline.validate import rank_known_points, load_known_points
 
 known_points_path = pathlib.Path("notebooks/known_points.yaml")
