@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pandas as pd
 from pyproj import Transformer
+from scipy import stats
 
 _TO_4326 = Transformer.from_crs("EPSG:2180", "EPSG:4326", always_xy=True)
 
@@ -122,3 +123,100 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
             "days_since_p10": days_since_p10, "dry_spell_days": dry_spell,
         })
     return pd.DataFrame(rows)
+
+
+def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1991,
+                            end_year: int = 2020, call_api=None) -> pd.DataFrame:
+    """Same shape/DI pattern as fetch_weather_raw but against the ERA5-Land
+    archive for a fixed historical period. Real network call isolated in
+    call_api for testability; default implementation calls Open-Meteo's
+    historical-weather-api and then reuses compute_weather_features'
+    windowing helpers day by day (implemented alongside the manual
+    verification step, not unit tested)."""
+    call_api = call_api or (lambda lat, lon, sy, ey: _default_climatology_call(lat, lon, sy, ey))
+    frames = []
+    for lat, lon in points:
+        data = call_api(lat, lon, start_year, end_year)
+        df = pd.DataFrame(data)
+        df["lat"] = lat
+        df["lon"] = lon
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+
+def _default_climatology_call(lat: float, lon: float, start_year: int, end_year: int) -> dict:
+    """Thin IO boundary around the real Open-Meteo historical-weather archive API.
+    Not covered by unit tests (network); exercised manually, see Task 7 Step 5."""
+    import openmeteo_requests
+    import requests_cache
+    from retry_requests import retry
+
+    cache_session = requests_cache.CachedSession(".cache/open_meteo_archive", expire_after=-1)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    client = openmeteo_requests.Client(session=retry_session)
+
+    responses = client.weather_api(
+        "https://archive-api.open-meteo.com/v1/archive",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": f"{start_year}-01-01",
+            "end_date": f"{end_year}-12-31",
+            "daily": ["precipitation_sum", "et0_fao_evapotranspiration"],
+            # Archive API depth bins differ from the forecast API's soil_moisture_9_to_27cm;
+            # soil_moisture_7_to_28cm is the closest match available for the historical archive.
+            "hourly": ["soil_moisture_7_to_28cm"],
+            "timezone": "Europe/Warsaw",
+        },
+    )
+    response = responses[0]
+    daily = response.Daily()
+    dates = pd.date_range(
+        start=pd.to_datetime(daily.Time(), unit="s", utc=True),
+        end=pd.to_datetime(daily.TimeEnd(), unit="s", utc=True),
+        freq=pd.Timedelta(seconds=daily.Interval()),
+        inclusive="left",
+    )
+    precipitation = daily.Variables(0).ValuesAsNumpy()
+    et0 = daily.Variables(1).ValuesAsNumpy()
+
+    hourly = response.Hourly()
+    soil = hourly.Variables(0).ValuesAsNumpy()
+    soil_daily = pd.Series(soil).groupby(np.arange(len(soil)) // 24).mean().to_numpy()
+    soil_daily = soil_daily[: len(dates)]
+
+    precip_series = pd.Series(precipitation)
+    et0_series = pd.Series(et0)
+
+    n = len(dates)
+    window = 26
+    cwb26 = np.full(n, np.nan)
+    for i in range(window - 1, n):
+        p_tail = precip_series.iloc[i - window + 1: i + 1]
+        et0_tail = et0_series.iloc[i - window + 1: i + 1]
+        p26w = _exp_weighted_sum(p_tail, window=window)
+        et026w = _exp_weighted_sum(et0_tail, window=window)
+        cwb26[i] = p26w - et026w
+
+    valid = ~np.isnan(cwb26)
+    return {
+        "date": dates[valid],
+        "cwb26": cwb26[valid],
+        "soil_moisture": soil_daily[valid],
+    }
+
+
+def climatology_window_values(clim_df: pd.DataFrame, lat: float, lon: float, day_of_year: int,
+                                column: str, window_days: int = 15) -> np.ndarray:
+    at_point = clim_df[(clim_df["lat"] == lat) & (clim_df["lon"] == lon)].copy()
+    doy = at_point["date"].dt.dayofyear
+    diff = (doy - day_of_year).abs()
+    wrapped_diff = np.minimum(diff, 365 - diff)
+    mask = wrapped_diff <= window_days
+    return at_point.loc[mask, column].to_numpy()
+
+
+def percentile_rank(value: float, historical_values: np.ndarray) -> float:
+    if len(historical_values) == 0:
+        return 0.5
+    return float(stats.percentileofscore(historical_values, value, kind="mean") / 100.0)

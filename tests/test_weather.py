@@ -1,7 +1,14 @@
+import numpy as np
 import pandas as pd
 import pytest
 
-from pipeline.weather import make_grid, fetch_weather_raw, compute_weather_features
+from pipeline.weather import (
+    make_grid,
+    fetch_weather_raw,
+    compute_weather_features,
+    climatology_window_values,
+    percentile_rank,
+)
 
 
 def test_make_grid_covers_bbox_with_points_in_lat_lon():
@@ -61,3 +68,26 @@ def test_compute_weather_features_windows():
     assert row["tmin3"] == pytest.approx(5.0)
     assert row["days_since_p10"] >= 29  # no day ever reached 10mm
     assert row["dry_spell_days"] == 0  # 1mm/day never below 1mm threshold
+
+
+def test_percentile_rank_of_median_like_value():
+    historical = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    assert percentile_rank(30.0, historical) == pytest.approx(0.5, abs=0.15)
+    assert percentile_rank(5.0, historical) == pytest.approx(0.0, abs=0.05)
+    assert percentile_rank(55.0, historical) == pytest.approx(1.0, abs=0.05)
+
+
+def test_climatology_window_values_filters_by_point_and_doy_window():
+    clim_df = pd.DataFrame({
+        "lat": [50.5, 50.5, 50.5, 50.5, 60.0],
+        "lon": [18.6, 18.6, 18.6, 18.6, 18.6],
+        "date": pd.to_datetime(["2000-08-10", "2000-08-20", "2000-09-15", "2005-08-12", "2000-08-11"]),
+        "cwb26": [1.0, 2.0, 99.0, 3.0, 100.0],
+    })
+    # target day_of_year ~ Aug 15 (227), window 15 days -> Aug 1..Aug 30 roughly
+    from datetime import date
+    doy = date(2026, 8, 15).timetuple().tm_yday
+    values = climatology_window_values(clim_df, lat=50.5, lon=18.6, day_of_year=doy, column="cwb26", window_days=15)
+    assert 1.0 in values and 2.0 in values and 3.0 in values
+    assert 99.0 not in values   # outside +/-15 day window (Sep 15)
+    assert 100.0 not in values  # wrong point (lat 60.0)
