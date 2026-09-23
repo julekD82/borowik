@@ -17,6 +17,22 @@ def test_score_host_mixes_with_unknown_admixture_default():
     assert score_host("DB", 5, PROFILE) == pytest.approx(0.5 * 0.8 + 0.5 * 0.5)
 
 
+def test_score_host_treats_nan_part_cd_as_zero_share():
+    # part_cd comes from pd.to_numeric(errors="coerce"), so a missing value is
+    # NaN. NaN is truthy, so `part_cd or 0` used to let it through and the NaN
+    # propagated through H into R.
+    value = score_host("SO", float("nan"), PROFILE)
+    assert not math.isnan(value)
+    assert value == pytest.approx(PROFILE["unknown_host_affinity"])
+    assert score_host("SO", None, PROFILE) == pytest.approx(PROFILE["unknown_host_affinity"])
+
+
+def test_compute_habitat_finite_with_nan_part_cd():
+    row = {"species_cd": "SO", "part_cd": float("nan"), "site_type": "BMSW", "spec_age": 60}
+    h = compute_habitat(row, PROFILE)
+    assert h is not None and not math.isnan(h)
+
+
 def test_score_site_known_codes():
     assert score_site("BMSW", PROFILE) == (pytest.approx(1.00), 1)
     assert score_site("BS", PROFILE) == (pytest.approx(0.45), 0)

@@ -1,3 +1,4 @@
+import pandas as pd
 import yaml
 
 
@@ -8,7 +9,11 @@ def load_profile(path: str) -> dict:
 
 def score_host(species_cd: str, part_cd: int, profile: dict) -> float:
     affinity = profile["host_affinity"].get(species_cd, profile["unknown_host_affinity"])
-    share = (part_cd or 0) / 10.0
+    # part_cd arrives from the BDL WFS via pd.to_numeric(errors="coerce"), so a
+    # missing/unparseable value is NaN. `part_cd or 0` does NOT catch that (NaN
+    # is truthy), and the NaN then propagates through H all the way into R --
+    # test it explicitly instead.
+    share = 0.0 if part_cd is None or pd.isna(part_cd) else float(part_cd) / 10.0
     return share * affinity + (1 - share) * profile["unknown_host_affinity"]
 
 

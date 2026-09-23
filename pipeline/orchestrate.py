@@ -1,3 +1,4 @@
+import math
 from datetime import date
 
 import geopandas as gpd
@@ -21,6 +22,13 @@ def _nearest_weather_row(centroid, weather_feat_gdf):
 def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              bdl_fetcher, weather_fetcher, climatology_fetcher,
              grid_spacing_m: float = 5000.0, past_days: int = 92) -> gpd.GeoDataFrame:
+    """Score every wydzielenie in the tile and return the stands GeoDataFrame
+    with mask/H/F/F_loc/R columns added.
+
+    Diagnostic counts for the silent-fallback paths (codes missing from the
+    profile, empty climatology windows, non-finite H) are attached to the
+    returned frame as `.attrs["diagnostics"]` rather than added to the
+    signature, so callers that only want the scores are unaffected."""
     stands = bdl_fetcher(layer, bbox_2180)
     stands["stand_id"] = stands["adr_for"] + "@" + stands["a_year"].astype(str)
 
@@ -48,9 +56,23 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     today_doy = date.today().timetuple().tm_yday
 
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
+    # Cheap diagnostics for the three paths that otherwise degrade silently to
+    # a plausible-looking number (see spec review: 59% of stands were hitting
+    # the unknown-code fallback unnoticed).
+    unknown_site_count = 0
+    unknown_species_count = 0
+    empty_climatology_count = 0
+    nan_h_count = 0
     for _, row in stands.iterrows():
+        if row.get("site_type") not in profile["site_scores"]:
+            unknown_site_count += 1
+        if row.get("species_cd") not in profile["host_affinity"]:
+            unknown_species_count += 1
+
         mask = passes_mask(row, profile)
         h = compute_habitat(row, profile)
+        if h is not None and not math.isfinite(h):
+            nan_h_count += 1
         _s_site, moisture_cls = score_site(row["site_type"], profile)
 
         centroid = row.geometry.centroid
@@ -58,11 +80,15 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
 
         cwb26_hist = climatology_window_values(clim_df, wrow["lat"], wrow["lon"], today_doy, "cwb26")
         sm_hist = climatology_window_values(clim_df, wrow["lat"], wrow["lon"], today_doy, "soil_moisture")
+        if len(cwb26_hist) == 0 or len(sm_hist) == 0:
+            # percentile_rank falls back to a neutral 0.5 on an empty window.
+            empty_climatology_count += 1
         pct_cwb26 = percentile_rank(wrow["cwb26"], cwb26_hist)
         pct_sm = percentile_rank(wrow["soil_moisture"], sm_hist)
 
         m = score_moisture(pct_cwb26, pct_sm, profile)
-        t = score_temperature(wrow["tmean20"], wrow["tmean5"], wrow["p1"], profile)
+        # heat_penalty_p5_mm means a 5-day precipitation sum (spec §4.3), not p1.
+        t = score_temperature(wrow["tmean20"], wrow["tmean5"], wrow["p5"], profile)
         k_frost = score_frost(wrow["tmin3"], profile)
         f = compute_fruiting(m, t, k_frost, g_season=1.0)
         pct_m = (pct_cwb26 + pct_sm) / 2.0
@@ -80,4 +106,11 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["F"] = f_values
     stands["F_loc"] = f_loc_values
     stands["R"] = r_values
+    stands.attrs["diagnostics"] = {
+        "stand_count": len(stands),
+        "unknown_site_count": unknown_site_count,
+        "unknown_species_count": unknown_species_count,
+        "empty_climatology_count": empty_climatology_count,
+        "nan_h_count": nan_h_count,
+    }
     return stands

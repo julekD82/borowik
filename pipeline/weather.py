@@ -115,7 +115,10 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
             dry_spell += 1
         rows.append({
             "lat": lat, "lon": lon, "date": group["date"].iloc[-1],
-            "p1": _rolling_sum(p, 1), "p3": _rolling_sum(p, 3), "p7": _rolling_sum(p, 7),
+            "p1": _rolling_sum(p, 1), "p3": _rolling_sum(p, 3),
+            # p5 feeds score_temperature's heat penalty (spec §4.3: Tmean5 >
+            # 17.5 °C AND P5 < 5 mm), profile key heat_penalty_p5_mm.
+            "p5": _rolling_sum(p, 5), "p7": _rolling_sum(p, 7),
             "p14": _rolling_sum(p, 14), "p21": _rolling_sum(p, 21), "p30": _rolling_sum(p, 30),
             "p26w": p26w, "cwb26": p26w - et026w,
             "tmean5": tmean.iloc[-5:].mean(), "tmean20": tmean.iloc[-20:].mean(),

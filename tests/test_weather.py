@@ -61,6 +61,7 @@ def _synthetic_daily_df():
 def test_compute_weather_features_windows():
     feat = compute_weather_features(_synthetic_daily_df())
     row = feat.iloc[0]
+    assert row["p5"] == pytest.approx(5.0)
     assert row["p7"] == pytest.approx(7.0)
     assert row["p14"] == pytest.approx(14.0)
     assert row["p30"] == pytest.approx(30.0)
