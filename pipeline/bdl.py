@@ -9,6 +9,30 @@ from pipeline.tiles import wfs_bbox_param
 
 DEFAULT_WFS_URL = "https://wfs.bdl.lasy.gov.pl/geoserver/BDL/ows"
 
+# The live BDL WFS returns siedlisko/gatunek codes with Polish diacritics
+# (BMŚW, LMŚW, BŚW, LŁ, ŚW ...), while the profile YAMLs key their
+# site_scores/host_affinity tables on ASCII codes (BMSW, LMSW, BSW, LL, SW).
+# Without normalization pipeline.habitat.score_site/score_host silently fall
+# back to unknown_site_score/unknown_host_affinity (0.5) for every stand on a
+# diacritic site type, which inverts the ranking. BDL codes are uppercase.
+POLISH_CODE_CHARS = {
+    "Ś": "S", "Ł": "L", "Ó": "O", "Ą": "A", "Ę": "E",
+    "Ć": "C", "Ń": "N", "Ż": "Z", "Ź": "Z",
+}
+_CODE_TRANSLATION = str.maketrans(POLISH_CODE_CHARS)
+
+# Columns looked up against the profile YAML, hence the only ones normalized.
+# Free-text fields (adr_for, nazwa, ...) keep their diacritics untouched.
+CODE_COLUMNS = ("site_type", "species_cd")
+
+
+def normalize_code(value):
+    """Transliterate Polish diacritics in a BDL code to its ASCII profile key.
+    Non-string values (NaN, None, numbers) pass through unchanged."""
+    if isinstance(value, str):
+        return value.translate(_CODE_TRANSLATION)
+    return value
+
 
 def build_wfs_url(layer: str, bbox: tuple, start_index: int = 0, count: int = 1000,
                    base_url: str = DEFAULT_WFS_URL) -> str:
@@ -53,6 +77,12 @@ def fetch_bdl(layer: str, bbox: tuple, page_size: int = 1000,
         # do numeric arithmetic/comparisons on it, so normalize it here at
         # the true data-parsing source rather than downstream in every caller.
         result["part_cd"] = pd.to_numeric(result["part_cd"], errors="coerce")
+    for col in CODE_COLUMNS:
+        if col in result.columns:
+            # Same rationale as part_cd above: normalize at the true
+            # data-parsing source so every downstream profile lookup sees the
+            # ASCII form the YAML is keyed on.
+            result[col] = result[col].map(normalize_code)
     return result
 
 

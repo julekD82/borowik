@@ -1,9 +1,10 @@
-import json
 import geopandas as gpd
 import pandas as pd
 import responses
 
-from pipeline.bdl import build_wfs_url, fetch_bdl, save_bdl_tile, DEFAULT_WFS_URL
+from pipeline.bdl import (
+    build_wfs_url, fetch_bdl, normalize_code, save_bdl_tile, DEFAULT_WFS_URL,
+)
 
 BBOX = (486000.0, 380000.0, 496000.0, 390000.0)
 LAYER = "BDL:RDLP_Katowice_wydzielenia"
@@ -58,6 +59,34 @@ def test_fetch_bdl_coerces_string_part_cd_to_numeric():
 
     assert pd.api.types.is_numeric_dtype(gdf["part_cd"])
     assert gdf["part_cd"].iloc[0] == 10
+
+
+@responses.activate
+def test_fetch_bdl_transliterates_polish_diacritics_in_code_columns():
+    # The live BDL WFS returns site_type/species_cd with Polish diacritics
+    # ("BMŚW", "ŚW"), but profiles/boletus_edulis.yaml is keyed on ASCII codes.
+    # fetch_bdl must normalize them here, otherwise habitat.score_site /
+    # score_host silently fall back to the 0.5 "unknown" defaults.
+    feature = _feature(1, "08-01-1-01-108")
+    feature["properties"]["site_type"] = "BMŚW"
+    feature["properties"]["species_cd"] = "ŚW"
+    page = {"type": "FeatureCollection", "features": [feature]}
+    responses.add(responses.GET, DEFAULT_WFS_URL, json=page, status=200)
+
+    gdf = fetch_bdl(LAYER, BBOX, page_size=10)
+
+    assert gdf["site_type"].iloc[0] == "BMSW"
+    assert gdf["species_cd"].iloc[0] == "SW"
+    # free-text columns must keep their original content
+    assert gdf["adr_for"].iloc[0] == "08-01-1-01-108"
+
+
+def test_normalize_code_covers_all_polish_diacritics():
+    assert normalize_code("LŁ") == "LL"
+    assert normalize_code("BMWYŻ") == "BMWYZ"
+    assert normalize_code("ŚĄĘĆŃŻŹÓŁ") == "SAECNZZOL"
+    assert normalize_code(None) is None
+    assert normalize_code(10) == 10
 
 
 def test_save_bdl_tile_writes_geoparquet(tmp_path):
