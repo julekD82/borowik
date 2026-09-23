@@ -483,7 +483,7 @@ site_scores:
   BMB:  [0.15, 3]
   BB:   [0.15, 3]
   LMB:  [0.15, 3]
-  OL_SITE: [0.0, 3]
+  OL:   [0.0, 3]
   OLJ:  [0.0, 3]
   LL:   [0.0, 2]
 unknown_site_score: 0.5
@@ -898,8 +898,12 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
         tmin = group["tmin_c"]
         p26w = _exp_weighted_sum(p, window=min(26, len(p)))
         et026w = _exp_weighted_sum(et0, window=min(26, len(et0)))
-        below_10 = group[p < 10.0]
-        days_since_p10 = len(group) - 1 - group.index.get_indexer(below_10.index).max() if len(below_10) else len(group)
+        at_or_above_10 = group[p >= 10.0]
+        if len(at_or_above_10):
+            last_p10_pos = group.index.get_indexer(at_or_above_10.index).max()
+            days_since_p10 = (len(group) - 1) - last_p10_pos
+        else:
+            days_since_p10 = len(group)
         dry_mask = (p < 1.0).to_numpy()
         dry_spell = 0
         for is_dry in dry_mask[::-1]:
@@ -1531,6 +1535,17 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     grid_points = make_grid(bbox_2180, spacing_m=grid_spacing_m)
     weather_daily = weather_fetcher(grid_points, past_days)
     weather_feat = compute_weather_features(weather_daily)
+    # compute_weather_features (Task 6) doesn't carry today's soil_moisture
+    # through to its output row (it's a windowed-features table, not a daily
+    # snapshot) — pull the latest day's soil_moisture per point straight from
+    # the raw daily fetch and merge it in, so pct_sm below compares a real
+    # reading against climatology instead of a hardcoded placeholder.
+    latest_sm = (
+        weather_daily.sort_values("date")
+        .groupby(["lat", "lon"], as_index=False)
+        .last()[["lat", "lon", "soil_moisture"]]
+    )
+    weather_feat = weather_feat.merge(latest_sm, on=["lat", "lon"], how="left")
     weather_feat_gdf = gpd.GeoDataFrame(
         weather_feat,
         geometry=gpd.points_from_xy(weather_feat["lon"], weather_feat["lat"]),
@@ -1552,7 +1567,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         cwb26_hist = climatology_window_values(clim_df, wrow["lat"], wrow["lon"], today_doy, "cwb26")
         sm_hist = climatology_window_values(clim_df, wrow["lat"], wrow["lon"], today_doy, "soil_moisture")
         pct_cwb26 = percentile_rank(wrow["cwb26"], cwb26_hist)
-        pct_sm = percentile_rank(0.4, sm_hist)  # soil_moisture not in weather_feat yet in Faza1 PoC; see Task 6 note
+        pct_sm = percentile_rank(wrow["soil_moisture"], sm_hist)
 
         m = score_moisture(pct_cwb26, pct_sm, profile)
         t = score_temperature(wrow["tmean20"], wrow["tmean5"], wrow["p1"], profile)
