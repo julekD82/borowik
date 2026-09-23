@@ -48,3 +48,9 @@ def classify_fruiting(f: float, profile: dict) -> str:
         if f < cls["max"]:
             return cls["label"]
     return profile["fruiting_classes"][-1]["label"]
+
+
+def compute_ranking(mask: bool, h: float | None, f_loc: float | None) -> float:
+    if not mask or h is None or f_loc is None:
+        return 0.0
+    return 100.0 * h * f_loc

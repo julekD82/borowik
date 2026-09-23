@@ -75,3 +75,18 @@ def test_apply_moisture_modulation_neutral_branch_unchanged():
 ])
 def test_classify_fruiting_boundaries(f, expected):
     assert classify_fruiting(f, PROFILE) == expected
+
+
+from pipeline.scoring import compute_ranking
+
+
+def test_compute_ranking_multiplies_when_passing_mask():
+    assert compute_ranking(mask=True, h=0.8, f_loc=0.5) == pytest.approx(100 * 0.8 * 0.5)
+
+
+def test_compute_ranking_zero_when_masked():
+    assert compute_ranking(mask=False, h=0.9, f_loc=0.9) == pytest.approx(0.0)
+
+
+def test_compute_ranking_zero_when_habitat_none():
+    assert compute_ranking(mask=True, h=None, f_loc=0.9) == pytest.approx(0.0)
