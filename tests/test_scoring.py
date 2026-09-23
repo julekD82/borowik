@@ -90,3 +90,7 @@ def test_compute_ranking_zero_when_masked():
 
 def test_compute_ranking_zero_when_habitat_none():
     assert compute_ranking(mask=True, h=None, f_loc=0.9) == pytest.approx(0.0)
+
+
+def test_compute_ranking_zero_when_fruiting_none():
+    assert compute_ranking(mask=True, h=0.8, f_loc=None) == pytest.approx(0.0)
