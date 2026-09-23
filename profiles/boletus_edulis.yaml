@@ -77,3 +77,39 @@ fruiting_classes:
   - {max: 0.45, label: "Umiarkowane"}
   - {max: 0.70, label: "Dobre"}
   - {max: 1.01, label: "Bardzo dobre"}
+
+legal_mask:
+  gdos_layers: ["GDOS:Rezerwaty", "GDOS:ParkiNarodowe"]   # spec §4.2, §9 step 8
+
+pressure:
+  k: 2.0                    # [E] gravity-model steepness, spec §4.5 -- unvalidated
+  park_decay_m: 800.0       # spec §4.5 "exp(-d_parking/800 m)"
+  demand_decay_km: 10.0     # spec §4.5 "1 + (d/10 km)^2"
+  euclid_factor: 1.3        # spec §4.5 straight-line-to-real-road correction (MVP, no routing)
+  alpha_default: 0.3        # spec §4.1 "α ∈ [0; 0,6] suwak, domyślnie 0,3"
+
+osm:
+  parking_amenity: "parking"
+  road_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "track"]
+  place_types: ["city", "town", "village", "hamlet"]
+
+confidence:
+  data_quality_factors:
+    kompletnosc_gatunek_panujacy: 0.7     # spec §10: "0,7 tylko gatunek panujący (WFS)"
+    kompletnosc_gatunek_nieznany: 0.5     # [E] MVP fallback: species_cd absent from host_affinity entirely
+    swiezosc_bez_s2: 1.0                  # spec §10: "1,0 jeśli brak sygnału zmiany w S2" -- no S2 in this plan, always true
+    pogoda_nwp_2km: 0.8                   # spec §10: "0,8 NWP 2 km" (Open-Meteo forecast/ICON-D2)
+  data_quality_classes:
+    - {max: 0.40, label: "NISKA"}
+    - {max: 0.70, label: "SREDNIA"}
+    - {max: 1.01, label: "WYSOKA"}
+  model_confidence_cap: "SREDNIA"          # spec §10: "faza 1-4: maks. SREDNIA"
+  reasons:
+    model_uncalibrated: 'model nieskalibrowany na danych terenowych (limit do "średniej")'
+    weather_nwp: "pogoda z modelu ~2 km (brak radaru w archiwum)"
+    species_dominant_only: "skład gatunkowy: tylko gatunek panujący"
+    species_unknown: "gatunek panujący nierozpoznany w profilu gatunku"
+
+explanation:
+  max_positive: 2   # spec §9: "generujemy zdania z szablonów (2 plusy i 1-2 minusy)"
+  max_negative: 2
