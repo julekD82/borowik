@@ -4,7 +4,7 @@ from datetime import date
 import geopandas as gpd
 import pandas as pd
 
-from pipeline.habitat import compute_habitat, passes_mask, score_site
+from pipeline.habitat import compute_habitat, passes_mask, score_site, score_host, score_age
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
     apply_moisture_modulation, compute_ranking,
@@ -58,6 +58,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     today_doy = date.today().timetuple().tm_yday
 
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
+    s_host_values, s_site_values, s_age_values = [], [], []
+    m_values, t_values, k_frost_values = [], [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
     # a plausible-looking number (see spec review: 59% of stands were hitting
     # the unknown-code fallback unnoticed).
@@ -80,6 +82,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         if h is not None and not math.isfinite(h):
             nan_h_count += 1
         _s_site, moisture_cls = score_site(row["site_type"], profile)
+        s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
+        s_age = score_age(row.get("spec_age"), profile)
 
         centroid = row.geometry.centroid
         wrow = _nearest_weather_row(centroid, weather_feat_gdf)
@@ -106,12 +110,24 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         f_values.append(f)
         f_loc_values.append(f_loc)
         r_values.append(r)
+        s_host_values.append(s_host)
+        s_site_values.append(_s_site)
+        s_age_values.append(s_age)
+        m_values.append(m)
+        t_values.append(t)
+        k_frost_values.append(k_frost)
 
     stands["mask"] = mask_values
     stands["H"] = h_values
     stands["F"] = f_values
     stands["F_loc"] = f_loc_values
     stands["R"] = r_values
+    stands["S_host"] = s_host_values
+    stands["S_site"] = s_site_values
+    stands["S_age"] = s_age_values
+    stands["M"] = m_values
+    stands["T"] = t_values
+    stands["K_frost"] = k_frost_values
     stands.attrs["diagnostics"] = {
         "stand_count": len(stands),
         "mask_passing_count": int(sum(mask_values)),

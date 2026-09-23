@@ -1,5 +1,6 @@
 import geopandas as gpd
 import pandas as pd
+import pytest
 from shapely.geometry import box
 
 from pipeline.habitat import load_profile
@@ -101,3 +102,27 @@ def test_run_poc_counts_unknown_codes_and_nan_h():
     assert diag["unknown_site_count"] == 1
     assert diag["unknown_species_count"] == 1
     assert diag["nan_h_count"] == 0
+
+
+def test_run_poc_exposes_intermediate_factor_scores_for_explanations():
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0,
+        past_days=30,
+    )
+
+    for col in ["S_host", "S_site", "S_age", "M", "T", "K_frost"]:
+        assert col in result.columns
+
+    row = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    # species_cd=SO, part_cd=10, site_type=BMSW, spec_age=60 -> pure-stand host
+    # affinity and the site_scores/age_breakpoints values already exercised by
+    # test_habitat.py.
+    assert row["S_host"] == pytest.approx(1.0)
+    assert row["S_site"] == pytest.approx(1.00)
+    assert row["S_age"] == pytest.approx(1.0)
