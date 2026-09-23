@@ -132,7 +132,15 @@ def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1
     call_api for testability; default implementation calls Open-Meteo's
     historical-weather-api and then reuses compute_weather_features'
     windowing helpers day by day (implemented alongside the manual
-    verification step, not unit tested)."""
+    verification step, not unit tested).
+
+    Note: the returned "soil_moisture" column is sourced from the archive
+    API's soil_moisture_7_to_28cm depth bin, which differs slightly from
+    fetch_weather_raw's live soil_moisture (forecast API's
+    soil_moisture_9_to_27cm bin) -- the archive API does not expose the same
+    9-27cm bin. A percentile_rank comparison of live vs. climatology
+    soil_moisture is therefore depth-approximate, not an exact apples-to-apples
+    match."""
     call_api = call_api or (lambda lat, lon, sy, ey: _default_climatology_call(lat, lon, sy, ey))
     frames = []
     for lat, lon in points:
@@ -202,6 +210,8 @@ def _default_climatology_call(lat: float, lon: float, start_year: int, end_year:
     return {
         "date": dates[valid],
         "cwb26": cwb26[valid],
+        # NOTE: 7-28cm depth bin, not the 9-27cm bin used by fetch_weather_raw's
+        # live soil_moisture -- see fetch_climatology_raw's docstring.
         "soil_moisture": soil_daily[valid],
     }
 
