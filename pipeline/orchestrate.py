@@ -28,7 +28,9 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     Diagnostic counts for the silent-fallback paths (codes missing from the
     profile, empty climatology windows, non-finite H) are attached to the
     returned frame as `.attrs["diagnostics"]` rather than added to the
-    signature, so callers that only want the scores are unaffected."""
+    signature, so callers that only want the scores are unaffected. The
+    unknown-code counts are restricted to mask-passing stands, since the tile
+    also holds non-stand polygons with no site_type/species_cd at all."""
     stands = bdl_fetcher(layer, bbox_2180)
     stands["stand_id"] = stands["adr_for"] + "@" + stands["a_year"].astype(str)
 
@@ -64,12 +66,16 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     empty_climatology_count = 0
     nan_h_count = 0
     for _, row in stands.iterrows():
-        if row.get("site_type") not in profile["site_scores"]:
-            unknown_site_count += 1
-        if row.get("species_cd") not in profile["host_affinity"]:
-            unknown_species_count += 1
-
         mask = passes_mask(row, profile)
+        if mask:
+            # Only mask-passing stands matter here: the BDL tile also contains
+            # roads/meadows/clearings whose site_type and species_cd are NaN by
+            # design, and those would drown out the real profile gaps.
+            if row.get("site_type") not in profile["site_scores"]:
+                unknown_site_count += 1
+            if row.get("species_cd") not in profile["host_affinity"]:
+                unknown_species_count += 1
+
         h = compute_habitat(row, profile)
         if h is not None and not math.isfinite(h):
             nan_h_count += 1
@@ -108,6 +114,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["R"] = r_values
     stands.attrs["diagnostics"] = {
         "stand_count": len(stands),
+        "mask_passing_count": int(sum(mask_values)),
         "unknown_site_count": unknown_site_count,
         "unknown_species_count": unknown_species_count,
         "empty_climatology_count": empty_climatology_count,
