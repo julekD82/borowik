@@ -50,7 +50,8 @@ def classify_fruiting(f: float, profile: dict) -> str:
     return profile["fruiting_classes"][-1]["label"]
 
 
-def compute_ranking(mask: bool, h: float | None, f_loc: float | None) -> float:
+def compute_ranking(mask: bool, h: float | None, f_loc: float | None,
+                      p: float = 0.0, alpha: float = 0.3) -> float:
     if not mask or h is None or f_loc is None:
         return 0.0
-    return 100.0 * h * f_loc
+    return 100.0 * h * f_loc * (1.0 - alpha * p)

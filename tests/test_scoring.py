@@ -94,3 +94,27 @@ def test_compute_ranking_zero_when_habitat_none():
 
 def test_compute_ranking_zero_when_fruiting_none():
     assert compute_ranking(mask=True, h=0.8, f_loc=None) == pytest.approx(0.0)
+
+
+def test_compute_ranking_default_p_reproduces_faza1_behavior():
+    # alpha's default (0.3) must not matter when p defaults to 0.0 -- this is
+    # the regression guard that Faza 2's pressure term never changes Faza 1's R.
+    assert compute_ranking(mask=True, h=0.8, f_loc=0.5) == pytest.approx(100 * 0.8 * 0.5)
+
+
+def test_compute_ranking_applies_pressure_discount():
+    r = compute_ranking(mask=True, h=0.8, f_loc=0.5, p=0.5, alpha=0.3)
+    assert r == pytest.approx(100 * 0.8 * 0.5 * (1 - 0.3 * 0.5))
+
+
+def test_compute_ranking_zero_pressure_matches_no_pressure_call():
+    assert compute_ranking(mask=True, h=0.8, f_loc=0.5, p=0.0, alpha=0.3) == pytest.approx(
+        compute_ranking(mask=True, h=0.8, f_loc=0.5)
+    )
+
+
+def test_compute_ranking_full_pressure_zeroes_ranking():
+    # alpha at its spec §4.1 max (0.6) with p=1.0 is the strongest discount the
+    # slider allows; confirm the formula behaves at that boundary too.
+    r = compute_ranking(mask=True, h=0.8, f_loc=0.5, p=1.0, alpha=0.6)
+    assert r == pytest.approx(100 * 0.8 * 0.5 * 0.4)
