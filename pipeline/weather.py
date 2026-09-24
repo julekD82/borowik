@@ -24,6 +24,21 @@ def make_grid(bbox_2180: tuple, spacing_m: float = 5000.0) -> list[tuple[float, 
 
 _OPEN_METEO_BATCH_SIZE = 50  # see _chunked's docstring for why this exists
 
+# Climatology gets its own, much smaller batch size. Open-Meteo weights a
+# request by (days-range / 14) x (variables / 10) x locations (documented at
+# open-meteo.com/en/pricing and openmeteo.substack.com/p/weather-data-for-
+# multiple-locations-at-once); a 30-year, 3-variable climatology pull already
+# weighs ~235 "calls" for a SINGLE point, so 50 points in one request (as
+# used for the much lighter live-forecast call) weighs ~11750 and was
+# observed live 2026-09-24 to fail with "Your API call requests too much
+# data" -- a distinct, synchronous per-request error, not the request-count
+# quota error batching originally fixed. 10 points/request keeps a single
+# request's weight (~2350) well under that observed failure point and under
+# the free tier's 5000/hour and 600/minute caps individually. Still a
+# conservative guess pending a live re-run: Open-Meteo does not publish the
+# exact per-request cap that triggers the "too much data" error.
+_OPEN_METEO_CLIMATOLOGY_BATCH_SIZE = 10
+
 
 def _chunked(items: list, size: int) -> list[list]:
     return [items[i:i + size] for i in range(0, len(items), size)]
@@ -226,12 +241,15 @@ def _default_climatology_call(points: list[tuple[float, float]], start_year: int
     """Thin IO boundary around the real Open-Meteo historical-weather archive
     API. Not covered by unit tests (network); exercised manually.
 
-    Batches every point into as few HTTP requests as possible, same
-    rationale and chunk size as _default_open_meteo_call -- this is the
-    fetcher that actually failed live (30 years of daily archive data per
-    point is the more expensive of the two calls; the 121-point live run
-    hit "Hourly API request limit exceeded" partway through climatology,
-    not weather). Returns one dict per point, same order as `points`."""
+    Batches points into requests of _OPEN_METEO_CLIMATOLOGY_BATCH_SIZE (much
+    smaller than _default_open_meteo_call's, see that constant's comment) --
+    this is the fetcher that actually failed live twice: first with "Hourly
+    API request limit exceeded" one-point-per-request (fixed by batching),
+    then, once orchestrate.run_poc started fetching climatology on a coarser
+    grid (fewer, but still batched, points) at the original 50-point batch
+    size, with "Your API call requests too much data" -- Open-Meteo's
+    per-request data-volume guard, distinct from the request-count quota.
+    Returns one dict per point, same order as `points`."""
     import openmeteo_requests
     import requests_cache
     from retry_requests import retry
@@ -241,7 +259,7 @@ def _default_climatology_call(points: list[tuple[float, float]], start_year: int
     client = openmeteo_requests.Client(session=retry_session)
 
     results = []
-    for chunk in _chunked(points, _OPEN_METEO_BATCH_SIZE):
+    for chunk in _chunked(points, _OPEN_METEO_CLIMATOLOGY_BATCH_SIZE):
         responses = client.weather_api(
             "https://archive-api.open-meteo.com/v1/archive",
             params={

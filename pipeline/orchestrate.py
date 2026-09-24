@@ -13,15 +13,48 @@ from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
 )
 
+# Default spacing for the climatology grid (see run_poc / _nearest_climatology_cell
+# for why it's coarser than the weather grid). Exposed as a module constant so
+# callers that print progress (pipeline/prepare_trip.py) can report the real
+# point count without duplicating the number.
+CLIMATOLOGY_GRID_SPACING_M = 20000.0
+
 
 def _nearest_weather_row(centroid, weather_feat_gdf):
     idx = weather_feat_gdf.geometry.distance(centroid).idxmin()
     return weather_feat_gdf.loc[idx]
 
 
+def _points_gdf(points: list[tuple[float, float]], crs) -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(
+        {"lat": [p[0] for p in points], "lon": [p[1] for p in points]},
+        geometry=gpd.points_from_xy([p[1] for p in points], [p[0] for p in points]),
+        crs="EPSG:4326",
+    ).to_crs(crs)
+
+
+def _nearest_climatology_cell(grid_points, climatology_grid_points, crs) -> dict:
+    """Map each weather grid point (lat, lon) to its nearest climatology
+    grid point (lat, lon). Climatology's 30-year archive is far more
+    expensive per point than a live weather call (Open-Meteo's own
+    weighting formula scales with days-range/14 x variables/10, so a
+    30-year pull already weighs ~235 "calls" per point -- see
+    docs/CODEX-HANDOFF.md for the derivation) but varies smoothly over a
+    few km, so it's fetched on a coarser grid than weather and several
+    weather cells share one climatology cell."""
+    weather_gdf = _points_gdf(grid_points, crs)
+    clim_gdf = _points_gdf(climatology_grid_points, crs)
+    joined = gpd.sjoin_nearest(weather_gdf, clim_gdf, lsuffix="w", rsuffix="c")
+    return {
+        (row["lat_w"], row["lon_w"]): (row["lat_c"], row["lon_c"])
+        for _, row in joined.iterrows()
+    }
+
+
 def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              bdl_fetcher, weather_fetcher, climatology_fetcher,
-             grid_spacing_m: float = 5000.0, past_days: int = 92) -> gpd.GeoDataFrame:
+             grid_spacing_m: float = 5000.0, past_days: int = 92,
+             climatology_grid_spacing_m: float = CLIMATOLOGY_GRID_SPACING_M) -> gpd.GeoDataFrame:
     """Score every wydzielenie in the tile and return the stands GeoDataFrame
     with mask/H/F/F_loc/R columns added.
 
@@ -54,8 +87,15 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         crs="EPSG:4326",
     ).to_crs(stands.crs)
 
-    clim_df = climatology_fetcher(grid_points, 1991, 2020)
+    climatology_grid_points = make_grid(bbox_2180, spacing_m=climatology_grid_spacing_m)
+    clim_df = climatology_fetcher(climatology_grid_points, 1991, 2020)
+    weather_to_clim_cell = _nearest_climatology_cell(grid_points, climatology_grid_points, stands.crs)
     today_doy = date.today().timetuple().tm_yday
+    # Many stands share a weather cell, and many weather cells share a
+    # (coarser) climatology cell. Avoid rescanning the whole 30-year archive
+    # for every stand when the search spans dozens of tiles.
+    climate_cells = dict(tuple(clim_df.groupby(["lat", "lon"])))
+    percentiles_by_cell = {}
 
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
     s_host_values, s_site_values, s_age_values = [], [], []
@@ -88,13 +128,20 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         centroid = row.geometry.centroid
         wrow = _nearest_weather_row(centroid, weather_feat_gdf)
 
-        cwb26_hist = climatology_window_values(clim_df, wrow["lat"], wrow["lon"], today_doy, "cwb26")
-        sm_hist = climatology_window_values(clim_df, wrow["lat"], wrow["lon"], today_doy, "soil_moisture")
-        if len(cwb26_hist) == 0 or len(sm_hist) == 0:
+        cell = weather_to_clim_cell[(wrow["lat"], wrow["lon"])]
+        if cell not in percentiles_by_cell:
+            history = climate_cells.get(cell, clim_df.iloc[:0])
+            cwb26_hist = climatology_window_values(history, *cell, today_doy, "cwb26")
+            sm_hist = climatology_window_values(history, *cell, today_doy, "soil_moisture")
+            percentiles_by_cell[cell] = (
+                percentile_rank(wrow["cwb26"], cwb26_hist),
+                percentile_rank(wrow["soil_moisture"], sm_hist),
+                len(cwb26_hist) == 0 or len(sm_hist) == 0,
+            )
+        pct_cwb26, pct_sm, empty_window = percentiles_by_cell[cell]
+        if empty_window:
             # percentile_rank falls back to a neutral 0.5 on an empty window.
             empty_climatology_count += 1
-        pct_cwb26 = percentile_rank(wrow["cwb26"], cwb26_hist)
-        pct_sm = percentile_rank(wrow["soil_moisture"], sm_hist)
 
         m = score_moisture(pct_cwb26, pct_sm, profile)
         # heat_penalty_p5_mm means a 5-day precipitation sum (spec §4.3), not p1.

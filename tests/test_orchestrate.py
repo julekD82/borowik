@@ -104,6 +104,69 @@ def test_run_poc_counts_unknown_codes_and_nan_h():
     assert diag["nan_h_count"] == 0
 
 
+def test_run_poc_fetches_climatology_on_a_coarser_grid_than_weather():
+    # Climatology's 30-year archive is far more expensive per point than a
+    # live weather call (Open-Meteo's own weighting formula: weight scales
+    # with days-range/14 x variables/10, so a 30-year pull already weighs
+    # ~235 "calls" per point -- see docs/CODEX-HANDOFF.md). Climatology
+    # varies smoothly over a few km, so it's fetched on a coarser grid and
+    # each weather cell borrows its nearest climatology cell's history.
+    weather_points_seen = []
+    climatology_points_seen = []
+
+    def counting_weather_fetcher(points, past_days):
+        weather_points_seen.append(list(points))
+        return fake_weather_fetcher(points, past_days)
+
+    def counting_climatology_fetcher(points, start_year, end_year):
+        climatology_points_seen.append(list(points))
+        return fake_climatology_fetcher(points, start_year, end_year)
+
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=counting_weather_fetcher,
+        climatology_fetcher=counting_climatology_fetcher,
+        grid_spacing_m=2000.0,
+        climatology_grid_spacing_m=8000.0,
+        past_days=30,
+    )
+
+    assert len(climatology_points_seen) == 1
+    assert len(weather_points_seen) == 1
+    assert len(climatology_points_seen[0]) < len(weather_points_seen[0])
+    assert result["H"].notna().all()
+    assert result["R"].notna().all()
+
+
+def test_run_poc_defaults_climatology_grid_coarser_than_weather_grid():
+    weather_points_seen = []
+    climatology_points_seen = []
+
+    def counting_weather_fetcher(points, past_days):
+        weather_points_seen.append(list(points))
+        return fake_weather_fetcher(points, past_days)
+
+    def counting_climatology_fetcher(points, start_year, end_year):
+        climatology_points_seen.append(list(points))
+        return fake_climatology_fetcher(points, start_year, end_year)
+
+    run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=counting_weather_fetcher,
+        climatology_fetcher=counting_climatology_fetcher,
+        grid_spacing_m=2000.0,
+        past_days=30,
+    )
+
+    assert len(climatology_points_seen[0]) < len(weather_points_seen[0])
+
+
 def test_run_poc_exposes_intermediate_factor_scores_for_explanations():
     result = run_poc(
         layer="BDL:RDLP_Katowice_wydzielenia",

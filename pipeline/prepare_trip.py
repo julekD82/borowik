@@ -18,7 +18,7 @@ from pipeline.export import (
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
-from pipeline.orchestrate import run_poc
+from pipeline.orchestrate import run_poc, CLIMATOLOGY_GRID_SPACING_M
 from pipeline.osm import fetch_osm_features
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
@@ -28,7 +28,8 @@ from pipeline.search_area import search_tiles, fetch_search_stands, within_radiu
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
     fetch_weather_raw, fetch_climatology_raw, make_grid,
-    _default_open_meteo_call, _default_climatology_call, _OPEN_METEO_BATCH_SIZE,
+    _default_open_meteo_call, _default_climatology_call,
+    _OPEN_METEO_BATCH_SIZE, _OPEN_METEO_CLIMATOLOGY_BATCH_SIZE,
 )
 from pipeline.zakazy import check_periodic_ban
 
@@ -118,9 +119,15 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         raise TripPreparationError("Brak wydzielen BDL w podanym promieniu. Poprzednie wyniki pozostawiono bez zmian.")
 
     point_count = len(make_grid(bbox))
+    climatology_point_count = len(make_grid(bbox, spacing_m=CLIMATOLOGY_GRID_SPACING_M))
     print(
         f"Siatka pogodowa: {point_count} punktow, pobierane partiami po "
         f"{_OPEN_METEO_BATCH_SIZE} w jednym zapytaniu (nie jeden punkt na zapytanie).",
+        flush=True,
+    )
+    print(
+        f"Siatka klimatologii: {climatology_point_count} punktow (rzadsza niz pogoda -- "
+        "30 lat archiwum na punkt jest znacznie kosztowniejsze niz biezaca pogoda).",
         flush=True,
     )
 
@@ -129,7 +136,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         return _rate_limited(_default_open_meteo_call, points_, past_days)
 
     def _climatology_call_api(points_, start_year, end_year):
-        print(f"Klimatologia: {len(points_)} punktow (partiami po {_OPEN_METEO_BATCH_SIZE})", flush=True)
+        print(f"Klimatologia: {len(points_)} punktow (partiami po {_OPEN_METEO_CLIMATOLOGY_BATCH_SIZE})", flush=True)
         return _rate_limited(_default_climatology_call, points_, start_year, end_year)
 
     scored = run_poc(
