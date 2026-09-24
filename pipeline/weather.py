@@ -22,31 +22,14 @@ def make_grid(bbox_2180: tuple, spacing_m: float = 5000.0) -> list[tuple[float, 
     return points
 
 
-def _default_open_meteo_call(lat: float, lon: float, past_days: int) -> dict:
-    """Thin IO boundary around the real Open-Meteo archive+forecast API.
-    Not covered by unit tests (network); exercised manually, see Task 6 Step 5."""
-    import openmeteo_requests
-    import requests_cache
-    from retry_requests import retry
+_OPEN_METEO_BATCH_SIZE = 50  # see _chunked's docstring for why this exists
 
-    cache_session = requests_cache.CachedSession(".cache/open_meteo", expire_after=3600)
-    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-    client = openmeteo_requests.Client(session=retry_session)
 
-    responses = client.weather_api(
-        "https://api.open-meteo.com/v1/forecast",
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "daily": ["precipitation_sum", "temperature_2m_mean", "temperature_2m_min",
-                       "temperature_2m_max", "et0_fao_evapotranspiration"],
-            "hourly": ["soil_moisture_9_to_27cm"],
-            "past_days": past_days,
-            "forecast_days": 1,
-            "timezone": "Europe/Warsaw",
-        },
-    )
-    response = responses[0]
+def _chunked(items: list, size: int) -> list[list]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def _parse_open_meteo_response(response) -> dict:
     daily = response.Daily()
     dates = pd.date_range(
         start=pd.to_datetime(daily.Time(), unit="s", utc=True),
@@ -68,11 +51,56 @@ def _default_open_meteo_call(lat: float, lon: float, past_days: int) -> dict:
     }
 
 
+def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int) -> list[dict]:
+    """Thin IO boundary around the real Open-Meteo archive+forecast API.
+    Not covered by unit tests (network); exercised manually.
+
+    Batches every point into as few HTTP requests as possible (Open-Meteo
+    accepts comma-separated latitude/longitude lists in one call) instead
+    of one request per point -- at radius-search grid sizes (dozens to
+    100+ points) the old one-request-per-point version exhausted
+    Open-Meteo's free-tier hourly request quota on a single prepare_trip
+    run (observed live 2026-09-24: a 121-point run failed mid-climatology
+    with "Hourly API request limit exceeded"). Chunked at
+    _OPEN_METEO_BATCH_SIZE (50, a conservative guess -- Open-Meteo does not
+    publish a hard per-request location cap for this endpoint; verify
+    against a real large-radius run once the hourly quota resets and widen
+    if a single request handles more comfortably) so one pathologically
+    large request doesn't risk a timeout or an undocumented limit either.
+    Returns one dict per point, same order as `points`, same per-point
+    shape this function used to return for a single point."""
+    import openmeteo_requests
+    import requests_cache
+    from retry_requests import retry
+
+    cache_session = requests_cache.CachedSession(".cache/open_meteo", expire_after=3600)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    client = openmeteo_requests.Client(session=retry_session)
+
+    results = []
+    for chunk in _chunked(points, _OPEN_METEO_BATCH_SIZE):
+        responses = client.weather_api(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": [lat for lat, lon in chunk],
+                "longitude": [lon for lat, lon in chunk],
+                "daily": ["precipitation_sum", "temperature_2m_mean", "temperature_2m_min",
+                           "temperature_2m_max", "et0_fao_evapotranspiration"],
+                "hourly": ["soil_moisture_9_to_27cm"],
+                "past_days": past_days,
+                "forecast_days": 1,
+                "timezone": "Europe/Warsaw",
+            },
+        )
+        results.extend(_parse_open_meteo_response(r) for r in responses)
+    return results
+
+
 def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92, call_api=None) -> pd.DataFrame:
     call_api = call_api or _default_open_meteo_call
+    results = call_api(points, past_days)
     frames = []
-    for lat, lon in points:
-        data = call_api(lat, lon, past_days)
+    for (lat, lon), data in zip(points, results):
         df = pd.DataFrame(data)
         df["lat"] = lat
         df["lon"] = lon
@@ -144,10 +172,10 @@ def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1
     9-27cm bin. A percentile_rank comparison of live vs. climatology
     soil_moisture is therefore depth-approximate, not an exact apples-to-apples
     match."""
-    call_api = call_api or (lambda lat, lon, sy, ey: _default_climatology_call(lat, lon, sy, ey))
+    call_api = call_api or _default_climatology_call
+    results = call_api(points, start_year, end_year)
     frames = []
-    for lat, lon in points:
-        data = call_api(lat, lon, start_year, end_year)
+    for (lat, lon), data in zip(points, results):
         df = pd.DataFrame(data)
         df["lat"] = lat
         df["lon"] = lon
@@ -155,32 +183,7 @@ def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1
     return pd.concat(frames, ignore_index=True)
 
 
-def _default_climatology_call(lat: float, lon: float, start_year: int, end_year: int) -> dict:
-    """Thin IO boundary around the real Open-Meteo historical-weather archive API.
-    Not covered by unit tests (network); exercised manually, see Task 7 Step 5."""
-    import openmeteo_requests
-    import requests_cache
-    from retry_requests import retry
-
-    cache_session = requests_cache.CachedSession(".cache/open_meteo_archive", expire_after=-1)
-    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-    client = openmeteo_requests.Client(session=retry_session)
-
-    responses = client.weather_api(
-        "https://archive-api.open-meteo.com/v1/archive",
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "start_date": f"{start_year}-01-01",
-            "end_date": f"{end_year}-12-31",
-            "daily": ["precipitation_sum", "et0_fao_evapotranspiration"],
-            # Archive API depth bins differ from the forecast API's soil_moisture_9_to_27cm;
-            # soil_moisture_7_to_28cm is the closest match available for the historical archive.
-            "hourly": ["soil_moisture_7_to_28cm"],
-            "timezone": "Europe/Warsaw",
-        },
-    )
-    response = responses[0]
+def _parse_climatology_response(response) -> dict:
     daily = response.Daily()
     dates = pd.date_range(
         start=pd.to_datetime(daily.Time(), unit="s", utc=True),
@@ -217,6 +220,44 @@ def _default_climatology_call(lat: float, lon: float, start_year: int, end_year:
         # live soil_moisture -- see fetch_climatology_raw's docstring.
         "soil_moisture": soil_daily[valid],
     }
+
+
+def _default_climatology_call(points: list[tuple[float, float]], start_year: int, end_year: int) -> list[dict]:
+    """Thin IO boundary around the real Open-Meteo historical-weather archive
+    API. Not covered by unit tests (network); exercised manually.
+
+    Batches every point into as few HTTP requests as possible, same
+    rationale and chunk size as _default_open_meteo_call -- this is the
+    fetcher that actually failed live (30 years of daily archive data per
+    point is the more expensive of the two calls; the 121-point live run
+    hit "Hourly API request limit exceeded" partway through climatology,
+    not weather). Returns one dict per point, same order as `points`."""
+    import openmeteo_requests
+    import requests_cache
+    from retry_requests import retry
+
+    cache_session = requests_cache.CachedSession(".cache/open_meteo_archive", expire_after=-1)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    client = openmeteo_requests.Client(session=retry_session)
+
+    results = []
+    for chunk in _chunked(points, _OPEN_METEO_BATCH_SIZE):
+        responses = client.weather_api(
+            "https://archive-api.open-meteo.com/v1/archive",
+            params={
+                "latitude": [lat for lat, lon in chunk],
+                "longitude": [lon for lat, lon in chunk],
+                "start_date": f"{start_year}-01-01",
+                "end_date": f"{end_year}-12-31",
+                "daily": ["precipitation_sum", "et0_fao_evapotranspiration"],
+                # Archive API depth bins differ from the forecast API's soil_moisture_9_to_27cm;
+                # soil_moisture_7_to_28cm is the closest match available for the historical archive.
+                "hourly": ["soil_moisture_7_to_28cm"],
+                "timezone": "Europe/Warsaw",
+            },
+        )
+        results.extend(_parse_climatology_response(r) for r in responses)
+    return results
 
 
 def climatology_window_values(clim_df: pd.DataFrame, lat: float, lon: float, day_of_year: int,

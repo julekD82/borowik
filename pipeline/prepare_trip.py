@@ -1,5 +1,6 @@
 import argparse
 import functools
+import math
 import pathlib
 import sys
 import time
@@ -8,22 +9,24 @@ from datetime import date
 import geopandas as gpd
 from openmeteo_requests.Client import OpenMeteoRequestsError
 
-from pipeline.bdl import fetch_bdl, save_bdl_tile
+from pipeline.bdl import fetch_bdl
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
-from pipeline.export import write_scores_json, export_stand_geometries, write_regions_json
+from pipeline.export import (
+    write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
+)
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.orchestrate import run_poc
 from pipeline.osm import fetch_osm_features
 from pipeline.rdlp import (
-    fetch_rdlp_boundaries_cached, resolve_rdlp_layer, regions_intersecting_bbox, layer_name_for_region,
+    fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
-from pipeline.regions import group_into_regions
+from pipeline.search_area import search_tiles, fetch_search_stands, within_radius, merge_frames
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
-    fetch_weather_raw, fetch_climatology_raw,
-    _default_open_meteo_call, _default_climatology_call,
+    fetch_weather_raw, fetch_climatology_raw, make_grid,
+    _default_open_meteo_call, _default_climatology_call, _OPEN_METEO_BATCH_SIZE,
 )
 from pipeline.zakazy import check_periodic_ban
 
@@ -34,7 +37,7 @@ MAX_RADIUS_KM = 50.0
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="prepare_trip",
-        description="Przygotuj wyjazd: policz rejony poszukiwan prawdziwkow dla podanej lokalizacji.",
+        description="Przygotuj wyjazd: ocen wydzielenia do poszukiwan prawdziwkow dla podanej lokalizacji.",
     )
     parser.add_argument("--lat", type=float, required=True, help="Szerokosc geograficzna (WGS84)")
     parser.add_argument("--lon", type=float, required=True, help="Dlugosc geograficzna (WGS84)")
@@ -45,14 +48,16 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--radius-km", type=float, default=25.0,
-        help=f"Deklarowany promien poszukiwan ({MIN_RADIUS_KM:.0f}-{MAX_RADIUS_KM:.0f} km). "
-             "Obecnie tylko walidowany -- przetwarzany jest jeden kafel 10x10 km wokol punktu "
-             "(patrz docs/projekt-borowik.md sec.8.1).",
+        help=f"Promien analizy ({MIN_RADIUS_KM:.0f}-{MAX_RADIUS_KM:.0f} km, domyslnie 25). "
+             "Wiele kafli 10x10 km; wybierane sa wydzielenia ze srodkiem w promieniu.",
     )
     parser.add_argument("--profile", type=str, default="profiles/boletus_edulis.yaml")
     parser.add_argument("--out-dir", type=str, default="notebooks/output")
     parser.add_argument("--cache-dir", type=str, default="cache")
     args = parser.parse_args(argv)
+    if not (math.isfinite(args.lat) and -90 <= args.lat <= 90 and
+            math.isfinite(args.lon) and -180 <= args.lon <= 180):
+        parser.error("--lat/--lon must be finite WGS84 coordinates")
     if not (MIN_RADIUS_KM <= args.radius_km <= MAX_RADIUS_KM):
         parser.error(f"--radius-km must be between {MIN_RADIUS_KM:.0f} and {MAX_RADIUS_KM:.0f}")
     if args.date is not None:
@@ -84,18 +89,15 @@ def _rate_limited(default_call, *args, max_attempts=6, backoff_s=65, pace_s=2.0)
 
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
                           profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path) -> dict:
-    """Runs the full MVP pipeline (BDL -> weather -> mask -> H/F/P/R ->
-    regions -> export) for the 10x10 km BDL tile containing (lat, lon).
-    Returns a summary dict for the CLI to print; writes scores_{day}.json,
-    regions_{day}.json and stands_mvp.parquet under out_dir as a side
-    effect. radius_km is accepted for forward compatibility but does not
-    yet change which tiles are processed (see plan Global Constraints)."""
-    del radius_km  # not yet used -- documented limitation, see Global Constraints
+    """Analyze stands whose EPSG:2180 centroid lies within the search radius.
+
+    Source queries use aligned 10 km tiles; scoring, pressure normalization
+    run once across the complete area, not per tile. Grouping is disabled.
+    """
+    center, tiles = search_tiles(lat, lon, radius_km)
     profile = load_profile(profile_path)
-    bbox = tile_bbox_2180(lat, lon, size_km=10.0)
+    bbox = tile_bbox_2180(lat, lon, size_km=2 * radius_km)
     cache_dir = pathlib.Path(cache_dir)
-    tile_id = f"E{int(bbox[1])}N{int(bbox[0])}"
-    tile_path = cache_dir / f"{tile_id}.parquet"
 
     print(f"Resolving RDLP for ({lat}, {lon})...")
     rdlp_gdf = fetch_rdlp_boundaries_cached(cache_dir)
@@ -105,55 +107,51 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             f"Punkt ({lat}, {lon}) nie lezy w zadnym RDLP (poza Polska?) -- BDL nie ma dla niego danych."
         )
     print(f"  RDLP layer: {layer}")
+    print(f"Obszar: promien {radius_km:g} km, {len(tiles)} kafli 10x10 km.", flush=True)
+    print("Pierwsza analiza duzego obszaru moze trwac dlugo (pogoda i klimatologia).", flush=True)
+    context_stands, layers = fetch_search_stands(tiles, rdlp_gdf, cache_dir, fetch_bdl)
+    stands = within_radius(context_stands, center, radius_km)
+    if not len(stands):
+        raise TripPreparationError("Brak wydzielen BDL w podanym promieniu. Poprzednie wyniki pozostawiono bez zmian.")
 
-    intersecting = regions_intersecting_bbox(bbox, rdlp_gdf)
-    if len(intersecting) > 1:
-        # Final review finding: a 10x10 km tile near an RDLP border can
-        # straddle two directorates. Only `layer`'s wydzielenia get fetched
-        # below -- the others' stands are missing from the result. Not
-        # fixed by fetching every intersecting layer in this plan (that is
-        # a real feature with its own design questions -- merging,
-        # deduplicating boundary-straddling stands, cache-key changes --
-        # deferred to its own plan); at minimum this makes the gap visible
-        # instead of a silently incomplete result.
-        others = [r for r in intersecting if layer_name_for_region(r) != layer]
-        print(
-            f"  Uwaga: kafel 10x10 km przecina granice {len(intersecting)} RDLP "
-            f"({', '.join(intersecting)}) -- dane z {', '.join(others)} NIE sa pobierane, "
-            f"wynik moze byc niepelny przy tej granicy."
-        )
+    point_count = len(make_grid(bbox))
+    print(
+        f"Siatka pogodowa: {point_count} punktow, pobierane partiami po "
+        f"{_OPEN_METEO_BATCH_SIZE} w jednym zapytaniu (nie jeden punkt na zapytanie).",
+        flush=True,
+    )
 
-    def _cached_bdl_fetcher(layer, bbox_2180):
-        if tile_path.exists():
-            print(f"BDL tile cache hit: {tile_path}")
-            return gpd.read_parquet(tile_path)
-        print(f"BDL tile cache miss, fetching from WFS -> {tile_path}")
-        gdf = fetch_bdl(layer, bbox_2180)
-        save_bdl_tile(gdf, tile_id, cache_dir)
-        return gdf
+    def _weather_call_api(points_, past_days):
+        print(f"Pogoda: {len(points_)} punktow (partiami po {_OPEN_METEO_BATCH_SIZE})", flush=True)
+        return _rate_limited(_default_open_meteo_call, points_, past_days)
 
-    def _weather_call_api(lat_, lon_, past_days):
-        return _rate_limited(_default_open_meteo_call, lat_, lon_, past_days)
-
-    def _climatology_call_api(lat_, lon_, start_year, end_year):
-        return _rate_limited(_default_climatology_call, lat_, lon_, start_year, end_year)
+    def _climatology_call_api(points_, start_year, end_year):
+        print(f"Klimatologia: {len(points_)} punktow (partiami po {_OPEN_METEO_BATCH_SIZE})", flush=True)
+        return _rate_limited(_default_climatology_call, points_, start_year, end_year)
 
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
-        bdl_fetcher=_cached_bdl_fetcher,
+        bdl_fetcher=lambda _layer, _bbox: stands.copy(),
         weather_fetcher=functools.partial(fetch_weather_raw, call_api=_weather_call_api),
         climatology_fetcher=functools.partial(fetch_climatology_raw, call_api=_climatology_call_api),
     )
     print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
 
-    print("Fetching GDOS protected areas...")
-    gdos_gdf = fetch_protected_areas(bbox)
-
-    print("Fetching OSM parking/roads/places (Overpass)...")
-    osm_features = fetch_osm_features(bbox, profile)
+    protected_frames = []
+    osm_frames = {name: [] for name in ("parking", "roads", "places")}
+    for index, tile in enumerate(tiles, 1):
+        print(f"GDOS / OSM: kafel {index}/{len(tiles)}", flush=True)
+        protected_frames.append(fetch_protected_areas(tile))
+        tile_osm = fetch_osm_features(tile, profile)
+        for name in osm_frames:
+            osm_frames[name].append(tile_osm[name])
+    gdos_gdf = merge_frames(protected_frames)
+    osm_features = {name: merge_frames(frames) for name, frames in osm_frames.items()}
 
     print("Detecting forest entrances...")
-    forest_boundary = compute_forest_boundary(scored)
+    # Keep surrounding forest: clipping the forest at the search circle would
+    # create artificial entrances along that arbitrary boundary.
+    forest_boundary = compute_forest_boundary(context_stands)
     raw_entrances = find_entrance_points(forest_boundary, osm_features["roads"])
     entrances = classify_entrances(raw_entrances, osm_features["parking"], profile["entrances"]["confirmed_tolerance_m"])
     confirmed_count = int((entrances["status"] == "confirmed").sum()) if len(entrances) else 0
@@ -170,16 +168,14 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     out_dir = pathlib.Path(out_dir)
     scores_path = write_scores_json(enriched, day=day, out_path=out_dir / f"scores_{day}.json")
     stands_path = export_stand_geometries(enriched, out_dir / "stands_mvp.parquet")
-
-    print("Grouping into search regions...")
-    regions = group_into_regions(enriched, profile)
-    regions_path = write_regions_json(regions, day=day, out_path=out_dir / f"regions_{day}.json")
+    geojson_path = export_stand_geometries_geojson(enriched, out_dir / "stands.geojson")
 
     return {
-        "layer": layer, "tile_id": tile_id, "stand_count": len(scored),
+        "layer": layer, "layers": layers, "tile_count": len(tiles),
+        "radius_km": radius_km, "stand_count": len(scored),
         "mask_passing": int(enriched["mask_full"].sum()),
-        "region_count": len(regions),
-        "scores_path": scores_path, "stands_path": stands_path, "regions_path": regions_path,
+        "scores_path": scores_path, "stands_path": stands_path,
+        "geojson_path": geojson_path,
     }
 
 
@@ -201,10 +197,10 @@ def main(argv=None) -> int:
         print(f"Blad: {exc}")
         return 1
     print(
-        f"Gotowe: {summary['region_count']} rejon(y), "
+        "Gotowe: "
         f"{summary['mask_passing']}/{summary['stand_count']} wydzielen przechodzi maske."
     )
-    print(f"Wyniki: {summary['scores_path']}, {summary['regions_path']}, {summary['stands_path']}")
+    print(f"Wyniki: {summary['scores_path']}, {summary['stands_path']}, {summary['geojson_path']}")
     return 0
 
 

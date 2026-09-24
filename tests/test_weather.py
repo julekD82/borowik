@@ -5,6 +5,7 @@ import pytest
 from pipeline.weather import (
     make_grid,
     fetch_weather_raw,
+    fetch_climatology_raw,
     compute_weather_features,
     climatology_window_values,
     percentile_rank,
@@ -20,27 +21,52 @@ def test_make_grid_covers_bbox_with_points_in_lat_lon():
         assert 10.0 < lon < 25.0
 
 
-def test_fetch_weather_raw_uses_injected_call_api():
+def _fake_daily_payload(offset=0.0):
+    dates = pd.date_range("2026-06-25", periods=3, freq="D")
+    return {
+        "date": dates,
+        "precipitation_mm": [1.0 + offset, 2.0 + offset, 3.0 + offset],
+        "tmean_c": [12.0, 13.0, 14.0],
+        "tmin_c": [8.0, 9.0, 10.0],
+        "tmax_c": [16.0, 17.0, 18.0],
+        "et0_mm": [1.5, 1.6, 1.7],
+        "soil_moisture": [0.3, 0.31, 0.32],
+    }
+
+
+def test_fetch_weather_raw_batches_all_points_into_one_call_api_call():
+    # Regression guard: fetch_weather_raw used to call call_api once PER
+    # point, which at radius-search grid sizes (dozens to 100+ points)
+    # exhausted Open-Meteo's free-tier hourly request quota on a single
+    # prepare_trip run (observed live: a 121-point run failed mid-
+    # climatology with "Hourly API request limit exceeded"). call_api must
+    # now be invoked once with the whole points list and return one result
+    # per point, in the same order.
     calls = []
 
-    def fake_call_api(lat, lon, past_days):
-        calls.append((lat, lon, past_days))
-        dates = pd.date_range("2026-06-25", periods=3, freq="D")
-        return {
-            "date": dates,
-            "precipitation_mm": [1.0, 2.0, 3.0],
-            "tmean_c": [12.0, 13.0, 14.0],
-            "tmin_c": [8.0, 9.0, 10.0],
-            "tmax_c": [16.0, 17.0, 18.0],
-            "et0_mm": [1.5, 1.6, 1.7],
-            "soil_moisture": [0.3, 0.31, 0.32],
-        }
+    def fake_call_api(points, past_days):
+        calls.append((list(points), past_days))
+        return [_fake_daily_payload(offset=i) for i in range(len(points))]
 
     df = fetch_weather_raw([(50.5, 18.6), (50.55, 18.65)], past_days=3, call_api=fake_call_api)
 
-    assert len(calls) == 2
+    assert calls == [([(50.5, 18.6), (50.55, 18.65)], 3)]
     assert len(df) == 6
     assert set(df.columns) >= {"lat", "lon", "date", "precipitation_mm", "tmean_c", "tmin_c", "tmax_c", "et0_mm", "soil_moisture"}
+    # each point's own payload (offset) lands on the matching lat/lon rows
+    first_point_rows = df[(df["lat"] == 50.5) & (df["lon"] == 18.6)]
+    second_point_rows = df[(df["lat"] == 50.55) & (df["lon"] == 18.65)]
+    assert sorted(first_point_rows["precipitation_mm"]) == [1.0, 2.0, 3.0]
+    assert sorted(second_point_rows["precipitation_mm"]) == [2.0, 3.0, 4.0]
+
+
+def test_fetch_weather_raw_handles_a_single_point():
+    df = fetch_weather_raw(
+        [(50.5, 18.6)], past_days=3,
+        call_api=lambda points, past_days: [_fake_daily_payload()],
+    )
+    assert len(df) == 3
+    assert (df["lat"] == 50.5).all()
 
 
 def _synthetic_daily_df():
@@ -69,6 +95,27 @@ def test_compute_weather_features_windows():
     assert row["tmin3"] == pytest.approx(5.0)
     assert row["days_since_p10"] >= 29  # no day ever reached 10mm
     assert row["dry_spell_days"] == 0  # 1mm/day never below 1mm threshold
+
+
+def test_fetch_climatology_raw_batches_all_points_into_one_call_api_call():
+    # Same regression as fetch_weather_raw above -- this is the fetcher
+    # that actually failed live ("Hourly API request limit exceeded" during
+    # "Klimatologia: punkt 14/121"), since climatology's 30-year archive
+    # request is the more expensive of the two per-call.
+    calls = []
+
+    def fake_call_api(points, start_year, end_year):
+        calls.append((list(points), start_year, end_year))
+        dates = pd.date_range("2020-06-25", periods=2, freq="D")
+        return [{"date": dates, "cwb26": [1.0, 2.0], "soil_moisture": [0.3, 0.31]} for _ in points]
+
+    df = fetch_climatology_raw(
+        [(50.5, 18.6), (50.55, 18.65)], start_year=1991, end_year=2020, call_api=fake_call_api,
+    )
+
+    assert calls == [([(50.5, 18.6), (50.55, 18.65)], 1991, 2020)]
+    assert len(df) == 4
+    assert set(df["lat"]) == {50.5, 50.55}
 
 
 def test_percentile_rank_of_median_like_value():
