@@ -1,5 +1,13 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (11): audyt wyników i plan 2.1 (tylko dokumentacja, bez zmian w kodzie)
+
+Audyt realnego eksportu 25 km (50.5318, 18.6055) opisany w `docs/projekt-borowik.md` sekcja 0.1. Nowa kolejność prac: sekcja 13.1 (A1–A4 naprawy, B1–B3 różnicowanie H, C1–C4 walidacja/porządki).
+
+Kluczowe ustalenia: czołówka = wyłącznie SO na BMSW (745 wydzieleń z R ≥ 90), rejon 1 = 4 747 wydzieleń / ~187 km², ~2 300 wydzieleń na fallbacku 0,5 przez brakujące kody wyżynne (`LWYZS`, `LWYZW`, `LMWYZW`, `LMWYZ`…) i gatunki (`DB.C`, `JW`, `SO.C`…), `--date` nie wpływa na pogodę, confidence stałe.
+
+Decyzje użytkownika: używa tylko na komputerze (hosting/telefon/PMTiles wycofane); routing i wejścia zamrożone; krawędzie lasu nie do H, najwyżej informacja na karcie. Następny krok: A1 (profil YAML), potem A2 (rejony).
+
 ## 2026-09-24 — aktualne (10): potwierdzone — dzienny limit archive-api.open-meteo.com wyczerpany
 
 Użytkownik zgłosił, że klimatologia przestała pobierać dane. Sprawdzone bezpośrednim zapytaniem (`curl`), nie zgadywane:

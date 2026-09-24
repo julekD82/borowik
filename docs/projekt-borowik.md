@@ -1,5 +1,11 @@
 # Borowik GIS — projekt systemu typowania miejsc owocnikowania *Boletus edulis*
 
+> **Audyt i zmiana planu (2026-09-24, wersja 2.1) — ta notatka ma pierwszeństwo przed starszymi fragmentami poniżej.** Sekcja 0.1 opisuje wyniki audytu realnego eksportu (25 km wokół 50.53, 18.61) i wynikające z nich zmiany. Najważniejsze decyzje użytkownika:
+> - **Aplikacja jest używana wyłącznie na komputerze:** wybór miejsca, zapisanie współrzędnych, dojazd z własną nawigacją. **Hosting statyczny, telefon, `localStorage` jako tryb offline i PWA zostają usunięte z zakresu** (dawne priorytety 5–6).
+> - **Nowa kolejność prac** jest w sekcji 13: najpierw błędy wykryte w audycie (rejony, brakujące kody BDL, pogoda do daty wyjazdu), potem lepsze różnicowanie H z danych BDL, potem walidacja.
+> - **Routing sieciowy i wejścia do lasu są zamrożone** (działają, bez dalszej rozbudowy). Bariery i rozbudowa popularności wypadają z planu.
+> - **Krawędzie lasu nie wchodzą do H.** Najwyżej jako informacja na karcie wydzielenia („graniczy z: …”), niski priorytet (sekcja 5.3).
+
 > **Decyzja użytkownika (2026-09-24, ponownie potwierdzona): grupowanie w rejony znów aktywne.** Backend liczy i eksportuje `regions_{day}.json`; frontend ma przełącznik „Rejony” / „Wydzielenia” (domyślnie Rejony, gdy są dostępne). Krótki epizod „grupowanie wyłączone" tego samego dnia jest historyczny — nie kieruj się nim. Szczegóły: `docs/CODEX-HANDOFF.md` w katalogu projektu.
 
 > **Aktualizacja implementacji Codex, 2026-09-24:** frontend lokalny jest gotowy, a `--radius-km` rzeczywiście analizuje promień 10–50 km (domyślnie 25), pobierając wiele kafli i wszystkie przecinane RDLP. Starsze opisy ograniczenia do jednego kafla oraz braku frontendu poniżej są historyczne. Szczegóły, testy, decyzje i pozostałe ograniczenia: [CODEX-HANDOFF.md](CODEX-HANDOFF.md). Przynależność wydzielenia do obszaru wyznacza centroid pełnego poligonu w EPSG:2180.
@@ -25,7 +31,36 @@
 5. **Interfejs ma mieć jeden prosty scenariusz** (lokalizacja → dzień → zasięg → ile chodzić / jak ważne unikanie tłumu → wynik), z rozsądnymi wartościami domyślnymi zamiast wielu suwaków wag modelu. Sekcja 10.
 6. **Ocena dostępności i popularności miejsca jest rozbudowana**, bo przy rzadkich wyjazdach liczy się bardziej unikanie tłumu i praktyczny dojazd niż drobne różnice w rankingu siedliskowym. Sekcja 5.5.
 
+**Uzupełnienie 2.1:** analiza i przeglądanie wyników odbywają się **tylko na komputerze** (lokalny frontend `npm run dev`). Wynikiem użytkowym jest zapisane miejsce ze współrzędnymi i linkiem do Google Maps; telefon służy wyłącznie do nawigacji w zewnętrznej aplikacji. Punkt 1 (rejony) pozostaje, ale rejon musi być **zwarty i możliwy do przejścia w jedno wyjście** (sekcja 5.6).
+
 **Co NIE się zmienia:** biologia (sekcja 2), analiza źródeł danych (sekcja 3), jednostka obliczeniowa „wydzielenie” (sekcja 4), struktura modelu maska→H→F→P→R (sekcja 5.1), architektura bez serwera/bazy danych w MVP (sekcja 7), zasada „ranking względny i klasy, nie fałszywa precyzja” (sekcja 5.7). Rzadkie użycie samo w sobie nie jest powodem do usuwania klimatologii, percentyli ani innych już działających, bardziej rozbudowanych obliczeń — one nie wymagają bieżącej obsługi, tylko jednorazowo napisanego kodu, który już istnieje i jest przetestowany (sekcja 6).
+
+### 0.1 Audyt realnego wyniku (2026-09-24) [K]
+
+Przegląd kodu i eksportu `prepare_trip --lat 50.5318 --lon 18.6055 --radius-km 25`: 30 120 wydzieleń, 21 851 przechodzi maskę, 30 kafli BDL (RDLP Katowice i sąsiednie).
+
+**Co działa:** pobieranie, cache, maska prawna fail-loud, scoring zgodny z sekcją 5, testy. Porównanie bieżącej wilgotności gleby z klimatologią jest spójne (mediana bieżąca 0,192 vs klimatologiczna 0,193 m³/m³, percentyle rozłożone wokół 0,5), więc obawa o niezgodność modeli NWP i ERA5-Land się nie potwierdziła.
+
+**Główny wniosek:** model wskazuje sensowny typ lasu, ale **nie różnicuje miejsc wewnątrz tego typu.**
+
+| Obserwacja | Liczby |
+|---|---|
+| Czołówka to jedna reguła: sosna na BMśw | 300 najlepszych wydzieleń: 100% `SO`, 100% `BMSW`; sosna to 78% wszystkich wydzieleń w masce |
+| Płaskowyż wyników | 745 wydzieleń z R ≥ 90, 2 599 z R ≥ 85; kolejność w czołówce wynika głównie z P i komórki pogodowej |
+| F prawie nie różnicuje przestrzeni | F = 0,77–0,99 w całym obszarze 25 km (zgodnie z sekcją 1 pkt 3) |
+| Rejony bezużyteczne | rejon 1 = 4 747 wydzieleń, ~187 km², 48 × 26 km (próg top 25% + bufor 250 m skleja ciągły las) |
+| Brakujące kody siedlisk (fallback 0,5) | `LWYZS` 899, `LWYZW` 822, `LMWYZW` 213, `LMWYZ` 170, `LLWYZ` 7, `OLJWYZ` 5, `BMWYZ` 1 — razem ~2 100 wydzieleń |
+| Brakujące kody gatunków (fallback 0,5) | `DB.C` 110, `JW` 66, `SO.C` 31, `SO.WE` 12, `OL.S` 4, `WB` 2, `CZM.P` 2 |
+| `--date` to tylko etykieta | pogoda zawsze „na dziś”, prognoza do dnia wyjazdu nieużywana |
+| Martwe zmienne | `days_since_p10`, `dry_spell_days`, P14/P21/P30 liczone, nieużywane; G_season = 1,0 (GBIF niepodłączony — oznaczenie [K] w sekcji 3.8 było błędne) |
+| Pewność stała | 21 851 z 21 851 wydzieleń: „SREDNIA” z tymi samymi 3 powodami |
+| Mylące wyjaśnienie | „BK słabo pasuje (S_host=0.66)” — buk ma 0,9, niski wynik to udział 40% z resztą = 0,5 |
+| Małe wydzielenia w czołówce | najmniejsze 0,1 ha, mediana 2,8 ha |
+| Routing sieciowy | 25 z 21 851 wydzieleń; reszta euklidesowo |
+
+**Nieużywane pola BDL już pobierane:** `stand_stru` (DRZEW 34 867, KO 1 001, 2 PIĘT 338, KDO 175), `prot_categ` (m.in. „OCH USZK” — lasy uszkodzone przez przemysł — 19 886 wydzieleń), `sub_area`, `silvicult`, `rotat_age`. Kafel BDL zawiera też poligony nie-drzewostanowe (`ZRĄB` 964, `Ł` 730, `R` 846, `SUKCESJA` 823, `L ENERG` 679, `DROGI L` 468 …), które pozwalają opisać sąsiedztwo wydzielenia.
+
+**Krawędzie lasu (sprawdzone i odłożone):** tylko 8,6% długości granic drzewostanów leży na zewnętrznym obrysie lasów LP (29,7% wydzieleń dotyka go na ≥ 20 m), a część tego to lasy prywatne, nie otwarty teren. Obwód wydzielenia nie jest więc miarą krawędzi. Krawędź trzeba by definiować przez typ sąsiada (zrąb, łąka, droga leśna, młodnik, inny gatunek). Brak ilościowych dowodów na efekt krawędzi dla *B. edulis*, a walidacja na GBIF/iNat jest tu zafałszowana (rekordy skupione przy drogach i skrajach). **Decyzja:** nie do H; opcjonalnie jako informacja na karcie (sekcja 5.3, 13).
 
 ---
 
@@ -145,6 +180,10 @@ Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::218
 
 **Czego w WFS brakuje:** pełnego składu gatunkowego (domieszki), zwarcia, bonitacji, wysokości, typu gleby i historii zabiegów. Te dane są w pełnym opisie taksacyjnym: widać go w popupie mapy BDL, a w wersji wektorowej jest w Leśnej Mapie Numerycznej nadleśnictwa. **Rekomendacja:** dla regionu domowego złożyć wniosek o udostępnienie informacji publicznej / ponowne wykorzystanie (formularz BDL albo nadleśnictwo) o LMN z opisami taksacyjnymi. **Nie scrapować popupów portalu.**
 
+**Do sprawdzenia w pierwszej kolejności (2.1) [?]:** portal BDL oferuje pobieranie paczek danych per nadleśnictwo (SHP + tabele opisu taksacyjnego). Jeśli paczki zawierają pełny skład gatunkowy z udziałami (per piętro), zwarcie lub podszyt, to jest **największy możliwy zysk dla różnicowania H** (np. sosna z domieszką świerka/brzozy vs czysta sosna) i czyni wniosek o LMN zbędnym. Kryterium: pobrać paczkę jednego nadleśnictwa z obszaru testowego (np. Kędzierzyn), wypisać tabele i pola, sprawdzić łączenie z `adr_for` z WFS. Dopiero potem decyzja o integracji (sekcja 13, priorytet B2).
+
+**Pola WFS pobierane, ale nieużywane w modelu:** `stand_stru`, `prot_categ`, `sub_area`, `silvicult`, `rotat_age` oraz poligony nie-drzewostanowe (`area_type` ≠ `D-STAN`: zręby, łąki, drogi leśne, pasy pod liniami). Liczebności w sekcji 0.1.
+
 **Luka:** WFS obejmuje wydzielenia Lasów Państwowych. Lasy prywatne i gminne (ok. 1/5 lasów w PL) mają dane uproszczone albo brak danych. Dostają niższy confidence, a status prawny zbioru jest w nich mniej oczywisty.
 
 ### 3.2 Gleba
@@ -175,6 +214,8 @@ Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::218
 **Decyzja (bez zmian):**
 - **Zaimplementowane [K]:** Open-Meteo (siatka punktów co ~5 km, forecast + archiwum + klimatologia percentyli 1991–2020, ta sama biblioteka dla obu).
 - **Poza obecnym zakresem, do rozważenia dopiero jeśli okaże się realnym problemem:** własne archiwum IMGW (radar PAC + telemetria) — przy burzach konwekcyjnych różnice opadu w obrębie 20 km sięgają dziesiątek mm, model NWP tego nie odda. Wymaga jednak stale działającego pollera, co jest sprzeczne z zasadą „analiza uruchamiana przed wyjazdem” (sekcja 0, 7) — nie wdrażać bez konkretnego dowodu, że różnica ma znaczenie dla wyników.
+
+**Prognoza do dnia wyjazdu (2.1, do zaimplementowania):** Open-Meteo forecast API zwraca do 16 dni prognozy w tym samym zapytaniu (`forecast_days`), bez dodatkowego kosztu limitu poza liczbą dni. Dziś `forecast_days=1` i `--date` nie wpływa na obliczenia. Zmiana: pobierać przeszłość + prognozę do `--date` i liczyć okna (P26w, CWB26, Tmean20, Tmean5, Tmin3) z końcem w dniu wyjazdu. Wilgotność gleby z prognozy też jest dostępna. Dla daty > 16 dni lub w przeszłości: komunikat i liczenie „na dziś”. Oznaczyć w UI, ile dni okna pochodzi z prognozy (niepewność rośnie z horyzontem).
 
 **Zmienne pochodne liczone per komórka pogodowa [K, `pipeline/weather.py`]:** P1, P3, P5, P7, P14, P21, P30; P26w (suma ważona wykładniczo, półtrwanie 10 dni); CWB26 = P26w − ET026w; dni od opadu ≥10 mm; długość bieżącego okresu suchego; Tmean20, Tmean5, Tmin3; percentyle CWB26 i wilgotności gleby względem klimatologii ERA5-Land 1991–2020 dla ±15 dni od bieżącego dnia roku.
 
@@ -222,7 +263,8 @@ Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::218
 ### 3.8 Historyczne występowanie
 
 - **GBIF** [Z]: 1300 rekordów *B. edulis* w PL, z czego 1164 z koordynatami, w tym **1073 z iNaturalist**. Bias drogowy.
-- **Zastosowanie: [K] tylko fenologia** (rozkład dni roku), nie dane treningowe do lokalnego rankingu.
+- **Zastosowanie: tylko fenologia** (rozkład dni roku), nie dane treningowe do lokalnego rankingu. **Korekta 2.1:** wcześniejsze oznaczenie [K] było błędne — GBIF nie jest podłączony, G_season = 1,0 w kodzie.
+- **Nowe zastosowanie 2.1 — kontrola zgrubna rankingu (nie kalibracja):** dla rekordów z dokładnością współrzędnych ≤ 100 m w obszarze analizy sprawdzić rozkład R wydzieleń, w których wypadają, względem rozkładu R wszystkich wydzieleń w masce. Ograniczenia do zapisania przy wyniku: bias drogowy (rekordy przy drogach i skrajach), mała liczba rekordów w promieniu 25 km, różne gatunki grupy *B. edulis* pod jedną nazwą. Wynik to sygnał „ranking nie jest sprzeczny z obserwacjami”, nie miara skuteczności.
 
 ---
 
@@ -282,7 +324,8 @@ REJON            = grupa sąsiadujących wydzieleń z wysokim R (warstwa prezent
 | Drzewostan nasienny, powierzchnia doświadczalna, ostoja | BDL (pełny opis) [?] | Nie podłączone (dane niedostępne przez WFS) |
 | Okresowy zakaz wstępu | BDL, ArcGIS REST (zakazy wstępu) | **[K] Zaimplementowane**, fail-loud na błędzie zapytania (`ZakazyQueryError`), sprawdzane dla top-N wyników przy generowaniu rejonów |
 | `area_type` ≠ drzewostan | BDL | **[K] Zaimplementowane** |
-| Gatunek panujący bez EcM *B. edulis*, udział ≥ 8/10 | BDL | **[K] Zaimplementowane** |
+| Gatunek panujący bez EcM *B. edulis*, udział ≥ 8/10 | BDL | **[K] Zaimplementowane**; lista `zero_affinity_mask_species` do uzupełnienia o `JW`, `OL.S`, `WB` (2.1, sekcja 5.3) |
+| Wydzielenie za małe na cel wyjazdu | BDL `sub_area` | **Nowe 2.1:** nie maska, tylko filtr prezentacji — pojedyncze wydzielenie < 0,5 ha nie jest pokazywane jako samodzielny cel, liczy się w rejonie |
 | Zmiana w S2 od `a_year` (zrąb po aktualizacji BDL) | Sentinel-2 | Poza zakresem (sekcja 3.5) |
 
 **Zastrzeżenie (wymagane rozróżnienie potwierdzone/ostrożny filtr/brak danych, patrz sekcja 15):**
@@ -309,6 +352,13 @@ REJON            = grupa sąsiadujących wydzieleń z wysokim R (warstwa prezent
 | LP | lipa | 0,3 | EcM, słabo udokumentowane |
 | OS, TP | osika, topole | 0,2 | |
 | OL, JS, KL, WZ, AK | olsza, jesion, klon, wiąz, robinia | 0,0 | brak EcM z *B. edulis* |
+| **Uzupełnienie 2.1** (kody obecne w realnych danych, dziś fallback 0,5): | | | |
+| SO.C, SO.WE | sosna czarna, sosna wejmutka | 0,6 [E] | sosny obce; EcM z *Pinus*, słabo udokumentowane dla *B. edulis* |
+| DB.C | dąb czerwony | 0,4 [E] | gatunek obcy, EcM, słabo udokumentowany |
+| JW | jawor | 0,0 | klon — brak EcM; do maski |
+| OL.S | olsza szara | 0,0 | brak EcM; do maski |
+| WB | wierzba | 0,1 [E] | w PL rzadko EcM dla *Boletus* |
+| CZM.P, inne pojedyncze | — | 0,0–0,2 | przy implementacji wypisać wszystkie kody spoza profilu z diagnostyki `unknown_species_count` i przypisać jawnie |
 
 **Zastrzeżenie (brak danych o domieszkach, sekcja 15):** BDL WFS zwraca tylko gatunek panujący, nie pełny skład. „Nieznana domieszka” dostaje powinowactwo 0,5, czyli neutralne — celowo, żeby brak danych o drugim/trzecim gatunku w drzewostanie nie obniżał ani nie podnosił sztucznie H. To jest **łagodzenie**, nie rozwiązanie: drzewostan „SO 60% / OL 40%” i „SO 60% / ŚW 40%” dostają dziś ten sam wynik, mimo realnie różnego potencjału. W panelu szczegółów jawnie pokazywane jako „domieszki: brak danych” (już w projekcie UI wersji 1.0, sekcja 10).
 
@@ -326,6 +376,22 @@ REJON            = grupa sąsiadujących wydzieleń z wysokim R (warstwa prezent
 | OL, OLJ, LŁ | 0,0 (maska) | — |
 | górskie: BWG, BMWYŻ, LMG, LG, LWYŻ… | 0,7–0,9 (do uzupełnienia) | wg sufiksu |
 
+**Uzupełnienie 2.1 — kody wyżynne z realnych danych [E]** (po transliteracji w `pipeline/bdl.py`; dziś ~2 100 wydzieleń dostaje fallback 0,5). Zasada: siedlisko wyżynne dostaje wartość nizinnego odpowiednika o tej samej żyzności i wilgotności. Przy implementacji zweryfikować rozwinięcia skrótów w słowniku BDL (część kodów może być obcięta, np. `LWYZS`):
+
+| Kod w danych | Prawdopodobne siedlisko | Odpowiednik | S_site | `m` |
+|---|---|---|---|---|
+| BMWYZ | bór mieszany wyżynny (świeży) | BMŚW | 1,0 | 1 |
+| LMWYZ | las mieszany wyżynny świeży | LMŚW | 0,85 | 1 |
+| LMWYZW | las mieszany wyżynny wilgotny | LMW | 0,65 | 2 |
+| LWYZS | las wyżynny świeży | LŚW | 0,6 | 1 |
+| LWYZW | las wyżynny wilgotny | LW | 0,4 | 2 |
+| LLWYZ | las łęgowy wyżynny | LŁ | 0,0 | — |
+| OLJWYZ | ols jesionowy wyżynny | OLJ | 0,0 | — |
+
+**Kryterium ukończenia:** po zmianie profilu diagnostyka `unknown_site_count` i `unknown_species_count` z realnego przebiegu 25 km < 1% wydzieleń w masce; test `tests/test_profile_coverage.py` rozszerzony o kody z sekcji 0.1.
+
+**Poprawka wyjaśnień (2.1):** S_host miesza powinowactwo gatunku panującego z neutralnym 0,5 dla reszty. Tekst wyjaśnienia ma rozróżniać „gatunek słabo pasuje” od „gatunek pasuje, ale ma tylko X/10 udziału”.
+
 **S_age** (wiek gatunku panującego, `spec_age`), funkcja odcinkowo-liniowa:
 
 ```
@@ -338,7 +404,15 @@ wiek < 12        → maska (uprawa, proxy — patrz zastrzeżenie 5.2)
 
 Uzasadnienie: zgoda literatury co do niskiej produkcji najmłodszych drzewostanów; sprzeczność co do wieku optymalnego (Finlandia [L3] vs Hiszpania [L2]) oznacza brak podstaw do penalizowania wieku 20–120. Funkcja celowo płaska.
 
-**Poza obecnym zakresem:** S_density (zwarcie), S_micro (TWI), S_disturb (S2 change) — wymagają danych z sekcji 3.6/3.5, których pipeline dziś nie pobiera.
+**Poza obecnym zakresem:** S_micro (TWI), S_disturb (S2 change) — wymagają danych z sekcji 3.6/3.5, których pipeline dziś nie pobiera. S_density (zwarcie) — tylko jeśli paczki BDL (sekcja 3.1) je zawierają.
+
+**Różnicowanie H — nowe w 2.1 (problem: płaskowyż 745 wydzieleń z R ≥ 90, sekcja 0.1).** Kolejność od najpewniejszego:
+
+1. **Pełny skład gatunkowy z paczek BDL** (jeśli dostępny, sekcja 3.1): S_host = Σ udział_i × powinowactwo_i zgodnie z pierwotną definicją, bez „nieznanej domieszki”. Jedyna zmiana w tej liście, która może wejść do H bez nowych wag eksperckich.
+2. **Domieszka z sąsiedztwa (zastępstwo, jeśli 1 niedostępne) [E]:** udział obwodu wydzielenia graniczący z drzewostanami innych gatunków żywicielskich (ŚW, BRZ, DB, BK). Mała waga, wyłącznie jako tie-breaker w czołówce. Wymaga decyzji przed wdrożeniem; bez walidacji — oznaczyć w wyjaśnieniach jako hipotezę.
+3. **Informacja na karcie, bez wpływu na R:** „graniczy z: zrąb / łąka / droga leśna / młodnik brzozowy …” (z poligonów BDL o innym `area_type` i sąsiednich drzewostanów z innym gatunkiem lub wiekiem < 20 lat), budowa drzewostanu (`stand_stru`), kategoria ochronności (`prot_categ`). Użytkownik sam wybiera z płaskowyżu. **Nie liczyć krawędzi z obwodu wydzielenia** — patrz sekcja 0.1.
+
+`prot_categ = OCH USZK` (uszkodzenia przemysłowe; depozycja N obniża owocnikowanie EcM [E]) — tylko informacja na karcie, bez kary w H, dopóki nie ma danych potwierdzających efekt.
 
 ### 5.4 FRUITING F
 
@@ -350,6 +424,11 @@ Uzasadnienie: zgoda literatury co do niskiej produkcji najmłodszych drzewostan�
 4. **K_frost** = 0,2 gdy Tmin3 < −2°C; 0,6 przy −2…0°C; inaczej 1.
 5. **Modulacja lokalna wilgotnością siedliska** (interakcja H×F): w suche lata mnożnik faworyzuje siedliska wilgotniejsze, w mokre — suchsze. **Niezweryfikowana [E]**, dobry pierwszy kandydat do sprawdzenia w terenie (sekcja 15).
 
+**Zmiany w F (2.1):**
+- **Okna liczone do dnia wyjazdu**, nie do dnia uruchomienia (prognoza, sekcja 3.3). To najważniejsza zmiana w F: przy planowaniu wyjazdu na sobotę w środę liczy się, co spadnie do soboty.
+- **G_season z GBIF** — bez zmian w założeniu, ale niższy priorytet: przy użyciu 1–3 razy w sezonie (lipiec–październik) poprawka działa tylko na obrzeżach sezonu. Prostsza alternatywa akceptowalna na start: stałe okno z profilu YAML (np. pełna wartość 1 VII–15 X, liniowe zbocza ±3 tygodnie).
+- **Martwe zmienne pogodowe:** P1, P3, P7, P14, P21, P30 i `dry_spell_days` usunąć z obliczeń (sekcja 14 i tak odrzuca je jako cechy). `days_since_p10` zostaje wyłącznie w banerze regionalnym („ostatni opad ≥ 10 mm: X dni temu”) — to informacja zrozumiała dla grzybiarza, nie składnik F.
+
 **Prezentacja F:** 4 klasy, bez liczby na mapie (`fruiting_classes` w profilu YAML, **[K] zaimplementowane**):
 
 | F | Klasa |
@@ -360,6 +439,8 @@ Uzasadnienie: zgoda literatury co do niskiej produkcji najmłodszych drzewostan�
 | ≥ 0,70 | „Bardzo dobre” |
 
 ### 5.5 Dostępność — dwa osobne pytania
+
+> **Stan 2.1: zamrożone.** Wejścia do lasu i routing sieciowy (top 25) działają i zostają, ale bez dalszej rozbudowy. Przy wyborze miejsca na komputerze i dojeździe własną nawigacją odległość euklidesowa do drogi wystarcza; routing obejmuje 25 z ~22 tys. wydzieleń, a Overpass był główną przyczyną awarii przebiegów. Punkty „do rozbudowy” poniżej (zabudowa przy granicy lasu, szlaki, bariery) **wypadają z planu**. P zostaje w R z α = 0,3 jako model nieskalibrowany. Jeśli Overpass nadal będzie zawodził, dopuszczalne jest wyłączenie routingu flagą CLI zamiast dalszych obejść.
 
 Sama odległość od oznaczonego parkingu jest niewystarczającą miarą ani wygody dojazdu, ani presji innych grzybiarzy. Rozdzielamy dwa pytania, które wersja 1.0 częściowo myliła:
 
@@ -389,7 +470,7 @@ Dojazd do punktu startowego i dojście do rejonu poszukiwań. Pokazywana użytko
 
 **Najprostsze rozwiązanie na pierwszą wersję (rekomendacja):** rozszerzyć dzisiejszy model o (a) punkty przecięcia dróg publicznych i ścieżek OSM z granicą lasu jako potencjalne wejścia (dane już pobierane przez Overpass, tylko nieużywane w ten sposób), (b) flagę „potwierdzone” dla wejść pokrywających się z parkingiem BDL/OSM, (c) routing tylko dla top-N kandydatów. Nie dodawać całorocznego monitoringu ruchu, scrapowania serwisów ani płatnych źródeł.
 
-### 5.6 Grupowanie w rejony poszukiwań (nowość, do zaimplementowania)
+### 5.6 Grupowanie w rejony poszukiwań (zaimplementowane w 2.0; do przebudowy w 2.1 — patrz koniec sekcji)
 
 Głównym wynikiem ma być **3–5 rejonów na wycieczkę**, nie ranking pojedynczych wydzieleń. Propozycja prostego algorytmu na pierwszą wersję:
 
@@ -400,6 +481,17 @@ Głównym wynikiem ma być **3–5 rejonów na wycieczkę**, nie ranking pojedyn
 5. Zwrócić top 3–5 rejonów po odległości od siebie i wyniku — nie tylko top 5 wydzieleń, które mogą być pięcioma sąsiadującymi fragmentami jednego miejsca.
 
 To wymaga kodu (poza zakresem obecnego kroku dokumentacyjnego), ale jest zapisane tu jako konkretny, wykonalny plan — patrz sekcja 13, priorytet 1.
+
+**Stan 2.1: algorytm zaimplementowany (`pipeline/regions.py`), ale na realnych danych zawodzi.** Przy 25 km rejon 1 objął 4 747 wydzieleń na ~187 km² (48 × 26 km). Przyczyna: w ciągłym kompleksie leśnym top 25% wydzieleń to tysiące płatów, a bufor 250 m łączy je łańcuchowo w jeden obiekt. Punkt 4 (odrzucanie fragmentów tego samego kompleksu) nie został zrealizowany.
+
+**Nowa definicja rejonu (2.1):** rejon to obszar do przejścia w jedno wyjście — **średnica ≤ ~1,5 km, łączna powierzchnia dobrych wydzieleń ≥ ~5 ha**. Proponowany algorytm (do potwierdzenia w planie implementacji):
+
+1. Kandydaci: wydzielenia w masce z R w **top ~5%** obszaru (nie 25%).
+2. Siatka pomocnicza 1 × 1 km w EPSG:2180 (wyrównana jak kafle, sekcja 8.1), przesuwana o 500 m, żeby dobre skupisko nie było przecięte granicą komórki. Wynik okna = suma (powierzchnia × R) kandydatów, których centroid jest w oknie, podzielona przez powierzchnię okna — premiuje okna **gęsto** wypełnione dobrymi wydzieleniami, nie duże kompleksy.
+3. Zachłanny wybór: najlepsze okno → rejon; okna w odległości < 3 km od już wybranych odrzucone; do 5 rejonów.
+4. Rejon = kandydaci w wybranym oknie. Karta pokazuje punkt startowy (najbliższy drodze punkt rejonu, z euklidesowego `d_park` lub wejścia sieciowego, jeśli policzone).
+
+**Kryterium ukończenia:** na realnym przebiegu 25 km (ten sam punkt co audyt) każdy z 3–5 rejonów ma średnicę ≤ 2 km i zawiera ≥ 5 ha kandydatów; rejony są od siebie oddalone o ≥ 3 km; test jednostkowy na syntetycznym ciągłym lesie potwierdza, że nie powstaje jeden rejon obejmujący cały las.
 
 ### 5.7 Liczby w UI a fałszywa precyzja
 
@@ -415,6 +507,8 @@ W modelu multiplikatywnym `log R` jest sumą wkładów. Wkład każdego czynnika
 ---
 
 ## 6. Stan implementacji (kroki 1–11) — ustalony na podstawie repozytorium
+
+> **Historyczne (stan sprzed frontendu i promienia).** Aktualny stan: frontend lokalny istnieje, `prepare_trip` działa dla promienia 10–50 km, rejony i routing top-N są zaimplementowane, 247 testów Python. Wyniki audytu: sekcja 0.1; bieżące notatki: `docs/CODEX-HANDOFF.md`.
 
 Poniższa tabela to wynik przeglądu kodu (`pipeline/*.py`, `notebooks/*.py`, `profiles/boletus_edulis.yaml`) i uruchomienia pełnego zestawu testów (`144 passed`) w tej sesji — nie deklaracja z wcześniejszych commitów.
 
@@ -459,8 +553,10 @@ Statyczny frontend sam nie uruchomi lokalnego Pythona — to wymaga jawnej decyz
 
 1. **Jedno polecenie na komputerze przed wyjazdem:** `uv run python -m pipeline.prepare_trip --lat 50.5 --lon 18.6 --date 2026-10-05 --radius-km 25 --max-walk-km 2 --avoid-crowds medium` (nazwa i parametry orientacyjne — do ustalenia przy implementacji, ale zasada: jedno wywołanie, wartości domyślne dla wszystkiego poza lokalizacją i dniem). Ten skrypt to w praktyce to, co dziś robi `notebooks/02_mvp.py`, tylko sparametryzowane zamiast zahardkodowane, plus krok grupowania w rejony (sekcja 5.6).
 2. **Wynik: statyczne pliki** — zaktualizowany `stands.pmtiles` (przebudowywany tylko gdy zmienił się cache BDL dla danego obszaru, nie za każdym razem) + `regions_{date}.json` (rejony, każdy z listą pól z sekcji 10) + `scores_{date}.json` (szczegóły wydzieleń, widok dodatkowy).
-3. **Wyświetlenie na telefonie — bez własnego backendu:** ponieważ strona jest w pełni statyczna, najprostszym sposobem pokazania jej na telefonie jest wdrożenie tych samych plików na już wybrany darmowy hosting statyczny (Cloudflare Pages / GitHub Pages, patrz sekcja 18 — koszt 0). Krok 1 kończy się więc (opcjonalnym, ale zalecanym) automatycznym `git push` / `wrangler pages deploy` do tego samego miejsca co poprzednio, a nie ręcznym kopiowaniem plików. Otwierasz ten sam adres URL na telefonie co zawsze. Nie jest to backend „dla przycisku Analizuj” — przycisku nie ma, jest jedno polecenie terminalowe uruchamiane ręcznie, a hosting służy wyłącznie do pokazania już policzonego wyniku.
-4. **Zapis wybranego rejonu do użycia bez zasięgu:** najprostsze rozwiązanie na pierwszą wersję to (a) link „otwórz w mapach” generowany dla punktu startowego (`geo:` URI / link do Google Maps lub OsmAnd z współrzędnymi — eksport do istniejącej aplikacji mapowej, zero dodatkowego kodu offline), (b) zapisanie wybranego rejonu (nazwa, opis, współrzędne, uzasadnienie) w `localStorage` przeglądarki na telefonie, żeby tekst i współrzędne były dostępne offline po pierwszym otwarciu strony, nawet bez zasięgu — to nie wymaga backendu, bo aplikacja jest prywatna i jednoosobowa. Pełny tryb offline z buforowanymi kafelkami mapy to osobna, droższa funkcja (Workbox/PWA) — **poza obecnym zakresem**, nie zakładać jej budowy, dopóki (a)+(b) okażą się niewystarczające w praktyce.
+> **Zmiana 2.1: punkty 3 i 4 poniżej są nieaktualne.** Wynik ogląda się tylko lokalnie na komputerze (`npm run sync-data`, `npm run dev`). Bez hostingu, bez deployu, bez telefonu. Zapis miejsca = lista „Zapisane” w lokalnym frontendzie (`localStorage` przeglądarki na komputerze) + skopiowane współrzędne / link Google Maps, który użytkownik przenosi do telefonu sam. `stands.pmtiles` też nie jest potrzebne, dopóki GeoJSON (~36 MB przy 25 km) ładuje się akceptowalnie; wrócić do PMTiles tylko przy promieniu 50 km, jeśli frontend realnie zwolni.
+
+3. **(nieaktualne w 2.1) Wyświetlenie na telefonie — bez własnego backendu:** ponieważ strona jest w pełni statyczna, najprostszym sposobem pokazania jej na telefonie jest wdrożenie tych samych plików na już wybrany darmowy hosting statyczny (Cloudflare Pages / GitHub Pages, patrz sekcja 18 — koszt 0). Krok 1 kończy się więc (opcjonalnym, ale zalecanym) automatycznym `git push` / `wrangler pages deploy` do tego samego miejsca co poprzednio, a nie ręcznym kopiowaniem plików. Otwierasz ten sam adres URL na telefonie co zawsze. Nie jest to backend „dla przycisku Analizuj” — przycisku nie ma, jest jedno polecenie terminalowe uruchamiane ręcznie, a hosting służy wyłącznie do pokazania już policzonego wyniku.
+4. **(nieaktualne w 2.1) Zapis wybranego rejonu do użycia bez zasięgu:** najprostsze rozwiązanie na pierwszą wersję to (a) link „otwórz w mapach” generowany dla punktu startowego (`geo:` URI / link do Google Maps lub OsmAnd z współrzędnymi — eksport do istniejącej aplikacji mapowej, zero dodatkowego kodu offline), (b) zapisanie wybranego rejonu (nazwa, opis, współrzędne, uzasadnienie) w `localStorage` przeglądarki na telefonie, żeby tekst i współrzędne były dostępne offline po pierwszym otwarciu strony, nawet bez zasięgu — to nie wymaga backendu, bo aplikacja jest prywatna i jednoosobowa. Pełny tryb offline z buforowanymi kafelkami mapy to osobna, droższa funkcja (Workbox/PWA) — **poza obecnym zakresem**, nie zakładać jej budowy, dopóki (a)+(b) okażą się niewystarczające w praktyce.
 
 **Dlaczego nie backend on-demand:** jedyny scenariusz wymagający serwera to przycisk „Analizuj” klikany z telefonu w terenie — a to nie jest rzeczywisty scenariusz użycia (sekcja 0: analiza robiona przed wyjazdem, na komputerze, ze stabilnym łączem). Dodanie FastAPI tylko po to, żeby uniknąć jednego polecenia w terminalu, byłoby budową infrastruktury pod nieistniejącą potrzebę.
 
@@ -482,14 +578,14 @@ PC, uruchamiane ręcznie przed wyjazdem (0-3x / rok, nie harmonogram)
 │              stands.pmtiles (rzadko)          regions_{date}.json,   │
 │                                                scores_{date}.json      │
 └───────────────────────────┬───────────────────────────────────────────┘
-                             ▼ (deploy tych samych plików, bez zmiany kodu)
-                 hosting statyczny (Cloudflare Pages / GitHub Pages), koszt 0
+                             ▼ npm run sync-data
+                 lokalny frontend (npm run dev) na tym samym komputerze
                              ▼
-                 telefon: ta sama strona, otwarta w przeglądarce
-                 (rejon zapisany w localStorage = dostępny offline)
+                 wybór miejsca → współrzędne / link Google Maps
+                 → nawigacja w telefonie (zewnętrzna aplikacja)
 
-Poza obecnym zakresem: PostgreSQL + PostGIS, FastAPI, PWA offline z kafelkami,
-harmonogram — patrz sekcja 16, 17.
+Poza zakresem (2.1): hosting, deploy, telefon jako ekran wyników,
+PostgreSQL + PostGIS, FastAPI, PWA offline, harmonogram, PMTiles (patrz 7.2).
 ```
 
 ---
@@ -586,6 +682,8 @@ Zachowuje panel szczegółów z wersji 1.0 (numer wydzielenia, S_host/S_site/S_a
 
 **Finalny confidence** = min(klasa z data quality, klasa modelu), NISKA/ŚREDNIA/WYSOKA z listą powodów. **[K] Zaimplementowane** w `pipeline/confidence.py`.
 
+**Stan 2.1:** w realnym przebiegu wszystkie 21 851 wydzieleń mają „ŚREDNIA” z tymi samymi trzema powodami, więc pole per wydzielenie nie niesie informacji. Zmiana: jeden globalny komunikat niepewności w banerze (model nieskalibrowany, pogoda z modelu, tylko gatunek panujący) zamiast powtarzania na każdej karcie. Per wydzielenie pokazywać tylko **odstępstwa**: nierozpoznany kod siedliska/gatunku, brak klimatologii, nieudany kafel GDOŚ/OSM, brak sprawdzenia zakazu (poza top-N). Obliczenie w `confidence.py` może zostać, zmienia się prezentacja.
+
 ---
 
 ## 11. Ograniczenia skuteczności rekomendacji
@@ -615,6 +713,8 @@ To, co system może i czego nie może obiecać — do pokazania użytkownikowi w
 
 **Czego pierwsza użyteczna wersja NIE robi:** NMT, Sentinel, radar, SWI, ML, konta użytkowników, natywna aplikacja mobilna, pełny routing sieciowy dla wszystkich wydzieleń (tylko dla top-N kandydatów), pełny tryb offline z kafelkami mapy.
 
+**Zmiana 2.1:** lista poniżej jest historyczna — punkty 1–3 zrobione, 4 zrobiony lokalnie (bez hostingu), 5 obniżony priorytetem, 6 ograniczony do komputera. Bieżący zakres i kolejność: sekcja 13.
+
 **Zakres prac do „pierwszej użytecznej wersji” (uzupełnienie ponad to, co już działa — szczegóły i kolejność w sekcji 13):**
 1. Grupowanie wydzieleń w rejony (sekcja 5.6).
 2. Rozbudowa oceny dostępności/popularności o potencjalne wejścia, zabudowę przy granicy lasu, routing dla top kandydatów (sekcja 5.5.2).
@@ -626,6 +726,30 @@ To, co system może i czego nie może obiecać — do pokazania użytkownikowi w
 ---
 
 ## 13. Dalsze kroki — priorytety i kryteria ukończenia
+
+### 13.1 Plan 2.1 (obowiązujący, po audycie z sekcji 0.1)
+
+Grupa A to naprawy wyników, które dziś są błędne. Grupa B poprawia różnicowanie miejsc. Grupa C to walidacja i porządki. Wszystkie kryteria sprawdzane na realnym przebiegu `--lat 50.5318 --lon 18.6055 --radius-km 25` (punkt audytu), obok testów jednostkowych bez sieci.
+
+| # | Krok | Dlaczego | Kryterium ukończenia |
+|---|---|---|---|
+| **A1** | Uzupełnić kody siedlisk wyżynnych i gatunków w profilu; `JW`, `OL.S`, `WB` do maski (sekcja 5.3) | ~2 300 wydzieleń liczonych na fallbacku 0,5 | `unknown_site_count` i `unknown_species_count` < 1% wydzieleń w masce; test pokrycia profilu obejmuje kody z sekcji 0.1 |
+| **A2** | Przebudowa rejonów: zwarte okna ~1 km, top ~5%, odstęp ≥ 3 km (sekcja 5.6) | Rejon 1 ma dziś 187 km² — nie da się go przejść | Każdy rejon: średnica ≤ 2 km, ≥ 5 ha kandydatów, odstęp między rejonami ≥ 3 km; test na syntetycznym ciągłym lesie |
+| **A3** | Pogoda liczona do dnia wyjazdu (`--date` + prognoza Open-Meteo do 16 dni, sekcja 3.3, 5.4) | Dziś `--date` to tylko etykieta; przy planowaniu na sobotę liczy się sobota | Dla `--date` = dziś+3 okna kończą się w dniu wyjazdu; test bez sieci na sztucznej prognozie; komunikat dla daty > 16 dni; baner pokazuje, ile dni okna to prognoza |
+| **A4** | Filtr wydzieleń < 0,5 ha jako samodzielnych celów; poprawka tekstu wyjaśnień S_host (sekcja 5.2, 5.3) | Pojedyncze 0,1 ha w czołówce; mylące „BK słabo pasuje” | Lista „Wydzielenia” nie pokazuje wydzieleń < 0,5 ha; wyjaśnienie rozróżnia słaby gatunek od niskiego udziału |
+| **B1** | Sprawdzić paczki danych BDL do pobrania (sekcja 3.1) — tylko rozpoznanie, bez integracji | Jedyne źródło, które może rozbić płaskowyż H bez zgadywanych wag | Notatka w `docs/`: jakie tabele i pola są w paczce jednego nadleśnictwa, czy łączą się z `adr_for`, czy jest skład gatunkowy z udziałami; decyzja „integrujemy / nie” |
+| **B2** | Jeśli B1 = tak: pełny skład gatunkowy do S_host | Rozróżnia „sosna czysta” od „sosna ze świerkiem/brzozą” | S_host liczony z pełnego składu dla wydzieleń z paczki; liczba wydzieleń z R ≥ 90 w przebiegu audytowym wyraźnie mniejsza niż 745 |
+| **B3** | Karta wydzielenia: „graniczy z …” (zrąb, łąka, droga leśna, młodnik, inny gatunek), `stand_stru`, `prot_categ` — bez wpływu na R (sekcja 5.3) | Pomaga wybrać ręcznie z płaskowyżu, bez niezwalidowanych wag | Karta pokazuje sąsiedztwo z poligonów BDL; R niezmienione (test regresyjny) |
+| **C1** | Kontrola zgrubna rankingu na rekordach GBIF/iNat (sekcja 3.8) | Jedyny dostępny sygnał, czy ranking nie jest sprzeczny z obserwacjami | Skrypt/raport: percentyl R wydzieleń z rekordami vs rozkład wszystkich; wynik zapisany z zastrzeżeniem biasu drogowego |
+| **C2** | Porządki: usunąć martwe zmienne pogodowe; confidence jako baner + odstępstwa (sekcja 5.4, 10) | Mniej kodu, mniej fałszywej informacji w UI | Brak nieużywanych kolumn w `compute_weather_features` (poza `days_since_p10` do banera); karty nie powtarzają stałej „ŚREDNIA” |
+| **C3** | G_season: stałe okno sezonu z YAML (GBIF opcjonalnie później) | Ma znaczenie tylko na obrzeżach sezonu | F dla 15 VIII > F dla 15 XII przy tej samej pogodzie; test regresyjny |
+| C4 (opcjonalnie) | Domieszka z sąsiedztwa jako mały tie-breaker w H (sekcja 5.3 pkt 2) — tylko jeśli B1 = nie | Hipoteza [E], bez walidacji | Decyzja użytkownika przed wdrożeniem |
+
+**Wycofane z planu w 2.1:** hosting statyczny i telefon (dawne 5), zapis offline na telefonie (dawne 6), bariery w dostępności (dawne 10), dalsza rozbudowa popularności (zabudowa, szlaki), PMTiles, krawędzie lasu jako czynnik H.
+
+**Bez zmian (dawne 8, 9):** czytelne komunikaty awarii źródeł i daty aktualności warstw — drobne UX, do zrobienia przy okazji.
+
+### 13.2 Historia priorytetów wersji 2.0 (dla kontekstu)
 
 | Priorytet | Krok | Dlaczego teraz | Kryterium ukończenia (mierzalne) |
 |---|---|---|---|
@@ -651,7 +775,9 @@ To, co system może i czego nie może obiecać — do pokazania użytkownikowi w
 - **Codzienny harmonogram** (Task Scheduler / GitHub Actions cron) — analiza uruchamiana ręcznie przed wyjazdem (sekcja 0, 7).
 - **Obowiązkowy dziennik obserwacji, protokół eksploracji terenowej, trening modeli ML** — przeniesione do sekcji 16 jako w pełni opcjonalne.
 - **PostGIS, FastAPI, konta użytkowników, crowdsourcing, aplikacja natywna** — niepotrzebne bez wielu użytkowników i regularnych obserwacji terenowych.
-- **Pełny routing sieciowy dla wszystkich wydzieleń w kaflu** — tylko dla top-N kandydatów (sekcja 5.5.2), reszta zostaje na przybliżeniu euklidesowym.
+- **Pełny routing sieciowy dla wszystkich wydzieleń w kaflu** — tylko dla top-N kandydatów (sekcja 5.5.2), reszta zostaje na przybliżeniu euklidesowym. W 2.1 routing zamrożony.
+- **(2.1) Hosting, deploy, telefon jako ekran wyników, PMTiles** — użycie tylko na komputerze (sekcja 0, 7.2).
+- **(2.1) Krawędź lasu liczona z obwodu wydzielenia** — granica wydzielenia to zwykle granica księgowa; tylko 8,6% granic leży na obrysie lasów LP (sekcja 0.1).
 - **Pełny tryb offline z buforowanymi kafelkami mapy (PWA/Workbox)** — na start wystarcza link do istniejącej aplikacji mapowej + zapis tekstowy w `localStorage` (sekcja 7.2).
 - **Sentinel-1 i własne przetwarzanie wilgotności z SAR, CLMS SWI, NDVI/NDMI jako predyktor owocnikowania, LST, LAI, VPD, SoilGrids pH, GPM IMERG, H SAF** — patrz sekcja 17.
 - **NMT i pochodne terenowe** — poza zakresem, chyba że obszar poszukiwań jest górski (patrz sekcja 3.6).
