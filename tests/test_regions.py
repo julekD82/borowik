@@ -3,7 +3,12 @@ from shapely.geometry import box
 
 import pytest
 
-from pipeline.regions import select_candidates, _assign_clusters, _summarize_cluster
+from pipeline.habitat import load_profile
+from pipeline.regions import (
+    select_candidates, _assign_clusters, _summarize_cluster, group_into_regions,
+)
+
+PROFILE = load_profile("profiles/boletus_edulis.yaml")
 
 
 def _stand(stand_id, r_final, mask_full=True, x=380000):
@@ -103,3 +108,51 @@ def test_summarize_cluster_stand_ids_and_count():
     summary = _summarize_cluster(members, top_n=5)
     assert summary["stand_count"] == 2
     assert sorted(summary["stand_ids"]) == ["A", "B"]
+
+
+def test_group_into_regions_empty_when_nothing_passes_mask():
+    stands = gpd.GeoDataFrame(
+        [{"stand_id": "A", "R_final": 99.0, "mask_full": False,
+          "geometry": box(380000, 486000, 380100, 486100)}],
+        crs="EPSG:2180",
+    )
+    result = group_into_regions(stands, PROFILE)
+    assert len(result) == 0
+    assert list(result.columns) == ["region_id", "rank_score", "stand_count", "stand_ids", "geometry"]
+
+
+def test_group_into_regions_caps_at_max_regions_and_sorts_by_score():
+    # 30 single-stand clusters (each 5 km apart, far beyond buffer_m) with
+    # R_final 1..30. select_candidates' default top_pct=0.25 keeps only the
+    # top 8 of these (verified: threshold 22.75 -> R 23..30 survive), so
+    # max_regions=5 (profile default) still has 3 to drop -- this actually
+    # exercises the cap, unlike a smaller spread where top_pct alone would
+    # already leave <=5 candidates.
+    rows = [_stand(f"S{i}", r_final=float(i), x=380000 + i * 5000) for i in range(1, 31)]
+    stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    result = group_into_regions(stands, PROFILE)
+    assert len(result) == PROFILE["regions"]["max_regions"]
+    assert result["rank_score"].tolist() == sorted(result["rank_score"].tolist(), reverse=True)
+    assert result["rank_score"].max() == 30.0
+
+
+def test_group_into_regions_region_ids_are_sequential():
+    # 10 single-stand clusters, R_final 1..10. top_pct=0.25's threshold 7.75
+    # leaves exactly 3 candidates (R 8, 9, 10), each far enough apart (5 km)
+    # to stay separate clusters -- under max_regions=5 so nothing is capped,
+    # isolating the id-sequencing behaviour from the capping behaviour
+    # already covered above.
+    rows = [_stand(f"S{i}", r_final=float(i), x=380000 + i * 5000) for i in range(1, 11)]
+    stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    result = group_into_regions(stands, PROFILE)
+    assert result["region_id"].tolist() == ["region_1", "region_2", "region_3"]
+
+
+def test_group_into_regions_does_not_let_a_sprawling_mediocre_cluster_beat_a_tight_excellent_one():
+    # End-to-end version of the Task 3 unit test, through the public API.
+    mediocre_rows = [_stand(f"M{i}", r_final=20.0, x=380000 + i * 300) for i in range(10)]
+    excellent_rows = [_stand("E1", r_final=90.0, x=390000), _stand("E2", r_final=88.0, x=390300)]
+    stands = gpd.GeoDataFrame(mediocre_rows + excellent_rows, crs="EPSG:2180")
+    result = group_into_regions(stands, PROFILE)
+    assert set(result.iloc[0]["stand_ids"]) == {"E1", "E2"}
+    assert result.iloc[0]["rank_score"] == 89.0

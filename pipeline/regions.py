@@ -50,3 +50,34 @@ def _summarize_cluster(members: gpd.GeoDataFrame, top_n: int) -> dict:
         "stand_ids": members["stand_id"].tolist(),
         "geometry": unary_union(list(members.geometry)),
     }
+
+
+def group_into_regions(stands: gpd.GeoDataFrame, profile: dict) -> gpd.GeoDataFrame:
+    """Top-level entry point, spec §5.6: turn a scored `stands` GeoDataFrame
+    (pipeline.mvp.enrich_with_mvp_layers output -- must carry `mask_full`,
+    `R_final`, `stand_id`, `geometry`) into at most `max_regions` search
+    regions, each scored by the median of its best stands rather than a
+    sum, so this is the main output the application shows instead of a flat
+    table of wydzielenia (spec §0)."""
+    cfg = profile["regions"]
+    empty = gpd.GeoDataFrame(
+        {"region_id": [], "rank_score": [], "stand_count": [], "stand_ids": []},
+        geometry=[], crs=stands.crs,
+    )
+    candidates = select_candidates(stands, cfg["top_pct"])
+    if len(candidates) == 0:
+        return empty
+
+    clusters = _assign_clusters(candidates, cfg["buffer_m"])
+    summaries = [_summarize_cluster(cluster, cfg["top_n_per_region"]) for cluster in clusters]
+    if not summaries:
+        return empty
+
+    summaries.sort(key=lambda s: s["rank_score"], reverse=True)
+    top_summaries = summaries[: cfg["max_regions"]]
+    for i, summary in enumerate(top_summaries, start=1):
+        summary["region_id"] = f"region_{i}"
+
+    return gpd.GeoDataFrame(
+        top_summaries, geometry="geometry", crs=stands.crs
+    )[["region_id", "rank_score", "stand_count", "stand_ids", "geometry"]]
