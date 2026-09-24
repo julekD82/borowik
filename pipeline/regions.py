@@ -13,3 +13,24 @@ def select_candidates(stands: gpd.GeoDataFrame, top_pct: float) -> gpd.GeoDataFr
         return passing
     threshold = passing["R_final"].quantile(1.0 - top_pct)
     return passing[passing["R_final"] >= threshold]
+
+
+def _assign_clusters(candidates: gpd.GeoDataFrame, buffer_m: float) -> list[gpd.GeoDataFrame]:
+    """Split `candidates` into disjoint spatial clusters: stands within
+    `buffer_m` of each other end up in the same cluster (spec §5.6 step 2).
+    A stand's own (unbuffered) geometry always lies inside its own buffered
+    copy (buffering a polygon by a non-negative distance always produces a
+    geometry that contains the original), so it always intersects exactly
+    the one merged component it contributed to -- this holds regardless of
+    polygon concavity, unlike testing centroid containment."""
+    if len(candidates) == 0:
+        return []
+    buffered = candidates.geometry.buffer(buffer_m)
+    merged = unary_union(list(buffered))
+    components = [merged] if merged.geom_type == "Polygon" else list(merged.geoms)
+    clusters = []
+    for component in components:
+        members = candidates[candidates.geometry.intersects(component)]
+        if len(members):
+            clusters.append(members)
+    return clusters

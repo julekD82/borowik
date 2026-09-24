@@ -1,7 +1,7 @@
 import geopandas as gpd
 from shapely.geometry import box
 
-from pipeline.regions import select_candidates
+from pipeline.regions import select_candidates, _assign_clusters
 
 
 def _stand(stand_id, r_final, mask_full=True, x=380000):
@@ -34,3 +34,31 @@ def test_select_candidates_returns_empty_frame_when_nothing_passes_mask():
     stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
     result = select_candidates(stands, top_pct=0.25)
     assert len(result) == 0
+
+
+def test_assign_clusters_merges_stands_separated_by_a_gap_within_buffer():
+    rows = [
+        _stand("A", r_final=50.0, x=380000),  # box 380000-380100
+        _stand("B", r_final=60.0, x=380300),  # box 380300-380400, 200 m gap from A
+    ]
+    candidates = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    clusters = _assign_clusters(candidates, buffer_m=250.0)
+    assert len(clusters) == 1
+    assert sorted(clusters[0]["stand_id"].tolist()) == ["A", "B"]
+
+
+def test_assign_clusters_keeps_gap_larger_than_buffer_separate():
+    rows = [
+        _stand("A", r_final=50.0, x=380000),  # box 380000-380100
+        _stand("B", r_final=60.0, x=381000),  # box 381000-381100, 900 m gap from A
+    ]
+    candidates = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    clusters = _assign_clusters(candidates, buffer_m=250.0)
+    assert len(clusters) == 2
+    ids = sorted(c["stand_id"].iloc[0] for c in clusters)
+    assert ids == ["A", "B"]
+
+
+def test_assign_clusters_returns_empty_list_for_empty_input():
+    empty = gpd.GeoDataFrame({"stand_id": [], "R_final": []}, geometry=[], crs="EPSG:2180")
+    assert _assign_clusters(empty, buffer_m=250.0) == []
