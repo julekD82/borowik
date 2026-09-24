@@ -1,5 +1,24 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (9): rozdzielczość siatki pogody/klimatologii skalowana z promieniem
+
+Pytanie użytkownika: przy `--radius-km 25` siatka pogody/klimatologii ma tę samą, stałą rozdzielczość co przy 15km — czy mniejszy promień nie mógłby "wykorzystać" tego samego budżetu punktów na mniejszym obszarze, czyli dostać dokładniejszą siatkę zamiast po prostu mniej punktów?
+
+**Odpowiedź: tak, to miało sens.** `WEATHER_GRID_SPACING_M`/`CLIMATOLOGY_GRID_SPACING_M` (`pipeline/orchestrate.py`) są teraz zdefiniowane przy `REFERENCE_RADIUS_KM = 25.0` (domyślny promień CLI), a `pipeline.prepare_trip._radius_scaled_spacing` skaluje oba liniowo z rzeczywistym promieniem przed przekazaniem do `run_poc`.
+
+**Zweryfikowane na prawdziwym `tile_bbox_2180`:**
+```
+radius=10km: pogoda 2.0km -> 144 pkt, klimatologia 8.0km -> 25 pkt
+radius=15km: pogoda 3.0km -> 144 pkt, klimatologia 12.0km -> 16 pkt
+radius=25km: pogoda 5.0km -> 144 pkt, klimatologia 20.0km -> 20 pkt
+radius=50km: pogoda 10.0km -> 144 pkt, klimatologia 40.0km -> 20 pkt
+```
+Liczba punktów (czyli koszt API) zostaje w przybliżeniu stała w całym zakresie 10-50km, zamiast rosnąć z powierzchnią obszaru (dawniej: klimatologia rosłaby z 20 punktów przy 25km do ~80 przy 50km — 4x powierzchnia).
+
+**Świadomy kompromis:** cache per-punkt (`_fetch_with_point_cache`) teraz pomaga między powtórzonymi przebiegami dla TEGO SAMEGO promienia/lokalizacji, ale nie między różnymi promieniami — inny odstęp siatki oznacza inne wyrównane punkty. Przebiegi przy stałym promieniu (typowy przypadek: iterowanie nad jedną lokalizacją/dniem) nie są tym dotknięte.
+
+Printy postępu pokazują teraz też realny odstęp siatki: `"Siatka pogodowa: N punktow (odstep X.X km), ..."`. 247 testów Python przechodzi.
+
 ## 2026-09-24 — aktualne (8): OSM przestaje odpytywac Overpass po pierwszym błędzie kafla
 
 Rozszerzenie poprzedniej zmiany (sekcja niżej) na wyraźną prośbę użytkownika: skoro jeden kafel OSM (po wyczerpaniu własnych prób w `_osm_call_api`) się nie uda, to Overpass albo sieć są w tym momencie niedostępne dla całego przebiegu — dalsze próby per kafel tylko dłużej biją w ten sam, już przeciążony publiczny serwer, bez realnej szansy powodzenia.
