@@ -121,3 +121,9 @@ confidence:
 explanation:
   max_positive: 2   # spec §9: "generujemy zdania z szablonów (2 plusy i 1-2 minusy)"
   max_negative: 2
+
+regions:
+  top_pct: 0.25             # candidate stands = top 25% of R_final among mask_full-passing stands, spec §5.6 step 1 / §5.7
+  buffer_m: 250.0            # merge candidate stands separated by up to this many metres into one region, spec §5.6 step 2 -- [E], plan decision
+  top_n_per_region: 5        # region score = median of the top N candidate R_final values in it, spec §5.6 step 3 -- [E], plan decision
+  max_regions: 5             # spec §0/§12 "3-5 rejonów na wycieczkę" -- [E], plan decision
