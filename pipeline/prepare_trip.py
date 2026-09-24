@@ -9,6 +9,7 @@ import geopandas as gpd
 from openmeteo_requests.Client import OpenMeteoRequestsError
 
 from pipeline.bdl import fetch_bdl, save_bdl_tile
+from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import write_scores_json, export_stand_geometries, write_regions_json
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
@@ -151,10 +152,19 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     print("Fetching OSM parking/roads/places (Overpass)...")
     osm_features = fetch_osm_features(bbox, profile)
 
+    print("Detecting forest entrances...")
+    forest_boundary = compute_forest_boundary(scored)
+    raw_entrances = find_entrance_points(forest_boundary, osm_features["roads"])
+    entrances = classify_entrances(raw_entrances, osm_features["parking"], profile["entrances"]["confirmed_tolerance_m"])
+    confirmed_count = int((entrances["status"] == "confirmed").sum()) if len(entrances) else 0
+    print(f"  {len(entrances)} candidate entrance(s), {confirmed_count} confirmed")
+
     print("Enriching with legal mask + presja + confidence + explanations...")
     enriched = enrich_with_mvp_layers(
         scored, profile, gdos_gdf, osm_features,
         zakaz_checker=check_periodic_ban, top_n_for_ban_check=50,
+        roads_routing_gdf=osm_features["roads"], entrances_gdf=entrances,
+        top_n_for_routing=profile["entrances"]["top_n_for_routing"],
     )
 
     out_dir = pathlib.Path(out_dir)
