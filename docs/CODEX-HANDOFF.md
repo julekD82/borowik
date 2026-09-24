@@ -1,5 +1,20 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (4): cache per-punkt dla pogody i klimatologii (nie tylko BDL)
+
+Użytkownik zauważył: BDL ma widoczny cache per-kafel (`(cache)` w logach), a pogoda/klimatologia — mimo dwóch napraw wyżej — nie miały żadnego widocznego ani realnie reużywalnego cache między przebiegami.
+
+**Dlaczego stary mechanizm nie działał:** `fetch_weather_raw`/`fetch_climatology_raw` miały tylko `requests_cache` (cache na poziomie pojedynczego zapytania HTTP). Dwa problemy: (1) `make_grid()` liczył punkty względem narożnika bboxa, który zależy od promienia/środka wyszukiwania — dwa nakładające się, ale różne wyszukiwania prawie nigdy nie dawały identycznych współrzędnych punktów; (2) nawet gdyby dawały, Open-Meteo batchuje wiele punktów w jedno zapytanie HTTP — jeden różniący się punkt unieważnia cache całej paczki.
+
+**Naprawa:**
+- `pipeline/weather.py::make_grid` — punkty wyrównane do stałej, absolutnej kraty w EPSG:2180 (wielokrotności `spacing_m` od początku układu), a nie względem narożnika bboxa. To ten sam trik co wyrównanie kafli 10km dla BDL w `pipeline/search_area.py`. Punkty mogą teraz wystawać do jednego `spacing_m` poza krawędź bboxa (nie są już przycinane do `n_max`/`e_max`).
+- Nowe `_fetch_with_point_cache` w `pipeline/weather.py`: cache per-punkt na dysku (parquet), sprawdzany PRZED wywołaniem `call_api` — pobierane batchem są tylko brakujące punkty. Print w stylu BDL: `"N/M z cache, pobieranie K..."`.
+- `fetch_weather_raw`/`fetch_climatology_raw` dostały opcjonalny `cache_dir` (podpięty pod istniejący `--cache-dir` z `prepare_trip.py`).
+- **TTL pogody: do końca dnia** (decyzja użytkownika — klucz cache zawiera dzisiejszą datę ISO, więc jutro to automatycznie cache miss; pogoda to ruchome okno kończące się "teraz", wczorajszy cache dawałby nieaktualne "bieżące" warunki).
+- **Klimatologia: bez wygasania** (30-letnie archiwum historyczne się nie zmienia, klucz cache nie zawiera daty).
+
+Nowe testy w `tests/test_weather.py` (bez sieci): wyrównanie siatki (dwa nakładające się, ale przesunięte o wartość NIE będącą wielokrotnością `spacing_m` bboxy muszą dzielić punkty), reużycie cache między wywołaniami, pobieranie tylko nowych punktów przy częściowym pokryciu, wygaśnięcie cache pogody następnego dnia (zamockowane `date.today()`), brak wygaśnięcia dla klimatologii. 233 testy Python przechodzą.
+
 ## 2026-09-24 — aktualne (3): naprawa Overpass 429 — kolejny błąd z tego samego live-runu
 
 Po dwóch naprawach Open-Meteo (sekcja niżej) użytkownik odpalił `--radius-km 25` ponownie. Pogoda i klimatologia **przeszły bez błędu** (dowód, że poprzednie dwie naprawy zadziałały). `run_poc` policzył 30120 wydzieleń. Ale przy pobieraniu OSM/Overpass per-kafel (30 kafli) pojawił się nowy błąd na kaflu 3/30: `requests.exceptions.HTTPError: 429 Client Error: Too Many Requests for url: https://overpass-api.de/api/interpreter`.
