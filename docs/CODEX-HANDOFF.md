@@ -1,5 +1,13 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (8): OSM przestaje odpytywac Overpass po pierwszym błędzie kafla
+
+Rozszerzenie poprzedniej zmiany (sekcja niżej) na wyraźną prośbę użytkownika: skoro jeden kafel OSM (po wyczerpaniu własnych prób w `_osm_call_api`) się nie uda, to Overpass albo sieć są w tym momencie niedostępne dla całego przebiegu — dalsze próby per kafel tylko dłużej biją w ten sam, już przeciążony publiczny serwer, bez realnej szansy powodzenia.
+
+**Zmiana:** `fetch_cached_osm` w `pipeline/search_area.py` ma teraz flagę `give_up` — pierwsza nieudana próba ją ustawia, i każdy kolejny NIEZCACHOWANY kafel jest pomijany bez próby wywołania API (trafia od razu na listę `failed`). Kafle już w cache nadal są normalnie serwowane (nie wymagają sieci). Zastosowano tylko dla OSM, nie dla GDOS — użytkownik poprosił konkretnie o OSM; GDOS nadal próbuje każdy kafel osobno (ma już własny krótki retry, 3 próby/5s). Ta sama logika "poddaj się po pierwszym błędzie" dałaby się łatwo dodać też do GDOS, jeśli okaże się potrzebna.
+
+245 testów Python przechodzi.
+
 ## 2026-09-24 — aktualne (7): błędy GDOS/OSM przestały być fatalne
 
 Po dodaniu cache per-kafel (sekcja niżej) użytkownik odpalił `--radius-km 25` jeszcze raz. Pogoda i klimatologia: **100% z cache** (dowód, że wyrównanie siatki działa). GDOS doszło do kafla 18/30, potem `requests.exceptions.ConnectionError` (surowy `ProtocolError`, bez kodu HTTP w ogóle — inny rodzaj awarii niż 429/504 z Overpass). Użytkownik zapytał: czy GDOS jest w ogóle potrzebny i czy można pominąć nieudany kafel zamiast wywalać cały przebieg.
