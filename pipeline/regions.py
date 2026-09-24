@@ -34,3 +34,19 @@ def _assign_clusters(candidates: gpd.GeoDataFrame, buffer_m: float) -> list[gpd.
         if len(members):
             clusters.append(members)
     return clusters
+
+
+def _summarize_cluster(members: gpd.GeoDataFrame, top_n: int) -> dict:
+    """Region score = median R_final of the top `top_n` candidate stands in
+    the cluster (spec §5.6 step 3) -- deliberately not a sum, so a large
+    forest complex full of just-above-threshold stands does not
+    automatically outrank a small complex of a few excellent stands. If the
+    cluster has fewer than `top_n` members, `.head(top_n)` on a short frame
+    just returns what's there -- no special-casing needed."""
+    top = members.sort_values("R_final", ascending=False).head(top_n)
+    return {
+        "rank_score": float(top["R_final"].median()),
+        "stand_count": int(len(members)),
+        "stand_ids": members["stand_id"].tolist(),
+        "geometry": unary_union(list(members.geometry)),
+    }
