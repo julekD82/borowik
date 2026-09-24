@@ -25,7 +25,10 @@ from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
 from pipeline.regions import group_into_regions
-from pipeline.search_area import search_tiles, fetch_search_stands, within_radius, merge_frames
+from pipeline.search_area import (
+    search_tiles, fetch_search_stands, within_radius,
+    fetch_cached_gdos, fetch_cached_osm,
+)
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
     fetch_weather_raw, fetch_climatology_raw, make_grid,
@@ -185,16 +188,10 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     )
     print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
 
-    protected_frames = []
-    osm_frames = {name: [] for name in ("parking", "roads", "places")}
-    for index, tile in enumerate(tiles, 1):
-        print(f"GDOS / OSM: kafel {index}/{len(tiles)}", flush=True)
-        protected_frames.append(fetch_protected_areas(tile))
-        tile_osm = fetch_osm_features(tile, profile, call_api=_osm_call_api)
-        for name in osm_frames:
-            osm_frames[name].append(tile_osm[name])
-    gdos_gdf = merge_frames(protected_frames)
-    osm_features = {name: merge_frames(frames) for name, frames in osm_frames.items()}
+    gdos_gdf = fetch_cached_gdos(tiles, cache_dir, fetch_protected_areas)
+    osm_features = fetch_cached_osm(
+        tiles, cache_dir, profile, functools.partial(fetch_osm_features, call_api=_osm_call_api),
+    )
 
     print("Detecting forest entrances...")
     # Keep surrounding forest: clipping the forest at the search circle would

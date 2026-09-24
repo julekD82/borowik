@@ -61,6 +61,54 @@ def within_radius(stands, center, radius_km):
     return metric.loc[metric.geometry.centroid.distance(center) <= radius_km*1000].copy().reset_index(drop=True)
 
 
+def fetch_cached_gdos(tiles, cache_dir, fetcher):
+    """Per-tile GDOS cache, same check-exists/fetch/save-atomically pattern
+    as fetch_search_stands' BDL cache below -- GDOS is keyed by tile alone
+    (no per-layer split needed, DEFAULT_GDOS_LAYERS is fixed)."""
+    frames = []
+    for index, bbox in enumerate(tiles, 1):
+        cache_path = Path(cache_dir) / "gdos_tiles" / f"E{bbox[1]}N{bbox[0]}S{TILE_M}.parquet"
+        print(f"GDOS {index}/{len(tiles)}: ({'cache' if cache_path.exists() else 'WFS'})", flush=True)
+        if cache_path.exists():
+            frame = gpd.read_parquet(cache_path)
+        else:
+            frame = fetcher(bbox)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temp = cache_path.with_suffix(".tmp.parquet")
+            frame.to_parquet(temp)
+            temp.replace(cache_path)
+        frames.append(frame)
+    return merge_frames(frames)
+
+
+def fetch_cached_osm(tiles, cache_dir, profile, fetcher):
+    """Per-tile OSM cache. Overpass is the flakiest source this pipeline
+    talks to (rate limits and 504s under load even with retry/backoff --
+    see docs/CODEX-HANDOFF.md) and every tile is one HTTP round trip, so
+    caching here also means a retried CLI invocation resumes past whatever
+    tile failed last time instead of re-hitting Overpass for tiles that
+    already succeeded. Keyed by tile plus a hash of the profile's osm
+    config, since the query (and so the result) depends on it."""
+    profile_key = hashlib.sha256(repr(profile.get("osm")).encode("utf-8")).hexdigest()[:16]
+    osm_frames = {name: [] for name in ("parking", "roads", "places")}
+    for index, bbox in enumerate(tiles, 1):
+        tile_dir = Path(cache_dir) / "osm_tiles" / profile_key / f"E{bbox[1]}N{bbox[0]}S{TILE_M}"
+        cached = (tile_dir / "roads.parquet").exists()
+        print(f"OSM {index}/{len(tiles)}: ({'cache' if cached else 'Overpass'})", flush=True)
+        if cached:
+            tile_osm = {name: gpd.read_parquet(tile_dir / f"{name}.parquet") for name in osm_frames}
+        else:
+            tile_osm = fetcher(bbox, profile)
+            tile_dir.mkdir(parents=True, exist_ok=True)
+            for name, frame in tile_osm.items():
+                temp = tile_dir / f"{name}.tmp.parquet"
+                frame.to_parquet(temp)
+                temp.replace(tile_dir / f"{name}.parquet")
+        for name in osm_frames:
+            osm_frames[name].append(tile_osm[name])
+    return {name: merge_frames(frames) for name, frames in osm_frames.items()}
+
+
 def fetch_search_stands(tiles, rdlp, cache_dir, fetcher):
     """Fetch every intersected RDLP per tile, with layer-specific v2 cache.
 

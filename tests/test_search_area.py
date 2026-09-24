@@ -5,7 +5,10 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point, box
 
-from pipeline.search_area import search_tiles, within_radius, fetch_search_stands, merge_frames
+from pipeline.search_area import (
+    search_tiles, within_radius, fetch_search_stands, merge_frames,
+    fetch_cached_gdos, fetch_cached_osm,
+)
 from pipeline.prepare_trip import run_trip_preparation, parse_args
 from test_orchestrate import fake_weather_fetcher, fake_climatology_fetcher
 
@@ -59,6 +62,79 @@ def test_source_failure_is_not_treated_as_empty(tmp_path):
     with pytest.raises(RuntimeError, match='BDL unavailable'):
         fetch_search_stands([(0,0,10000,10000)], rdlp, tmp_path, broken)
     assert not list(tmp_path.rglob('*.parquet'))
+
+
+def test_fetch_cached_gdos_reuses_a_tile_across_calls(tmp_path):
+    calls = []
+
+    def gdos(bbox):
+        calls.append(bbox)
+        x = bbox[1] + 1  # distinct geometry per tile -- merge_frames dedups by geometry
+        return gpd.GeoDataFrame({"id": [1]}, geometry=[box(x, x, x + 1, x + 1)], crs=2180)
+
+    tiles = [(0, 0, 10000, 10000), (0, 10000, 10000, 20000)]
+    result = fetch_cached_gdos(tiles, tmp_path, gdos)
+    assert len(calls) == 2
+    assert len(result) == 2
+
+    fetch_cached_gdos(tiles, tmp_path, lambda *a: pytest.fail("cache missed"))
+    assert len(calls) == 2  # still 2 -- second call served entirely from cache
+
+
+def test_fetch_cached_gdos_fetches_only_a_new_tile(tmp_path):
+    calls = []
+
+    def gdos(bbox):
+        calls.append(bbox)
+        x = bbox[1] + 1
+        return gpd.GeoDataFrame({"id": [1]}, geometry=[box(x, x, x + 1, x + 1)], crs=2180)
+
+    fetch_cached_gdos([(0, 0, 10000, 10000)], tmp_path, gdos)
+    fetch_cached_gdos([(0, 0, 10000, 10000), (0, 10000, 10000, 20000)], tmp_path, gdos)
+
+    # tile (0,0,10000,10000) was already cached by the first call, so the
+    # second call fetches only the new tile.
+    assert calls == [(0, 0, 10000, 10000), (0, 10000, 10000, 20000)]
+
+
+def _fake_osm_frames():
+    return {
+        "parking": gpd.GeoDataFrame({"osm_id": [1]}, geometry=[Point(1, 1)], crs=2180),
+        "roads": gpd.GeoDataFrame({"osm_id": [2], "highway": ["track"]}, geometry=[Point(2, 2)], crs=2180),
+        "places": gpd.GeoDataFrame({"osm_id": [3], "population": [10.0]}, geometry=[Point(3, 3)], crs=2180),
+    }
+
+
+def test_fetch_cached_osm_reuses_a_tile_across_calls(tmp_path):
+    calls = []
+
+    def osm(bbox, profile):
+        calls.append(bbox)
+        return _fake_osm_frames()
+
+    tiles = [(0, 0, 10000, 10000)]
+    profile = {"osm": {"road_highway_types": ["track"]}}
+    result = fetch_cached_osm(tiles, tmp_path, profile, osm)
+    assert len(calls) == 1
+    assert set(result) == {"parking", "roads", "places"}
+    assert len(result["roads"]) == 1
+
+    fetch_cached_osm(tiles, tmp_path, profile, lambda *a: pytest.fail("cache missed"))
+    assert len(calls) == 1
+
+
+def test_fetch_cached_osm_uses_a_separate_cache_per_profile(tmp_path):
+    calls = []
+
+    def osm(bbox, profile):
+        calls.append(profile)
+        return _fake_osm_frames()
+
+    tiles = [(0, 0, 10000, 10000)]
+    fetch_cached_osm(tiles, tmp_path, {"osm": {"road_highway_types": ["track"]}}, osm)
+    fetch_cached_osm(tiles, tmp_path, {"osm": {"road_highway_types": ["path"]}}, osm)
+
+    assert len(calls) == 2  # different profile config -> not treated as the same cache entry
 
 
 def test_merge_removes_repeated_osm_places_without_collapsing_different_geometry():
@@ -128,7 +204,12 @@ def test_real_pipeline_with_mocked_sources_expands_radius_and_exports_consistent
         assert summary['radius_km'] == radius
         outputs.append(summary)
     assert outputs[1]['stand_count'] > outputs[0]['stand_count'] > 1
-    assert len(gd_calls) == len(osm_calls) == sum(s['tile_count'] for s in outputs)
+    # GDOS/OSM are now cached per tile (like BDL) -- the radius=20 run's
+    # tiles are a superset of radius=10's (test_tiles_cover_disk_on_fixed_grid_
+    # and_radius_expands_selection asserts this), so its tiles fully cover
+    # every fetch across both runs; the smaller run's tiles are all reused
+    # from cache on the second run, not re-fetched.
+    assert len(gd_calls) == len(osm_calls) == outputs[1]['tile_count']
     assert all(b[2]-b[0] == b[3]-b[1] == 10000 for b in osm_calls)
 
 
