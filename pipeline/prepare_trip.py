@@ -13,6 +13,7 @@ from pipeline.bdl import fetch_bdl
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
+    write_regions_json,
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
@@ -22,6 +23,7 @@ from pipeline.osm import fetch_osm_features
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
+from pipeline.regions import group_into_regions
 from pipeline.search_area import search_tiles, fetch_search_stands, within_radius, merge_frames
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
@@ -92,8 +94,9 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     """Analyze stands whose EPSG:2180 centroid lies within the search radius.
 
     Source queries use aligned 10 km tiles; scoring, pressure normalization
-    run once across the complete area, not per tile. Grouping is disabled.
-    """
+    and region grouping run once across the complete area, not per tile.
+    Both the per-stand export and the region export are always written --
+    the frontend toggles between them, this function doesn't choose."""
     center, tiles = search_tiles(lat, lon, radius_km)
     profile = load_profile(profile_path)
     bbox = tile_bbox_2180(lat, lon, size_km=2 * radius_km)
@@ -165,17 +168,23 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         top_n_for_routing=profile["entrances"]["top_n_for_routing"],
     )
 
+    print("Grouping into search regions...")
+    regions = group_into_regions(enriched, profile)
+
     out_dir = pathlib.Path(out_dir)
     scores_path = write_scores_json(enriched, day=day, out_path=out_dir / f"scores_{day}.json")
     stands_path = export_stand_geometries(enriched, out_dir / "stands_mvp.parquet")
     geojson_path = export_stand_geometries_geojson(enriched, out_dir / "stands.geojson")
+    regions_path = write_regions_json(regions, day=day, out_path=out_dir / f"regions_{day}.json")
+    print(f"  {len(regions)} region(s)")
 
     return {
         "layer": layer, "layers": layers, "tile_count": len(tiles),
         "radius_km": radius_km, "stand_count": len(scored),
         "mask_passing": int(enriched["mask_full"].sum()),
+        "region_count": len(regions),
         "scores_path": scores_path, "stands_path": stands_path,
-        "geojson_path": geojson_path,
+        "geojson_path": geojson_path, "regions_path": regions_path,
     }
 
 
@@ -198,9 +207,13 @@ def main(argv=None) -> int:
         return 1
     print(
         "Gotowe: "
-        f"{summary['mask_passing']}/{summary['stand_count']} wydzielen przechodzi maske."
+        f"{summary['mask_passing']}/{summary['stand_count']} wydzielen przechodzi maske, "
+        f"{summary['region_count']} rejon(y)."
     )
-    print(f"Wyniki: {summary['scores_path']}, {summary['stands_path']}, {summary['geojson_path']}")
+    print(
+        f"Wyniki: {summary['scores_path']}, {summary['stands_path']}, "
+        f"{summary['geojson_path']}, {summary['regions_path']}"
+    )
     return 0
 
 

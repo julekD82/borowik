@@ -1,0 +1,148 @@
+import json
+import math
+
+import geopandas as gpd
+import pytest
+from shapely.geometry import Point, box
+
+from pipeline.search_area import search_tiles, within_radius, fetch_search_stands, merge_frames
+from pipeline.prepare_trip import run_trip_preparation, parse_args
+from test_orchestrate import fake_weather_fetcher, fake_climatology_fetcher
+
+
+def test_tiles_cover_disk_on_fixed_grid_and_radius_expands_selection():
+    center, small = search_tiles(50.5318, 18.6055, 10)
+    _, large = search_tiles(50.5318, 18.6055, 25)
+    assert 1 < len(small) < len(large)
+    assert set(small) <= set(large)
+    for n0, e0, n1, e1 in large:
+        assert n0 % 10000 == e0 % 10000 == 0
+        assert n1-n0 == e1-e0 == 10000
+        assert box(e0, n0, e1, n1).distance(center) < 25000
+    tiles_union = gpd.GeoSeries([box(b[1], b[0], b[3], b[2]) for b in large], crs=2180).union_all()
+    for angle in range(360):
+        p = Point(center.x + 24999*math.cos(math.radians(angle)), center.y + 24999*math.sin(math.radians(angle)))
+        assert tiles_union.covers(p)
+
+
+def test_centroid_radius_filter_excludes_bbox_corners_preserves_geometry():
+    center = Point(400000, 500000)
+    stands = gpd.GeoDataFrame({"id": ["inside", "edge", "outside", "corner"]}, geometry=[
+        box(400000, 500000, 400010, 500010),
+        box(409900, 499900, 410100, 500100),
+        box(410001, 499999, 410003, 500001),
+        box(408900, 508900, 409100, 509100),
+    ], crs=2180)
+    result = within_radius(stands.to_crs(4326), center, 10.000001)
+    assert result.id.tolist() == ["inside", "edge"]
+    assert result.iloc[1].geometry.area == pytest.approx(40000, abs=.1)
+
+
+def test_fetches_both_rdlp_and_deduplicates_across_tiles_and_caches_by_layer(tmp_path):
+    tiles = [(500000, 400000, 510000, 410000), (500000, 410000, 510000, 420000)]
+    rdlp = gpd.GeoDataFrame({"region_name": ["A", "B"]}, geometry=[box(399000,499000,415000,511000),box(405000,499000,421000,511000)], crs=2180)
+    calls = []
+    def fetch(layer, bbox):
+        calls.append((layer, bbox))
+        return gpd.GeoDataFrame({"adr_for": [layer], "a_year": [2026]}, geometry=[box(407000,502000,408000,503000)], crs=2180)
+    stands, layers = fetch_search_stands(tiles, rdlp.to_crs(4326), tmp_path, fetch)
+    assert len(calls) == 4
+    assert len(stands) == len(layers) == 2
+    assert len(list(tmp_path.rglob('*.parquet'))) == 4
+    fetch_search_stands(tiles, rdlp, tmp_path, lambda *a: pytest.fail('cache missed'))
+
+
+def test_source_failure_is_not_treated_as_empty(tmp_path):
+    rdlp = gpd.GeoDataFrame({"region_name": ["A"]}, geometry=[box(0,0,20000,20000)], crs=2180)
+    def broken(*args):
+        raise RuntimeError('BDL unavailable')
+    with pytest.raises(RuntimeError, match='BDL unavailable'):
+        fetch_search_stands([(0,0,10000,10000)], rdlp, tmp_path, broken)
+    assert not list(tmp_path.rglob('*.parquet'))
+
+
+def test_merge_removes_repeated_osm_places_without_collapsing_different_geometry():
+    frame = gpd.GeoDataFrame({"osm_id":[1,1],"population":[100,200]}, geometry=[Point(400000,500000),Point(400001,500001)], crs=2180)
+    merged = merge_frames([frame, frame])
+    assert len(merged) == 2
+    assert merged.population.sum() == 300
+
+
+@pytest.mark.parametrize('args', [
+    ['--lat','nan','--lon','18'], ['--lat','91','--lon','18'],
+    ['--lat','50','--lon','inf'], ['--lat','50','--lon','18','--radius-km','nan'],
+])
+def test_cli_rejects_nonfinite_or_invalid_coordinates(args):
+    with pytest.raises(SystemExit):
+        parse_args(args)
+
+
+def configure_sources(monkeypatch):
+    import pipeline.prepare_trip as trip
+    rdlp = gpd.GeoDataFrame({"region_name": ["TEST"]}, geometry=[box(0,0,1000000,1000000)], crs=2180)
+    monkeypatch.setattr(trip, 'fetch_rdlp_boundaries_cached', lambda *a: rdlp)
+    def bdl(layer, bbox):
+        n0,e0,n1,e1=bbox
+        e,n=(e0+e1)/2,(n0+n1)/2
+        return gpd.GeoDataFrame({
+            'adr_for':[f'{e0}-{n0}'],'a_year':[2026],'area_type':['D-STAN'],
+            'site_type':['BMSW'],'species_cd':['SO'],'part_cd':[10],'spec_age':[60],
+        }, geometry=[box(e-100,n-100,e+100,n+100)],crs=2180)
+    monkeypatch.setattr(trip, 'fetch_bdl', bdl)
+    monkeypatch.setattr(trip, 'fetch_weather_raw', lambda points,days,**kw: fake_weather_fetcher(points,days))
+    monkeypatch.setattr(trip, 'fetch_climatology_raw', lambda points,sy,ey,**kw: fake_climatology_fetcher(points,sy,ey))
+    gd_calls, osm_calls = [], []
+    def gdos(bbox):
+        gd_calls.append(bbox)
+        return gpd.GeoDataFrame(geometry=[],crs=2180)
+    def osm(bbox,profile):
+        osm_calls.append(bbox)
+        return {name:gpd.GeoDataFrame(geometry=[],crs=2180) for name in ['parking','roads','places']}
+    monkeypatch.setattr(trip, 'fetch_protected_areas', gdos)
+    monkeypatch.setattr(trip, 'fetch_osm_features', osm)
+    monkeypatch.setattr(trip, 'check_periodic_ban', lambda *a: False)
+    return gd_calls, osm_calls
+
+
+def test_real_pipeline_with_mocked_sources_expands_radius_and_exports_consistent_bundle(monkeypatch,tmp_path):
+    # Grouping was disabled for a while (frontend toggle work reversed
+    # that -- both the per-stand and region exports are always written
+    # now, and the frontend chooses which to show).
+    gd_calls, osm_calls = configure_sources(monkeypatch)
+    outputs=[]
+    for radius in [10,20]:
+        out=tmp_path/str(radius)
+        summary=run_trip_preparation(50.5318,18.6055,'2026-09-24',radius,'profiles/boletus_edulis.yaml',out,tmp_path/'cache')
+        scores=json.loads(summary['scores_path'].read_text(encoding='utf-8'))
+        features=json.loads(summary['geojson_path'].read_text(encoding='utf-8'))['features']
+        regions=json.loads(summary['regions_path'].read_text(encoding='utf-8'))
+        ids={s['stand_id'] for s in scores}
+        assert ids == {f['properties']['stand_id'] for f in features}
+        assert summary['region_count'] == len(regions)
+        for region in regions:
+            assert set(region['stand_ids']) <= ids
+            assert region['day'] == '2026-09-24'
+        stands=gpd.read_parquet(summary['stands_path'])
+        center,_=search_tiles(50.5318,18.6055,radius)
+        assert (stands.geometry.centroid.distance(center) <= radius*1000).all()
+        assert summary['radius_km'] == radius
+        outputs.append(summary)
+    assert outputs[1]['stand_count'] > outputs[0]['stand_count'] > 1
+    assert len(gd_calls) == len(osm_calls) == sum(s['tile_count'] for s in outputs)
+    assert all(b[2]-b[0] == b[3]-b[1] == 10000 for b in osm_calls)
+
+
+def test_failure_in_later_tile_preserves_previous_export(monkeypatch,tmp_path):
+    configure_sources(monkeypatch)
+    marker=tmp_path/'scores_2026-09-24.json'
+    marker.write_text('previous result')
+    calls=[]
+    def fail_later(*args):
+        calls.append(args)
+        if len(calls)==2:
+            raise RuntimeError('GDOS unavailable')
+        return gpd.GeoDataFrame(geometry=[],crs=2180)
+    monkeypatch.setattr('pipeline.prepare_trip.fetch_protected_areas', fail_later)
+    with pytest.raises(RuntimeError,match='GDOS unavailable'):
+        run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache')
+    assert marker.read_text() == 'previous result'
