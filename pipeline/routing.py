@@ -50,10 +50,27 @@ def nearest_entrance_distance(graph: nx.Graph, stand_centroid, entrances_gdf) ->
     overall, not necessarily a confirmed one; status just reports what that
     nearest entrance is (spec §5.5.2: distance is about "wygoda dojazdu",
     confirmed/potential is a separate, honestly-labelled fact). (None, None)
-    if entrances_gdf is empty or nothing is reachable."""
+    if entrances_gdf is empty or nothing is reachable.
+
+    Runs a single single-source Dijkstra search from the stand's node and
+    looks up each entrance's snapped node in the result, instead of calling
+    network_distance (a fresh single-pair search) once per entrance -- on a
+    real tile's track network (hundreds to thousands of edges) with dozens
+    of candidate entrances, the naive per-entrance version re-explores
+    largely the same graph repeatedly and was observed taking minutes per
+    stand; this is the same total distances computed, just once per stand
+    instead of once per (stand, entrance) pair."""
+    node_a = _nearest_graph_node(graph, stand_centroid)
+    if node_a is None or len(entrances_gdf) == 0:
+        return (None, None)
+    distances = nx.single_source_dijkstra_path_length(graph, node_a, weight="weight")
+    snap_a = stand_centroid.distance(Point(node_a))
     best = None
     for _, row in entrances_gdf.iterrows():
-        distance = network_distance(graph, stand_centroid, row.geometry)
-        if distance is not None and (best is None or distance < best[0]):
-            best = (distance, row["status"])
+        node_b = _nearest_graph_node(graph, row.geometry)
+        if node_b is None or node_b not in distances:
+            continue
+        total = distances[node_b] + snap_a + row.geometry.distance(Point(node_b))
+        if best is None or total < best[0]:
+            best = (total, row["status"])
     return best if best is not None else (None, None)

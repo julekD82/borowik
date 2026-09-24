@@ -77,3 +77,36 @@ def test_nearest_entrance_distance_none_for_empty_entrances():
     distance, status = nearest_entrance_distance(graph, Point(0, 0), empty)
     assert distance is None
     assert status is None
+
+
+def test_nearest_entrance_distance_runs_one_dijkstra_search_not_one_per_entrance(monkeypatch):
+    # Regression guard: a real tile's track network can have thousands of
+    # edges and dozens of candidate entrances -- calling a fresh
+    # single-pair search per entrance was observed taking minutes on real
+    # data (see accessibility plan Task 7's manual verification). Pin the
+    # single-source-Dijkstra-once design so this doesn't silently regress
+    # back to per-entrance searches.
+    calls = {"single_source": 0}
+    real_single_source = nx.single_source_dijkstra_path_length
+
+    def counting_single_source(*args, **kwargs):
+        calls["single_source"] += 1
+        return real_single_source(*args, **kwargs)
+
+    monkeypatch.setattr(nx, "single_source_dijkstra_path_length", counting_single_source)
+
+    roads = gpd.GeoDataFrame(
+        {"highway": ["track"]},
+        geometry=[LineString([(380000, 486000), (380300, 486000)])],
+        crs="EPSG:2180",
+    )
+    graph = build_road_graph(roads)
+    entrances = gpd.GeoDataFrame(
+        {"status": ["potential", "confirmed", "potential"]},
+        geometry=[Point(380050, 486000), Point(380150, 486000), Point(380250, 486000)],
+        crs="EPSG:2180",
+    )
+
+    nearest_entrance_distance(graph, Point(380000, 486000), entrances)
+
+    assert calls["single_source"] == 1
