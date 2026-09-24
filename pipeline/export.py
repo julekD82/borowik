@@ -68,6 +68,17 @@ def build_region_record(row, day: str) -> dict:
 def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    records = [build_region_record(row, day) for _, row in regions.iterrows()]
+    # Centroid computed in the regions' own (projected, metric) CRS and only
+    # then reprojected to WGS84 -- computing a centroid directly in a
+    # geographic CRS is inaccurate and triggers a geopandas UserWarning.
+    # Without a location, a consumer of this file (map, navigation link)
+    # cannot place a region at all (final review finding).
+    centroids_4326 = regions.geometry.centroid.to_crs("EPSG:4326")
+    records = []
+    for (_, row), point in zip(regions.iterrows(), centroids_4326):
+        record = build_region_record(row, day)
+        record["centroid_lat"] = point.y
+        record["centroid_lon"] = point.x
+        records.append(record)
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path

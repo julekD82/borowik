@@ -98,10 +98,25 @@ def test_write_regions_json_writes_one_record_per_region(tmp_path):
     out_path = write_regions_json(_regions(), day="2026-09-24", out_path=tmp_path / "regions_2026-09-24.json")
     assert out_path.exists()
     data = json.loads(out_path.read_text(encoding="utf-8"))
-    assert data == [{
-        "region_id": "region_1", "rank_score": 42.5, "stand_count": 3,
-        "stand_ids": ["A", "B", "C"], "day": "2026-09-24",
-    }]
+    assert len(data) == 1
+    record = data[0]
+    assert record["region_id"] == "region_1"
+    assert record["rank_score"] == 42.5
+    assert record["stand_count"] == 3
+    assert record["stand_ids"] == ["A", "B", "C"]
+    assert record["day"] == "2026-09-24"
+
+
+def test_write_regions_json_includes_wgs84_centroid_for_locating_the_region(tmp_path):
+    # Final review finding: a region's stand_ids alone can't be placed on a
+    # map or navigated to -- a consumer of this file needs a location.
+    out_path = write_regions_json(_regions(), day="2026-09-24", out_path=tmp_path / "regions.json")
+    record = json.loads(out_path.read_text(encoding="utf-8"))[0]
+    assert "centroid_lat" in record and "centroid_lon" in record
+    # box(380000, 486000, 380300, 486100) is EPSG:2180 (Poland); sanity-range
+    # check on the reprojected WGS84 centroid, not a brittle exact value.
+    assert 49.0 < record["centroid_lat"] < 55.0
+    assert 14.0 < record["centroid_lon"] < 24.0
 
 
 def test_write_regions_json_handles_empty_regions(tmp_path):
