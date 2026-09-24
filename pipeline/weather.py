@@ -1,4 +1,6 @@
 import math
+from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -9,17 +11,68 @@ _TO_4326 = Transformer.from_crs("EPSG:2180", "EPSG:4326", always_xy=True)
 
 
 def make_grid(bbox_2180: tuple, spacing_m: float = 5000.0) -> list[tuple[float, float]]:
+    """Grid points aligned to a fixed absolute EPSG:2180 grid (multiples of
+    spacing_m from the origin), not to the bbox's own corner -- so two
+    searches whose bboxes only partially overlap still produce identical
+    (lat, lon) values wherever they cover the same ground. This is what
+    lets _fetch_with_point_cache reuse cache entries across different
+    radii/centers, the same way pipeline/search_area.py's fixed 10km tile
+    grid already does for BDL. Points can extend up to one spacing_m
+    beyond the bbox edge (no longer clamped to n_max/e_max) as a result."""
     n_min, e_min, n_max, e_max = bbox_2180
-    n_steps = max(1, int(math.ceil((n_max - n_min) / spacing_m)))
-    e_steps = max(1, int(math.ceil((e_max - e_min) / spacing_m)))
+    n_start = math.floor(n_min / spacing_m) * spacing_m
+    e_start = math.floor(e_min / spacing_m) * spacing_m
+    n_steps = max(1, int(math.ceil((n_max - n_start) / spacing_m)))
+    e_steps = max(1, int(math.ceil((e_max - e_start) / spacing_m)))
     points = []
     for i in range(n_steps + 1):
-        n = min(n_min + i * spacing_m, n_max)
+        n = n_start + i * spacing_m
         for j in range(e_steps + 1):
-            e = min(e_min + j * spacing_m, e_max)
+            e = e_start + j * spacing_m
             lon, lat = _TO_4326.transform(e, n)
             points.append((lat, lon))
     return points
+
+
+def _point_cache_path(cache_dir: Path, lat: float, lon: float, suffix: str | None) -> Path:
+    name = f"{lat:.6f}_{lon:.6f}"
+    if suffix is not None:
+        name += f"_{suffix}"
+    return cache_dir / f"{name}.parquet"
+
+
+def _fetch_with_point_cache(points: list[tuple[float, float]], cache_dir: Path,
+                              suffix: str | None, call_api) -> list[dict]:
+    """Per-point disk cache in front of a batched call_api. Mirrors
+    pipeline/search_area.py's per-tile BDL cache (check file exists, print
+    status, fetch and save on miss) at point granularity instead of tile
+    granularity: Open-Meteo batches many points into one HTTP request, so a
+    per-request cache (requests_cache, still used underneath by
+    _default_open_meteo_call/_default_climatology_call for in-run retries)
+    doesn't help reuse across searches whose grids only partially overlap.
+    `suffix` scopes the cache key -- pass None for data that never changes
+    (climatology's 30-year archive) or e.g. today's ISO date for data that
+    does (live weather, a rolling window ending today)."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cached: dict[tuple[float, float], dict] = {}
+    missing = []
+    for lat, lon in points:
+        path = _point_cache_path(cache_dir, lat, lon, suffix)
+        if path.exists():
+            cached[(lat, lon)] = pd.read_parquet(path).to_dict(orient="list")
+        else:
+            missing.append((lat, lon))
+    print(f"  {len(points) - len(missing)}/{len(points)} z cache" +
+          (f", pobieranie {len(missing)}..." if missing else ""), flush=True)
+    if missing:
+        fresh = call_api(missing)
+        for point, data in zip(missing, fresh):
+            path = _point_cache_path(cache_dir, point[0], point[1], suffix)
+            temp = path.with_suffix(".tmp.parquet")
+            pd.DataFrame(data).to_parquet(temp)
+            temp.replace(path)
+            cached[point] = data
+    return [cached[p] for p in points]
 
 
 _OPEN_METEO_BATCH_SIZE = 50  # see _chunked's docstring for why this exists
@@ -111,9 +164,18 @@ def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int) 
     return results
 
 
-def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92, call_api=None) -> pd.DataFrame:
+def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92, call_api=None,
+                        cache_dir: Path | None = None) -> pd.DataFrame:
     call_api = call_api or _default_open_meteo_call
-    results = call_api(points, past_days)
+    if cache_dir is None:
+        results = call_api(points, past_days)
+    else:
+        # Scoped to today: past_days is a rolling window ending "now", so
+        # yesterday's cached values would silently look like today's.
+        results = _fetch_with_point_cache(
+            points, Path(cache_dir) / "weather_points", date.today().isoformat(),
+            lambda pts: call_api(pts, past_days),
+        )
     frames = []
     for (lat, lon), data in zip(points, results):
         df = pd.DataFrame(data)
@@ -172,7 +234,8 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1991,
-                            end_year: int = 2020, call_api=None) -> pd.DataFrame:
+                            end_year: int = 2020, call_api=None,
+                            cache_dir: Path | None = None) -> pd.DataFrame:
     """Same shape/DI pattern as fetch_weather_raw but against the ERA5-Land
     archive for a fixed historical period. Real network call isolated in
     call_api for testability; default implementation calls Open-Meteo's
@@ -188,7 +251,15 @@ def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1
     soil_moisture is therefore depth-approximate, not an exact apples-to-apples
     match."""
     call_api = call_api or _default_climatology_call
-    results = call_api(points, start_year, end_year)
+    if cache_dir is None:
+        results = call_api(points, start_year, end_year)
+    else:
+        # No suffix: the 30-year historical archive never changes, so a
+        # cached point is reused indefinitely across searches and days.
+        results = _fetch_with_point_cache(
+            points, Path(cache_dir) / "climatology_points", None,
+            lambda pts: call_api(pts, start_year, end_year),
+        )
     frames = []
     for (lat, lon), data in zip(points, results):
         df = pd.DataFrame(data)

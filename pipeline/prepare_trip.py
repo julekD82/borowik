@@ -171,8 +171,10 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
         bdl_fetcher=lambda _layer, _bbox: stands.copy(),
-        weather_fetcher=functools.partial(fetch_weather_raw, call_api=_weather_call_api),
-        climatology_fetcher=functools.partial(fetch_climatology_raw, call_api=_climatology_call_api),
+        weather_fetcher=functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
+        climatology_fetcher=functools.partial(
+            fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
+        ),
     )
     print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
 

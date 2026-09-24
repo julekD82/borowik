@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from pyproj import Transformer
 
 from pipeline.weather import (
     make_grid,
@@ -19,6 +20,31 @@ def test_make_grid_covers_bbox_with_points_in_lat_lon():
     for lat, lon in grid:
         assert 40.0 < lat < 60.0
         assert 10.0 < lon < 25.0
+
+
+def test_make_grid_is_aligned_to_a_fixed_absolute_grid_not_the_bbox_corner():
+    # Two overlapping searches with different centers/radii must share exact
+    # (lat, lon) values wherever their bboxes cover the same ground -- only
+    # then does a per-point disk cache (below) reuse entries across
+    # searches, the way pipeline/search_area.py's fixed 10km tile grid
+    # already does for BDL. A grid built relative to each bbox's own corner
+    # (the old behavior) would shift with the bbox and never overlap.
+    small = make_grid((486000.0, 380000.0, 496000.0, 390000.0), spacing_m=5000.0)
+    # Offset by 3123 m -- deliberately NOT a multiple of spacing_m, so a
+    # grid built relative to each bbox's own corner (the old behavior)
+    # would produce zero shared points even though the two areas overlap.
+    large = make_grid((482877.0, 376877.0, 502877.0, 396877.0), spacing_m=5000.0)
+    shared = set(small) & set(large)
+    assert len(shared) >= 1  # the overlapping region has at least one common point
+
+
+def test_make_grid_point_positions_are_exact_multiples_of_spacing():
+    grid = make_grid((486000.0, 380000.0, 496000.0, 390000.0), spacing_m=5000.0)
+    to_metric = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
+    for lat, lon in grid:
+        e, n = to_metric.transform(lon, lat)
+        assert e / 5000.0 == pytest.approx(round(e / 5000.0), abs=1e-6)
+        assert n / 5000.0 == pytest.approx(round(n / 5000.0), abs=1e-6)
 
 
 def _fake_daily_payload(offset=0.0):
@@ -69,6 +95,59 @@ def test_fetch_weather_raw_handles_a_single_point():
     assert (df["lat"] == 50.5).all()
 
 
+def test_fetch_weather_raw_with_cache_dir_skips_call_api_on_a_repeat_call(tmp_path):
+    calls = []
+
+    def fake_call_api(points, past_days):
+        calls.append(list(points))
+        return [_fake_daily_payload(offset=i) for i in range(len(points))]
+
+    points = [(50.5, 18.6), (50.55, 18.65)]
+    fetch_weather_raw(points, past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+    df = fetch_weather_raw(points, past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert len(calls) == 1  # second call served entirely from the point cache
+    assert len(df) == 6
+
+
+def test_fetch_weather_raw_with_cache_dir_fetches_only_the_new_point(tmp_path):
+    calls = []
+
+    def fake_call_api(points, past_days):
+        calls.append(list(points))
+        return [_fake_daily_payload(offset=i) for i in range(len(points))]
+
+    fetch_weather_raw([(50.5, 18.6)], past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+    fetch_weather_raw([(50.5, 18.6), (50.6, 18.7)], past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert calls == [[(50.5, 18.6)], [(50.6, 18.7)]]
+
+
+def test_fetch_weather_raw_point_cache_expires_the_next_day(tmp_path, monkeypatch):
+    import pipeline.weather as weather_mod
+
+    class FrozenDate(weather_mod.date):
+        _today = weather_mod.date(2026, 9, 24)
+
+        @classmethod
+        def today(cls):
+            return cls._today
+
+    monkeypatch.setattr(weather_mod, "date", FrozenDate)
+    calls = []
+
+    def fake_call_api(points, past_days):
+        calls.append(list(points))
+        return [_fake_daily_payload() for _ in points]
+
+    points = [(50.5, 18.6)]
+    fetch_weather_raw(points, past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+    FrozenDate._today = weather_mod.date(2026, 9, 25)
+    fetch_weather_raw(points, past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert len(calls) == 2  # new day -> cache miss, refetched
+
+
 def _synthetic_daily_df():
     dates = pd.date_range("2026-05-01", periods=30, freq="D")
     return pd.DataFrame({
@@ -116,6 +195,21 @@ def test_fetch_climatology_raw_batches_all_points_into_one_call_api_call():
     assert calls == [([(50.5, 18.6), (50.55, 18.65)], 1991, 2020)]
     assert len(df) == 4
     assert set(df["lat"]) == {50.5, 50.55}
+
+
+def test_fetch_climatology_raw_with_cache_dir_never_expires(tmp_path):
+    calls = []
+
+    def fake_call_api(points, start_year, end_year):
+        calls.append(list(points))
+        dates = pd.date_range("2020-06-25", periods=2, freq="D")
+        return [{"date": dates, "cwb26": [1.0, 2.0], "soil_moisture": [0.3, 0.31]} for _ in points]
+
+    points = [(50.5, 18.6)]
+    fetch_climatology_raw(points, start_year=1991, end_year=2020, call_api=fake_call_api, cache_dir=tmp_path)
+    fetch_climatology_raw(points, start_year=1991, end_year=2020, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert len(calls) == 1
 
 
 def test_percentile_rank_of_median_like_value():
