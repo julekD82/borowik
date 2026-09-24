@@ -24,8 +24,26 @@ host_affinity:
   KL: 0.0
   WZ: 0.0
   AK: 0.0
+  # Uzupelnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): codes found
+  # in a real 25km run with no profile entry, previously falling back to
+  # unknown_host_affinity (0.5) for ~220 stands.
+  SO.C: 0.6   # sosna czarna -- obce EcM Pinus, slabo udokumentowane dla B. edulis
+  SO.WE: 0.6  # sosna wejmutka -- jw.
+  DB.C: 0.4   # dab czerwony -- obcy gatunek, EcM, slabo udokumentowany
+  JW: 0.0     # jawor (klon) -- brak EcM
+  OL.S: 0.0   # olsza szara -- brak EcM
+  WB: 0.1     # wierzba -- w PL rzadko EcM dla Boletus
+  # User decision 2026-09-24: not named in the plan's table (only its "inne
+  # pojedyncze" catch-all) -- both Prunus/Sorbus are AM, not EcM, genera,
+  # same reasoning as OL/JS/KL/WZ/AK below.
+  CZM.P: 0.0  # czeremcha pospolita -- brak EcM
+  JB: 0.0     # jarzab -- brak EcM
 unknown_host_affinity: 0.5     # "nieznana domieszka" default, spec §4.3
-zero_affinity_mask_species: [OL, JS, KL, WZ, AK]   # hard mask threshold, spec §4.2 (see plan note re: "Tp" ambiguity)
+# hard mask threshold, spec §4.2 (see plan note re: "Tp" ambiguity).
+# JW, OL.S, WB, CZM.P, JB added per plan 2.1 step A1 / user decision
+# 2026-09-24: masked when dominant (part_cd >= 8) even though WB keeps a
+# small non-zero host_affinity above for when it's a minor admixture.
+zero_affinity_mask_species: [OL, JS, KL, WZ, AK, JW, OL.S, WB, CZM.P, JB]
 
 # site_type -> [S_site, moisture_cls] (0=suche,1=swieze,2=wilgotne,3=bagienne)
 site_scores:
@@ -44,6 +62,20 @@ site_scores:
   OL:   [0.0, 3]
   OLJ:  [0.0, 3]
   LL:   [0.0, 2]
+  # Uzupelnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): highland
+  # (wyzynny) site types found in a real 25km run, previously falling back
+  # to unknown_site_score (0.5) for ~2100 stands. Value = the lowland
+  # equivalent of the same fertility/moisture class (plan's explicit
+  # mapping); confirmed against the BDL habitat-type naming convention
+  # (encyklopedialesna/Wikipedia), not guessed -- see the raw-code comment
+  # in tests/test_profile_coverage.py for why e.g. LWYZS looks truncated.
+  BMWYZ:  [1.00, 1]   # bor mieszany wyzynny (swiezy) ~= BMSW
+  LMWYZ:  [0.85, 1]   # las mieszany wyzynny swiezy ~= LMSW
+  LMWYZW: [0.65, 2]   # las mieszany wyzynny wilgotny ~= LMW
+  LWYZS:  [0.60, 1]   # las wyzynny swiezy ~= LSW
+  LWYZW:  [0.40, 2]   # las wyzynny wilgotny ~= LW
+  LLWYZ:  [0.0, 2]    # las legowy wyzynny ~= LL (mask)
+  OLJWYZ: [0.0, 3]    # ols jesionowy wyzynny ~= OLJ (mask)
 unknown_site_score: 0.5
 unknown_site_moisture_cls: 1
 

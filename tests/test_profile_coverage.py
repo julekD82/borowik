@@ -22,10 +22,25 @@ PROFILE = load_profile("profiles/boletus_edulis.yaml")
 BDL_SITE_TYPES = [
     "BMŚW", "BŚW", "LMŚW", "BMW", "BW", "LMW", "LŚW", "BS",
     "LW", "BMB", "BB", "LMB", "OL", "OLJ", "LŁ",
+    # Uzupełnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): highland
+    # (wyżynny) site types found in a real 25 km run, previously falling back
+    # to unknown_site_score for ~2100 stands. BDL's real site_type spelling
+    # for these (confirmed against the encyklopedialesna/Wikipedia habitat
+    # taxonomy, not guessed) marks świeży (fresh) with no suffix on
+    # BM/LM-prefixed codes and a single "Ś" suffix on L-prefixed codes;
+    # wilgotny (moist) always gets a "W" suffix. That's why e.g. "LWYŻŚ"
+    # normalizes to "LWYZS" (not "LWYZSW") -- it looked truncated but isn't.
+    "BMWYŻ", "LMWYŻ", "LMWYŻW", "LWYŻŚ", "LWYŻW", "LŁWYŻ", "OLJWYŻ",
 ]
 BDL_SPECIES = [
     "SO", "ŚW", "BK", "DB", "DB.S", "DB.B", "JD", "BRZ", "GB", "MD",
     "DG", "LP", "OS", "TP", "OL", "JS", "KL", "WZ", "AK",
+    # Uzupełnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): species
+    # codes found in a real 25 km run with no profile entry. CZM.P and JB
+    # were not named in the plan's table (only its "inne pojedyncze"
+    # catch-all); user decision 2026-09-24: mask both like OL/JS/KL/WZ/AK
+    # (Prunus/Sorbus are AM, not EcM, genera).
+    "SO.C", "SO.WE", "DB.C", "JW", "OL.S", "WB", "CZM.P", "JB",
 ]
 
 

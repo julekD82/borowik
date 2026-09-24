@@ -1,5 +1,21 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (12): A1 — kody siedlisk wyżynnych i gatunków w profilu
+
+Zrealizowany krok A1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, wartości z §5.3 "Uzupełnienie 2.1").
+
+**Sprawdzenie przed zmianą (bez nowego pobierania z sieci — limit archive-api nadal wyczerpany):** wszystkie kody `site_type`/`species_cd` spoza profilu wypisane z `cache/bdl_tiles_v2` (30 kafli, 43 908 zdeduplikowanych wydzieleń). Kody siedlisk zgadzają się dokładnie z audytem §0.1 (`LWYZS` 899, `LWYZW` 822, `LMWYZW` 213, `LMWYZ` 170, `LLWYZ` 7, `OLJWYZ` 5, `BMWYZ` 1). Sprawdzone w źródłach zewnętrznych (encyklopedialesna/Wikipedia typologia siedlisk, nie zgadywane): dla „Las wyżynny” wilgotność to pojedyncza litera-sufiks (Ś/W), dla „Bór/Las mieszany wyżynny” brak sufiksu = świeży (domyślny), „W” = wilgotny — to wyjaśnia pozornie „obcięte” kody (np. `LWYZS` zamiast `LWYZSW`) i potwierdza mapowania z planu bez zmian.
+
+Kody gatunków: znaleziono jeden kod spoza planu — `JB` (jarząb, 1 wydzielenie) — obok znanych z audytu (`DB.C` 110, `JW` 66, `SO.C` 31, `SO.WE` 12, `OL.S` 4, `WB` 2, `CZM.P` 2). Plan nazywał `CZM.P` tylko w kategorii zbiorczej „inne pojedyncze” (zakres 0,0–0,2, bez liczby) i nie wymieniał `JB` wcale — zgodnie z instrukcją użytkownika zapytano zamiast zgadywać. **Decyzja użytkownika:** `CZM.P` i `JB` → 0,0, do maski (jak `OL`/`JS`/`KL`/`WZ`/`AK` — rodzaje *Prunus*/*Sorbus* to mikoryza arbuskularna, nie ektomikoryza).
+
+**Zmiany:**
+- `profiles/boletus_edulis.yaml`: 7 kodów siedlisk wyżynnych w `site_scores` (wartości = odpowiednik nizinny tej samej żyzności/wilgotności, zgodnie z planem) i 8 kodów gatunków w `host_affinity` (`SO.C`/`SO.WE` 0,6; `DB.C` 0,4; `JW`/`OL.S`/`CZM.P`/`JB` 0,0; `WB` 0,1). `zero_affinity_mask_species` rozszerzone o `JW, OL.S, WB, CZM.P, JB` — zgodnie z jawną instrukcją zadania (`WB` ma niezerowe powinowactwo 0,1 jako domieszka, ale maskuje wydzielenie, gdy jest gatunkiem panującym ≥80%).
+- `tests/test_profile_coverage.py`: `BDL_SITE_TYPES`/`BDL_SPECIES` rozszerzone o surowe (z polskimi znakami) formy nowych kodów — TDD: 15 nowych przypadków czerwone przed zmianą profilu, zielone po.
+
+**Weryfikacja kryterium ukończenia** (bez nowego przebiegu sieciowego — ten sam limit): `unknown_site_count` i `unknown_species_count` policzone na realnym zbiorze z cache przez `pipeline.habitat.passes_mask` — **0 i 0 z 31 879 wydzieleń w masce (0,000%)**, dużo poniżej progu < 1%. 262 testy Python przechodzą (247 → 262: +15 nowych w tym kroku, reszta z prac między sesjami).
+
+**Nie ruszono w tym kroku:** rejony (A2), pogoda/`--date` (A3) — zgodnie z zakresem zlecenia.
+
 ## 2026-09-24 — aktualne (11): audyt wyników i plan 2.1 (tylko dokumentacja, bez zmian w kodzie)
 
 Audyt realnego eksportu 25 km (50.5318, 18.6055) opisany w `docs/projekt-borowik.md` sekcja 0.1. Nowa kolejność prac: sekcja 13.1 (A1–A4 naprawy, B1–B3 różnicowanie H, C1–C4 walidacja/porządki).
