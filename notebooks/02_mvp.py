@@ -10,12 +10,13 @@ from openmeteo_requests.Client import OpenMeteoRequestsError
 
 from pipeline.bdl import fetch_bdl, save_bdl_tile
 from pipeline.confidence import compute_confidence  # noqa: F401 (re-exported for notebook debugging)
-from pipeline.export import write_scores_json, export_stand_geometries
+from pipeline.export import write_scores_json, export_stand_geometries, write_regions_json
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.orchestrate import run_poc
 from pipeline.osm import fetch_osm_features
+from pipeline.regions import group_into_regions
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
     fetch_weather_raw, fetch_climatology_raw,
@@ -131,3 +132,13 @@ if known_points_path.exists():
         )
 else:
     print(f"Brak {known_points_path} - patrz notebooks/known_points.example.yaml (Faza 1).")
+
+print("Grouping into search regions...")
+regions = group_into_regions(enriched, profile)
+regions_path = write_regions_json(regions, day=today, out_path=out_dir / f"regions_{today}.json")
+print(f"Wrote {regions_path}: {len(regions)} region(s)")
+for _, region in regions.iterrows():
+    print(
+        f"  {region['region_id']}: rank_score={region['rank_score']:.1f}, "
+        f"stands={region['stand_count']}"
+    )
