@@ -1,5 +1,22 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (7): błędy GDOS/OSM przestały być fatalne
+
+Po dodaniu cache per-kafel (sekcja niżej) użytkownik odpalił `--radius-km 25` jeszcze raz. Pogoda i klimatologia: **100% z cache** (dowód, że wyrównanie siatki działa). GDOS doszło do kafla 18/30, potem `requests.exceptions.ConnectionError` (surowy `ProtocolError`, bez kodu HTTP w ogóle — inny rodzaj awarii niż 429/504 z Overpass). Użytkownik zapytał: czy GDOS jest w ogóle potrzebny i czy można pominąć nieudany kafel zamiast wywalać cały przebieg.
+
+**Czy GDOS jest potrzebny:** tak — `gdos_blocked` (z `mark_gdos_blocked` w `pipeline/gdos.py`) bezpośrednio wchodzi do `mask_full = mask & ~gdos_blocked` w `pipeline/mvp.py`. To jest maska prawna (rezerwaty/parki narodowe), nie kosmetyka.
+
+**Decyzja użytkownika o fallbacku:** wydzielenia z nieudanego kafla są traktowane jak brak ochrony (optymistycznie — tak jak dziś przy pustej odpowiedzi), ale **głośno**, nie po cichu — zgodnie z ustalonym wcześniej w tym projekcie zasadą "brak danych ≠ bezpiecznie" (patrz pierwotny brief projektu: "empty-ban-response ≠ no-ban"). Świadomy kompromis: więcej wyników, ale bez gwarancji pełnej weryfikacji prawnej w obszarze nieudanego kafla.
+
+**Naprawa:**
+- `pipeline/search_area.py::fetch_cached_gdos`/`fetch_cached_osm` łapią teraz wyjątek per-kafel, pomijają go (BEZ cachowania porażki — przejściowy błąd sieci ma być ponowiony przy następnym uruchomieniu, nie na stałe potraktowany jako "brak danych"), i zwracają dodatkową listę `failed`.
+- `pipeline/prepare_trip.py` drukuje jawne `UWAGA:` z liczbą pominiętych kafli i czego to dotyczy (maska prawna dla GDOS, dokładność dystansu/popularności dla OSM), plus `gdos_failed_tile_count`/`osm_failed_tile_count` w zwracanym `summary`.
+- GDOS dostał własny krótki retry (`_is_transient_network_error`, `_gdos_call_api`: 3 próby, 5s backoff) — wcześniej nie miał żadnego retry, w przeciwieństwie do Overpass/Open-Meteo. Brak udokumentowanej polityki limitów dla GDOS (w przeciwieństwie do Overpass/Open-Meteo), więc dopasowanie jest szerokie: dowolny `requests.exceptions.RequestException`.
+
+Testy: przepisany test "błąd w późniejszym kaflu" (GDOS już nie jest fatalny, więc stara przesłanka testu była nieaktualna) na dwa: jeden potwierdza że błąd kafla GDOS nie przerywa przebiegu i jest raportowany, drugi że naprawdę fatalny błąd (teraz: `check_periodic_ban`) nadal chroni poprzedni eksport. Nowe testy cache/skip/retry dla obu funkcji cache. 243 testy Python przechodzą.
+
+To już szósta iteracja poprawek z tego samego live-runu 25km, i pierwsza gdzie awaria NIE powinna już przerywać całego przebiegu — tylko obniżyć jego kompletność w konkretnym obszarze, z jawnym ostrzeżeniem.
+
 ## 2026-09-24 — aktualne (6): cache per-kafel dla GDOS i OSM + sprawdzone limity Overpass
 
 Po naprawie 504 (sekcja niżej) użytkownik odpalił `--radius-km 25` jeszcze raz. Doszło dalej niż poprzednio, ale na kaflu 8/30 Overpass wyczerpał wszystkie 6 prób (429/504 na przemian, ~150s backoffu) i się poddał. Użytkownik poprosił: sprawdź dokładnie limity Overpass i czy warto dodać cachowanie.
