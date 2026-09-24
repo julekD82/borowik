@@ -19,6 +19,8 @@ def _enriched_stands():
         "confidence": ["SREDNIA", "NISKA"],
         "confidence_reasons": [["a", "b"], ["c"]],
         "explanation": [[{"factor": "host", "contribution": 0.1, "text": "..."}], []],
+        "distance_method": ["network", "euclidean"],
+        "entrance_status": ["confirmed", "not_evaluated"],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
 
 
@@ -41,6 +43,13 @@ def test_build_score_record_shape_matches_architecture_schema():
         assert key in record
     assert record["R"] == 48.6
     assert record["mask"] is True
+
+
+def test_build_score_record_includes_distance_method_and_entrance_status():
+    row = _enriched_stands().iloc[0]
+    record = build_score_record(row, day="2026-09-23")
+    assert record["distance_method"] == "network"
+    assert record["entrance_status"] == "confirmed"
 
 
 def test_write_scores_json_writes_one_record_per_stand(tmp_path):

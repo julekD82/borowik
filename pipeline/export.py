@@ -4,7 +4,10 @@ import pathlib
 
 import geopandas as gpd
 
-SCORE_FIELDS = ["stand_id", "H", "F", "F_loc", "P", "confidence", "confidence_reasons", "explanation"]
+SCORE_FIELDS = [
+    "stand_id", "H", "F", "F_loc", "P", "confidence", "confidence_reasons", "explanation",
+    "distance_method", "entrance_status",
+]
 
 
 def _json_safe(value):
