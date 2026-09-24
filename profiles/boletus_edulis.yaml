@@ -169,10 +169,16 @@ explanation:
   max_negative: 2
 
 regions:
-  top_pct: 0.25             # candidate stands = top 25% of R_final among mask_full-passing stands, spec §5.6 step 1 / §5.7
-  buffer_m: 250.0            # merge candidate stands separated by up to this many metres into one region, spec §5.6 step 2 -- [E], plan decision
-  top_n_per_region: 5        # region score = median of the top N candidate R_final values in it, spec §5.6 step 3 -- [E], plan decision
-  max_regions: 5             # spec §0/§12 "3-5 rejonów na wycieczkę" -- [E], plan decision
+  # Plan 2.1 step A2 (docs/projekt-borowik.md §5.6 "Nowa definicja rejonu
+  # (2.1)"): replaces the 2.0 buffer+unary_union chain-merge, which let one
+  # region swallow an entire 187 km2 continuous forest complex on a real
+  # 25km run (§0.1 audit, §5.6 "Stan 2.1").
+  top_pct: 0.05              # candidate stands = top ~5% of R_final among mask_full-passing stands (was 0.25), spec §5.6 "Nowa definicja rejonu" step 1
+  radius_m: 800.0            # region = candidates ENTIRELY within this radius of a chosen seed centroid (pipeline.regions._region_members) -- guarantees diameter <= 1600m by construction (2*radius_m, triangle inequality), verified against a real 25km cache export: 1425-1536m true diameter -- [E], plan decision
+  min_area_ha: 5.0           # region must contain at least this much total candidate stand area, spec §5.6/§13.1 completion criterion -- [E], plan decision
+  min_separation_m: 3000.0   # accepted regions' actual centroids must be at least this far apart, spec §5.6/§13.1 completion criterion -- [E], plan decision
+  top_n_per_region: 5        # region score = median of the top N candidate R_final values in it, spec §5.6 step 3 -- [E], plan decision (unchanged)
+  max_regions: 5             # spec §0/§12 "3-5 rejonów na wycieczkę" -- [E], plan decision (unchanged)
 
 entrances:
   confirmed_tolerance_m: 50.0    # spec §5.5.2 -- [E] plan decision: entrance within this distance of a known OSM parking point counts as 'confirmed'

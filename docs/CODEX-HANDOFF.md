@@ -1,5 +1,26 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (13): A2 — przebudowa rejonów (kończy z jednym-rejonem-na-cały-las)
+
+Zrealizowany krok A2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, algorytm z §5.6 "Nowa definicja rejonu (2.1)", liczby z §0.1). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu (na wyraźną prośbę).
+
+**Przyczyna:** algorytm 2.0 (`_assign_clusters`: bufor 250 m + `unary_union`) łączy łańcuchowo dowolnie długi ciąg sąsiadujących top-25% wydzieleń bez górnego ograniczenia rozmiaru — stąd rejon 1 = 4 747 wydzieleń / ~187 km² przy realnym przebiegu 25 km (§0.1).
+
+**Zaproponowana i zaakceptowana uproszczona wersja algorytmu z §5.6** (zamiast przesuwnej siatki okien 1×1 km / przesunięcie 500 m): każdy kandydat (top ~5%, nie top 25%) jest potencjalnym "nasieniem" rejonu; `score(nasiono) = Σ(powierzchnia_ha × R_final)` po kandydatach, których **cała geometria** (nie tylko centroid) mieści się w kole o promieniu `radius_m` wokół centroidu nasiona; zachłanny wybór malejąco po `score`, odrzucając nasiona zbyt blisko (< `min_separation_m`) już przyjętego rejonu lub z sumą powierzchni < `min_area_ha`. Ponieważ każde okno ma tę samą powierzchnię, dzielenie przez nią w formule z §5.6 nie zmienia rankingu — więc to jest ten sam ranking bez kodu do wyrównywania siatki.
+
+**Dwie poprawki znalezione dopiero przy weryfikacji na realnych danych (nie zgadywane, sprawdzone na cache):**
+1. **Przynależność po centroidzie nie wystarcza.** Duże/wydłużone wydzielenia (do ~27 ha, własna przekątna do ~900 m w realnych danych) mają centroid blisko nasiona, ale poligon wystaje poza promień — dawało to rejony o prawdziwej średnicy >2 km mimo promienia 800 m. Naprawa: `pipeline.regions._region_members` wymaga, żeby **cała** geometria kandydata mieściła się w buforze wokół nasiona (`sindex.query(seed_buffer, predicate="contains")`), co z nierówności trójkąta gwarantuje średnicę rejonu ≤ `2 × radius_m` niezależnie od kształtu/rozmiaru pojedynczych wydzieleń.
+2. **Odległość między rejonami trzeba sprawdzać po faktycznym centroidzie wybranego rejonu, nie po punkcie nasiona.** Test na syntetycznym ciągłym lesie (patrz niżej) złapał realne naruszenie progu 3 km (2861 m zamiast ≥3000 m) — członkostwo bywa asymetryczne (nasiono widzi sąsiadów tylko z jednej strony), więc faktyczny centroid unii dryfuje od punktu nasiona. Naprawa: sprawdzenie `min_separation_m` liczone jest na `summary["geometry"].centroid` już zbudowanego rejonu (dokładnie ten sam punkt, który potem zapisuje `write_regions_json` jako `centroid_lat/lon`), nie na surowym punkcie nasiona.
+
+**Zmiany:**
+- `pipeline/regions.py`: usunięty `_assign_clusters` (bufor + `unary_union`, źródło błędu 2.0). Nowe `_region_members` (przynależność przez pełną geometrię, nie centroid) i `_density_score`. `_summarize_cluster`/`select_candidates` bez zmian. `group_into_regions` przepisane na zachłanny wybór nasion opisany wyżej.
+- `profiles/boletus_edulis.yaml` (`regions:`): `top_pct` 0,25→0,05; `buffer_m` usunięte, zastąpione `radius_m: 800.0` (gwarantuje średnicę ≤1600 m), nowe `min_area_ha: 5.0`, `min_separation_m: 3000.0`; `top_n_per_region`/`max_regions` bez zmian.
+- `tests/test_regions.py`: usunięte 3 testy `_assign_clusters`; nowe testy `_region_members` (w tym test wprost odtwarzający błąd nr 1 — wydłużone wydzielenie z centroidem blisko, ale geometrią poza promieniem), odrzucenia po `min_area_ha`/`min_separation_m`; przepisane testy `group_into_regions` na jawne, lokalne nadpisania `regions:` (niezależne od strojonych domyślnych wartości); **wymagany test na syntetycznym ciągłym lesie** (siatka 31×31 wydzieleń, 6 km rozpiętości, wszystkie w masce z wysokim R) — potwierdza >1 rejon, żaden rejon nie obejmuje wszystkich kandydatów, prawdziwa średnica (convex hull, max odległość par punktów — nie przekątna bounding-boxa, bo ta zawyża i dała fałszywy alarm przy pierwszym podejściu z promieniem liczonym po centroidzie) ≤ 2000 m; ten sam test złapał błąd nr 2.
+
+**Weryfikacja kryterium ukończenia** (bez nowego pobierania z sieci — użyty już zapisany na dysku wynik przebiegu 25 km, `notebooks/output/scores_2026-09-24.json` + `stands.geojson`, ten sam co audyt §0.1, przepuszczony przez prawdziwy `pipeline.regions.group_into_regions`): **5 rejonów**, prawdziwa średnica 1425–1536 m (≤2000 m), powierzchnia kandydatów 79,7–102,9 ha (≥5 ha), odległość między faktycznymi centroidami 3,28–25,3 km (≥3 km). Format `regions_{day}.json` sprawdzony przez `write_regions_json` — te same pola co wcześniej (`region_id, rank_score, stand_count, stand_ids, centroid_lat, centroid_lon, day`), frontend/`sync-data.mjs` bez zmian. 264 testy Python przechodzą (262→264).
+
+**Nie ruszono w tym kroku:** pogoda, `--date` (A3) — zgodnie z zakresem zlecenia.
+
 ## 2026-09-24 — aktualne (12): A1 — kody siedlisk wyżynnych i gatunków w profilu
 
 Zrealizowany krok A1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, wartości z §5.3 "Uzupełnienie 2.1").

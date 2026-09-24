@@ -1,14 +1,45 @@
+import copy
+import math
+from itertools import combinations
+
 import geopandas as gpd
-from shapely.geometry import box
+from shapely.geometry import Point, box
 
 import pytest
 
 from pipeline.habitat import load_profile
 from pipeline.regions import (
-    select_candidates, _assign_clusters, _summarize_cluster, group_into_regions,
+    select_candidates, _region_members, _summarize_cluster, group_into_regions,
 )
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
+
+
+def _regions_profile(**overrides):
+    """A copy of PROFILE with `regions` fully replaced by explicit test
+    values, so each test is self-contained and does not silently change
+    behaviour if the real, tuned defaults in profiles/boletus_edulis.yaml
+    are retuned later."""
+    profile = copy.deepcopy(PROFILE)
+    profile["regions"] = {
+        "top_pct": 1.0, "radius_m": 500.0, "min_area_ha": 0.5,
+        "min_separation_m": 3000.0, "top_n_per_region": 5, "max_regions": 5,
+        **overrides,
+    }
+    return profile
+
+
+def _true_diameter(geom) -> float:
+    """Max pairwise distance between any two points of geom, via its convex
+    hull -- NOT the bounding-box diagonal, which can overestimate the real
+    diameter of an L-shaped point spread (verified during plan research on
+    real cache data: bbox diagonal gave false positives up to ~2690m for
+    regions whose true diameter was really ~1500m)."""
+    hull = geom.convex_hull
+    coords = list(hull.exterior.coords) if hull.geom_type == "Polygon" else list(hull.coords)
+    if len(coords) < 2:
+        return 0.0
+    return max(math.hypot(a[0] - b[0], a[1] - b[1]) for a, b in combinations(coords, 2))
 
 
 def _stand(stand_id, r_final, mask_full=True, x=380000):
@@ -43,32 +74,41 @@ def test_select_candidates_returns_empty_frame_when_nothing_passes_mask():
     assert len(result) == 0
 
 
-def test_assign_clusters_merges_stands_separated_by_a_gap_within_buffer():
-    rows = [
-        _stand("A", r_final=50.0, x=380000),  # box 380000-380100
-        _stand("B", r_final=60.0, x=380300),  # box 380300-380400, 200 m gap from A
-    ]
-    candidates = gpd.GeoDataFrame(rows, crs="EPSG:2180")
-    clusters = _assign_clusters(candidates, buffer_m=250.0)
-    assert len(clusters) == 1
-    assert sorted(clusters[0]["stand_id"].tolist()) == ["A", "B"]
+def test_region_members_includes_seed_itself():
+    # box(380000,486000,380100,486100) has centroid (380050, 486050) and its
+    # own corners ~70.7m from that centroid (100x100 box, half-diagonal) --
+    # radius_m must be at least that for the box to contain itself.
+    candidates = gpd.GeoDataFrame([_stand("A", r_final=50.0, x=380000)], crs="EPSG:2180")
+    members = _region_members(candidates, Point(380050, 486050), radius_m=100.0)
+    assert members["stand_id"].tolist() == ["A"]
 
 
-def test_assign_clusters_keeps_gap_larger_than_buffer_separate():
-    rows = [
-        _stand("A", r_final=50.0, x=380000),  # box 380000-380100
-        _stand("B", r_final=60.0, x=381000),  # box 381000-381100, 900 m gap from A
-    ]
-    candidates = gpd.GeoDataFrame(rows, crs="EPSG:2180")
-    clusters = _assign_clusters(candidates, buffer_m=250.0)
-    assert len(clusters) == 2
-    ids = sorted(c["stand_id"].iloc[0] for c in clusters)
-    assert ids == ["A", "B"]
+def test_region_members_excludes_stand_whose_geometry_pokes_outside_radius_even_though_centroid_is_close():
+    # spec §5.6 plan-2.1 research finding: a large/elongated stand can have
+    # its centroid close to the seed while its own polygon extends well
+    # past the intended radius. Membership must test the WHOLE geometry,
+    # not just the centroid distance, or the region's true diameter breaks
+    # the <=2km completion criterion (found on real BDL data during
+    # planning -- stands up to ~27ha/~900m own diagonal).
+    seed = box(380000, 486000, 380100, 486100)  # centroid (380050, 486050)
+    # 700m wide, 50m tall strip, centroid EXACTLY equal to the seed's
+    # centroid, but its corners are ~350.9m from that centroid -- outside a
+    # 300m-radius buffer even though centroid distance is 0.
+    elongated = box(379700, 486025, 380400, 486075)
+    candidates = gpd.GeoDataFrame(
+        [{"stand_id": "seed", "R_final": 50.0, "geometry": seed},
+         {"stand_id": "elongated", "R_final": 50.0, "geometry": elongated}],
+        crs="EPSG:2180",
+    )
+    members = _region_members(candidates, Point(380050, 486050), radius_m=300.0)
+    assert members["stand_id"].tolist() == ["seed"]
 
-
-def test_assign_clusters_returns_empty_list_for_empty_input():
-    empty = gpd.GeoDataFrame({"stand_id": [], "R_final": []}, geometry=[], crs="EPSG:2180")
-    assert _assign_clusters(empty, buffer_m=250.0) == []
+    # The same elongated stand IS a member once the radius is generous
+    # enough to actually contain it whole (distance to its farthest corner
+    # is ~350.9m) -- confirms the exclusion above is about geometry, not a
+    # bug that rejects everything.
+    members_wide = _region_members(candidates, Point(380050, 486050), radius_m=400.0)
+    assert sorted(members_wide["stand_id"].tolist()) == ["elongated", "seed"]
 
 
 def test_summarize_cluster_uses_median_of_top_n_not_sum():
@@ -121,38 +161,110 @@ def test_group_into_regions_empty_when_nothing_passes_mask():
     assert list(result.columns) == ["region_id", "rank_score", "stand_count", "stand_ids", "geometry"]
 
 
+def test_group_into_regions_rejects_seeds_below_min_area_ha():
+    # Two tiny (0.25 ha) but very-high-R, well-separated candidates -- high
+    # enough R to be picked first by the density-score ranking, but too
+    # small to ever form a valid region on their own.
+    rows = [
+        {"stand_id": "tiny1", "R_final": 99.0, "mask_full": True,
+         "geometry": box(380000, 486000, 380050, 486050)},
+        {"stand_id": "tiny2", "R_final": 95.0, "mask_full": True,
+         "geometry": box(390000, 486000, 390050, 486050)},
+    ]
+    stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    profile = _regions_profile(top_pct=1.0, radius_m=200.0, min_area_ha=1.0, min_separation_m=3000.0)
+    result = group_into_regions(stands, profile)
+    assert len(result) == 0
+
+
+def test_group_into_regions_rejects_seed_too_close_to_already_accepted_region():
+    # Two single-stand candidates only 1km apart (< min_separation_m), each
+    # easily large/high-R enough to qualify on its own. Only the
+    # higher-scoring one should survive.
+    rows = [
+        _stand("better", r_final=95.0, x=380000),
+        _stand("worse", r_final=90.0, x=381000),  # 1000m away, centroid-to-centroid
+    ]
+    stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    profile = _regions_profile(top_pct=1.0, radius_m=100.0, min_area_ha=0.5, min_separation_m=3000.0)
+    result = group_into_regions(stands, profile)
+    assert len(result) == 1
+    assert result.iloc[0]["stand_ids"] == ["better"]
+
+
 def test_group_into_regions_caps_at_max_regions_and_sorts_by_score():
-    # 30 single-stand clusters (each 5 km apart, far beyond buffer_m) with
-    # R_final 1..30. select_candidates' default top_pct=0.25 keeps only the
-    # top 8 of these (verified: threshold 22.75 -> R 23..30 survive), so
-    # max_regions=5 (profile default) still has 3 to drop -- this actually
-    # exercises the cap, unlike a smaller spread where top_pct alone would
-    # already leave <=5 candidates.
+    # 30 single-stand "regions" 5km apart, R_final 1..30. top_pct=0.3 keeps
+    # the top 9 (threshold ~21.3 -> R 22..30 survive) -- enough to exceed
+    # max_regions=5 and exercise the cap.
     rows = [_stand(f"S{i}", r_final=float(i), x=380000 + i * 5000) for i in range(1, 31)]
     stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
-    result = group_into_regions(stands, PROFILE)
-    assert len(result) == PROFILE["regions"]["max_regions"]
+    profile = _regions_profile(top_pct=0.3, radius_m=100.0, min_area_ha=0.5, min_separation_m=3000.0, max_regions=5)
+    result = group_into_regions(stands, profile)
+    assert len(result) == profile["regions"]["max_regions"]
     assert result["rank_score"].tolist() == sorted(result["rank_score"].tolist(), reverse=True)
     assert result["rank_score"].max() == 30.0
 
 
 def test_group_into_regions_region_ids_are_sequential():
-    # 10 single-stand clusters, R_final 1..10. top_pct=0.25's threshold 7.75
-    # leaves exactly 3 candidates (R 8, 9, 10), each far enough apart (5 km)
-    # to stay separate clusters -- under max_regions=5 so nothing is capped,
-    # isolating the id-sequencing behaviour from the capping behaviour
+    # 10 single-stand "regions" 5km apart, R_final 1..10. top_pct=0.25's
+    # threshold 7.75 leaves exactly 3 candidates (R 8, 9, 10), well under
+    # max_regions=5, isolating id-sequencing from the capping behaviour
     # already covered above.
     rows = [_stand(f"S{i}", r_final=float(i), x=380000 + i * 5000) for i in range(1, 11)]
     stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
-    result = group_into_regions(stands, PROFILE)
+    profile = _regions_profile(top_pct=0.25, radius_m=100.0, min_area_ha=0.5, min_separation_m=3000.0, max_regions=5)
+    result = group_into_regions(stands, profile)
     assert result["region_id"].tolist() == ["region_1", "region_2", "region_3"]
+    assert result["rank_score"].tolist() == [10.0, 9.0, 8.0]
 
 
 def test_group_into_regions_does_not_let_a_sprawling_mediocre_cluster_beat_a_tight_excellent_one():
-    # End-to-end version of the Task 3 unit test, through the public API.
+    # End-to-end version of the density-score-ranking behaviour: a loose
+    # chain of 10 just-above-threshold stands (300m apart -- close enough
+    # that old buffer-based clustering would have chain-merged them into
+    # one giant cluster) must not outrank a tight pair of excellent stands,
+    # because with a bounded radius each mediocre seed only ever sees its
+    # immediate 1-2 neighbours (see plan research), not the whole chain.
     mediocre_rows = [_stand(f"M{i}", r_final=20.0, x=380000 + i * 300) for i in range(10)]
     excellent_rows = [_stand("E1", r_final=90.0, x=390000), _stand("E2", r_final=88.0, x=390300)]
     stands = gpd.GeoDataFrame(mediocre_rows + excellent_rows, crs="EPSG:2180")
-    result = group_into_regions(stands, PROFILE)
+    profile = _regions_profile(top_pct=1.0, radius_m=500.0, min_area_ha=0.5, min_separation_m=3000.0)
+    result = group_into_regions(stands, profile)
     assert set(result.iloc[0]["stand_ids"]) == {"E1", "E2"}
     assert result.iloc[0]["rank_score"] == 89.0
+
+
+def test_group_into_regions_on_a_synthetic_continuous_forest_does_not_produce_one_giant_region():
+    # The actual bug this step fixes (spec §5.6 "Stan 2.1"): on a real 25km
+    # run, one region swallowed 4747 stands over ~187 km2 because the old
+    # buffer+unary_union clustering chain-merges any run of near-touching
+    # candidates with no upper bound on the result's size. Simulate that
+    # here with a dense, uniformly-excellent grid spanning 6km -- far
+    # larger than any single region's allowed ~1.6km-diameter footprint.
+    grid_n = 31
+    spacing = 200.0
+    rows = []
+    for i in range(grid_n):
+        for j in range(grid_n):
+            x = 380000 + i * spacing
+            y = 486000 + j * spacing
+            rows.append({
+                "stand_id": f"G{i}_{j}", "R_final": 90.0, "mask_full": True,
+                "geometry": box(x, y, x + 100.0, y + 100.0),
+            })
+    stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+    total_candidates = len(rows)
+
+    profile = _regions_profile(top_pct=1.0, radius_m=800.0, min_area_ha=5.0, min_separation_m=3000.0, max_regions=5)
+    result = group_into_regions(stands, profile)
+
+    assert 1 < len(result) <= profile["regions"]["max_regions"]
+    for _, region in result.iterrows():
+        assert region["stand_count"] < total_candidates
+        assert _true_diameter(region["geometry"]) <= 2000.0
+
+    # centres pairwise >= min_separation_m apart, matching the completion
+    # criterion (checked on the real cached 25km dataset during planning)
+    centers = [region["geometry"].centroid for _, region in result.iterrows()]
+    for a, b in combinations(centers, 2):
+        assert a.distance(b) >= profile["regions"]["min_separation_m"]
