@@ -15,7 +15,9 @@ from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.orchestrate import run_poc
 from pipeline.osm import fetch_osm_features
-from pipeline.rdlp import fetch_rdlp_boundaries_cached, resolve_rdlp_layer
+from pipeline.rdlp import (
+    fetch_rdlp_boundaries_cached, resolve_rdlp_layer, regions_intersecting_bbox, layer_name_for_region,
+)
 from pipeline.regions import group_into_regions
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
@@ -102,6 +104,23 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             f"Punkt ({lat}, {lon}) nie lezy w zadnym RDLP (poza Polska?) -- BDL nie ma dla niego danych."
         )
     print(f"  RDLP layer: {layer}")
+
+    intersecting = regions_intersecting_bbox(bbox, rdlp_gdf)
+    if len(intersecting) > 1:
+        # Final review finding: a 10x10 km tile near an RDLP border can
+        # straddle two directorates. Only `layer`'s wydzielenia get fetched
+        # below -- the others' stands are missing from the result. Not
+        # fixed by fetching every intersecting layer in this plan (that is
+        # a real feature with its own design questions -- merging,
+        # deduplicating boundary-straddling stands, cache-key changes --
+        # deferred to its own plan); at minimum this makes the gap visible
+        # instead of a silently incomplete result.
+        others = [r for r in intersecting if layer_name_for_region(r) != layer]
+        print(
+            f"  Uwaga: kafel 10x10 km przecina granice {len(intersecting)} RDLP "
+            f"({', '.join(intersecting)}) -- dane z {', '.join(others)} NIE sa pobierane, "
+            f"wynik moze byc niepelny przy tej granicy."
+        )
 
     def _cached_bdl_fetcher(layer, bbox_2180):
         if tile_path.exists():

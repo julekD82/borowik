@@ -1,6 +1,7 @@
+import geopandas as gpd
 import pytest
 
-from pipeline.prepare_trip import parse_args, MIN_RADIUS_KM, MAX_RADIUS_KM
+from pipeline.prepare_trip import parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM
 
 
 def test_parse_args_requires_lat_and_lon():
@@ -44,3 +45,21 @@ def test_parse_args_rejects_malformed_date():
 def test_parse_args_accepts_well_formed_date():
     args = parse_args(["--lat", "50.5", "--lon", "18.6", "--date", "2026-10-05"])
     assert args.date == "2026-10-05"
+
+
+def test_main_returns_1_and_prints_clean_error_outside_poland(monkeypatch, tmp_path, capsys):
+    # Final review finding (Important #2): TripPreparationError -> print ->
+    # return 1 was only proven by a manual run. This exercises the same
+    # path with no network, by making the RDLP lookup itself return no
+    # match, exactly as it does for a real out-of-Poland point.
+    empty_rdlp = gpd.GeoDataFrame({"region_name": []}, geometry=[], crs="EPSG:2180")
+    monkeypatch.setattr(
+        "pipeline.prepare_trip.fetch_rdlp_boundaries_cached", lambda cache_dir: empty_rdlp
+    )
+
+    exit_code = main(["--lat", "0", "--lon", "0", "--cache-dir", str(tmp_path)])
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Blad" in captured.out
+    assert "Traceback" not in captured.out

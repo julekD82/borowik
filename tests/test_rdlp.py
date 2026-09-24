@@ -4,7 +4,7 @@ from shapely.geometry import box
 
 from pipeline.rdlp import (
     fetch_rdlp_boundaries, layer_name_for_region, resolve_rdlp_layer,
-    fetch_rdlp_boundaries_cached, DEFAULT_WFS_URL,
+    fetch_rdlp_boundaries_cached, regions_intersecting_bbox, DEFAULT_WFS_URL,
 )
 
 # Verified live 2026-09-24 (see plan Global Constraints): GetCapabilities'
@@ -95,3 +95,18 @@ def test_fetch_rdlp_boundaries_cached_writes_and_reuses_cache(tmp_path):
     second = fetch_rdlp_boundaries_cached(tmp_path)  # cache hit -- no new HTTP call
     assert len(second) == 1
     assert len(responses.calls) == 1
+
+
+def test_regions_intersecting_bbox_returns_all_that_overlap():
+    # Final review finding (Important #1): a 10x10 km tile can straddle two
+    # RDLP polygons -- resolve_rdlp_layer alone only ever returns the one
+    # covering the bbox's center, silently dropping the other's stands.
+    bbox = (486000.0, 385000.0, 496000.0, 405000.0)  # n_min, e_min, n_max, e_max -- spans both boxes
+    names = regions_intersecting_bbox(bbox, _rdlp_gdf())
+    assert set(names) == {"KATOWICE", "KRAKOW"}
+
+
+def test_regions_intersecting_bbox_returns_just_one_when_fully_inside():
+    bbox = (486000.0, 381000.0, 496000.0, 389000.0)  # fully inside box1
+    names = regions_intersecting_bbox(bbox, _rdlp_gdf())
+    assert names == ["KATOWICE"]

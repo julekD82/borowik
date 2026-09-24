@@ -3,7 +3,7 @@ import pathlib
 
 import geopandas as gpd
 import requests
-from shapely.geometry import Point
+from shapely.geometry import Point, box as shapely_box
 
 DEFAULT_WFS_URL = "https://wfs.bdl.lasy.gov.pl/geoserver/BDL/ows"
 RDLP_LAYER = "BDL:RDLP"
@@ -58,3 +58,16 @@ def fetch_rdlp_boundaries_cached(cache_dir, base_url: str = DEFAULT_WFS_URL) -> 
     cache_dir.mkdir(parents=True, exist_ok=True)
     gdf.to_parquet(cache_path)
     return gdf
+
+
+def regions_intersecting_bbox(bbox_2180: tuple, rdlp_gdf: gpd.GeoDataFrame) -> list[str]:
+    """All region_name values whose RDLP polygon intersects the given
+    (n_min, e_min, n_max, e_max) EPSG:2180 bbox (pipeline.tiles.tile_bbox_2180's
+    shape) -- not just the one covering the bbox's center. A 10x10 km tile
+    near an RDLP border can genuinely straddle two directorates;
+    resolve_rdlp_layer alone would silently only ever fetch one of them
+    (final review finding, prepare_trip CLI plan)."""
+    n_min, e_min, n_max, e_max = bbox_2180
+    tile_box = shapely_box(e_min, n_min, e_max, n_max)
+    hits = rdlp_gdf[rdlp_gdf.geometry.intersects(tile_box)]
+    return hits["region_name"].tolist()
