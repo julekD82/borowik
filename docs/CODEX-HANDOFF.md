@@ -1,5 +1,15 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (5): Overpass 504 — kolejny błąd z tego samego live-runu
+
+Po naprawie 429 (sekcja niżej) użytkownik odpalił `--radius-km 25` jeszcze raz. Pogoda, klimatologia (z nowym cache per-punkt) i `run_poc` przeszły bez błędu. Ale na kaflu 1/30 GDOS/OSM: `requests.exceptions.HTTPError: 504 Server Error: Gateway Timeout` — inny kod błędu niż poprzednio (429), więc `_is_overpass_rate_limit` (dopasowywał tylko 429/406) go nie łapał i nie próbował ponownie.
+
+**Sprawdzone źródło**: strona autora Overpass API (`olbricht.nrw/command_line.html`) wprost opisuje 504 jako "wysyłane gdy serwer ma już tak duże obciążenie, że nie może wykonać zapytania... w większości przypadków najlepiej spróbować ponownie później" — to udokumentowana sytuacja do retry, nie problem z kształtem naszego zapytania (to samo zapytanie działało wcześniej w izolowanym teście, patrz komentarz `routing_highway_types` w `profiles/boletus_edulis.yaml`).
+
+**Naprawa**: `_is_overpass_rate_limit` przemianowane na `_is_overpass_retryable`, dopasowuje teraz też 504 (obok 429/406), z tym samym 30s backoff. Test `test_is_overpass_retryable_matches_429_406_and_504` w `tests/test_prepare_trip.py`. 233 testy Python przechodzą.
+
+**To już czwarty błąd z rzędu wyłapany dopiero na żywym, pełnym przebiegu 25 km** (po dwóch Open-Meteo i pierwszym Overpass 429). Warto odpalić jeszcze raz — wejścia do lasu i eksport końcowy nadal nie zostały przetestowane na żywo w tym przebiegu.
+
 ## 2026-09-24 — aktualne (4): cache per-punkt dla pogody i klimatologii (nie tylko BDL)
 
 Użytkownik zauważył: BDL ma widoczny cache per-kafel (`(cache)` w logach), a pogoda/klimatologia — mimo dwóch napraw wyżej — nie miały żadnego widocznego ani realnie reużywalnego cache między przebiegami.
