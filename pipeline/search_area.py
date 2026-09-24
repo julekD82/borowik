@@ -112,22 +112,40 @@ def fetch_cached_osm(tiles, cache_dir, profile, fetcher):
     `failed` list, the same fallback and the same reasoning as
     fetch_cached_gdos above: OSM only feeds accessibility/popularity
     estimates, not a legal mask, but a missing tile is still missing data
-    the caller must disclose, not paper over."""
+    the caller must disclose, not paper over.
+
+    The first failure also stops calling the API for every remaining
+    uncached tile (user request, 2026-09-24): one failure past fetcher's
+    own retries means Overpass (or the network) is down for this run, and
+    trying again per tile would just fail the same way while continuing
+    to hammer an already-struggling public server. Already-cached tiles
+    are still served normally -- only tiles that would need a real call
+    are skipped-without-trying once given up."""
     profile_key = hashlib.sha256(repr(profile.get("osm")).encode("utf-8")).hexdigest()[:16]
     osm_frames = {name: [] for name in ("parking", "roads", "places")}
     failed = []
+    give_up = False
     for index, bbox in enumerate(tiles, 1):
         tile_dir = Path(cache_dir) / "osm_tiles" / profile_key / f"E{bbox[1]}N{bbox[0]}S{TILE_M}"
         cached = (tile_dir / "roads.parquet").exists()
         if cached:
             print(f"OSM {index}/{len(tiles)}: (cache)", flush=True)
             tile_osm = {name: gpd.read_parquet(tile_dir / f"{name}.parquet") for name in osm_frames}
+        elif give_up:
+            print(f"OSM {index}/{len(tiles)}: pominiety (wczesniejszy blad, pobieranie wstrzymane)", flush=True)
+            failed.append(bbox)
+            continue
         else:
             try:
                 tile_osm = fetcher(bbox, profile)
             except Exception as exc:
-                print(f"OSM {index}/{len(tiles)}: BLAD ({exc}) -- kafel pominiety", flush=True)
+                print(
+                    f"OSM {index}/{len(tiles)}: BLAD ({exc}) -- kafel pominiety, "
+                    "wstrzymuje dalsze pobieranie OSM dla tego przebiegu",
+                    flush=True,
+                )
                 failed.append(bbox)
+                give_up = True
                 continue
             print(f"OSM {index}/{len(tiles)}: (Overpass)", flush=True)
             tile_dir.mkdir(parents=True, exist_ok=True)

@@ -171,18 +171,61 @@ def test_fetch_cached_osm_uses_a_separate_cache_per_profile(tmp_path):
     assert len(calls) == 2  # different profile config -> not treated as the same cache entry
 
 
-def test_fetch_cached_osm_skips_a_tile_that_keeps_failing_and_reports_it(tmp_path, capsys):
+def test_fetch_cached_osm_skips_a_tile_that_fails_and_reports_it(tmp_path, capsys):
     def flaky(bbox, profile):
         if bbox[1] == 0:
             raise RuntimeError("network unavailable")
         return _fake_osm_frames()
 
-    tiles = [(0, 0, 10000, 10000), (0, 10000, 10000, 20000)]
+    tiles = [(0, 0, 10000, 10000)]
     result, failed = fetch_cached_osm(tiles, tmp_path, {"osm": {}}, flaky)
 
     assert failed == [(0, 0, 10000, 10000)]
-    assert len(result["roads"]) == 1  # only the succeeding tile's data
+    assert len(result["roads"]) == 0
     assert "OSM" in capsys.readouterr().out
+
+
+def test_fetch_cached_osm_stops_calling_the_api_after_the_first_failure(tmp_path):
+    # One failing tile means Overpass (or the network) is down for this
+    # run -- calling the API again for the remaining uncached tiles would
+    # just fail the same way and keep hammering an already-struggling
+    # server (user request, 2026-09-24). They're reported as failed too,
+    # without ever being attempted.
+    calls = []
+
+    def flaky(bbox, profile):
+        calls.append(bbox)
+        raise RuntimeError("network unavailable")
+
+    tiles = [(0, 0, 10000, 10000), (0, 10000, 10000, 20000), (0, 20000, 10000, 30000)]
+    result, failed = fetch_cached_osm(tiles, tmp_path, {"osm": {}}, flaky)
+
+    assert len(calls) == 1  # only the first tile was ever attempted
+    assert failed == tiles
+    assert len(result["roads"]) == 0
+
+
+def test_fetch_cached_osm_still_serves_a_cached_tile_after_a_later_give_up(tmp_path):
+    calls = []
+
+    def osm(bbox, profile):
+        calls.append(bbox)
+        return _fake_osm_frames()
+
+    tile_a, tile_b, tile_c = (0, 0, 10000, 10000), (0, 10000, 10000, 20000), (0, 20000, 10000, 30000)
+    fetch_cached_osm([tile_b], tmp_path, {"osm": {}}, osm)  # pre-cache tile_b
+    calls.clear()
+
+    def fails_then_would_succeed(bbox, profile):
+        calls.append(bbox)
+        raise RuntimeError("network unavailable")
+
+    result, failed = fetch_cached_osm(
+        [tile_a, tile_b, tile_c], tmp_path, {"osm": {}}, fails_then_would_succeed,
+    )
+    assert calls == [tile_a]  # tile_b came from cache, tile_c was never attempted
+    assert failed == [tile_a, tile_c]
+    assert len(result["roads"]) == 1  # tile_b's cached data still made it in
 
 
 def test_fetch_cached_osm_does_not_cache_a_failed_tile(tmp_path):
