@@ -7,8 +7,17 @@ def load_profile(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def host_affinity(species_cd: str, profile: dict) -> float:
+    """The raw per-species affinity (spec §5.3 table), before blending with
+    the "unknown admixture" default -- exposed separately so callers (e.g.
+    pipeline.explain's S_host wording) can distinguish a genuinely poor
+    species match from a good species diluted by a low part_cd share, which
+    score_host's returned composite alone cannot (2.1 step A4)."""
+    return profile["host_affinity"].get(species_cd, profile["unknown_host_affinity"])
+
+
 def score_host(species_cd: str, part_cd: int, profile: dict) -> float:
-    affinity = profile["host_affinity"].get(species_cd, profile["unknown_host_affinity"])
+    affinity = host_affinity(species_cd, profile)
     # part_cd arrives from the BDL WFS via pd.to_numeric(errors="coerce"), so a
     # missing/unparseable value is NaN. `part_cd or 0` does NOT catch that (NaN
     # is truthy), and the NaN then propagates through H all the way into R --

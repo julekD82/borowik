@@ -26,6 +26,9 @@ export type Score = {
   distance_method: string;
   entrance_status: string;
   d_park_m?: number | null;
+  // Plan 2.1 step A4: optional so older exports (before this field existed)
+  // still load -- see isStandaloneTarget below.
+  area_ha?: number | null;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -61,6 +64,24 @@ export function habitatClass(value: number | null | undefined): string {
     : value < 0.7
       ? "Średni potencjał"
       : "Wysoki potencjał";
+}
+// Plan 2.1 step A4 (docs/projekt-borowik.md §5.2/§13.1): a stand this small
+// isn't worth a dedicated trip as a standalone destination -- presentation
+// filter only, never a mask (pipeline.habitat.passes_mask is unaffected):
+// small stands still count toward their region's area (pipeline/regions.py,
+// A2) and stay in scores/stands exports (pipeline/export.py). Kept here,
+// not in profiles/*.yaml: this number never feeds Python scoring/H/F/R --
+// putting it in the profile would misleadingly imply it does, and would
+// need a new export field wired through just to carry a value the backend
+// itself never uses. This is the one place it's defined; isStandaloneTarget
+// is the one place it's applied (main.ts's visibleEntries).
+export const MIN_STANDALONE_AREA_HA = 0.5;
+export function isStandaloneTarget(score: Score): boolean {
+  // area_ha absent (older export, before this field existed) or null
+  // (should not happen post-A4, but geometry could theoretically be empty)
+  // means "unknown area" -- don't hide it, rather than treating unknown as
+  // "too small".
+  return !finite(score.area_ha) || score.area_ha >= MIN_STANDALONE_AREA_HA;
 }
 export function confidenceLabel(value?: string): string {
   return (
@@ -241,6 +262,7 @@ export function parseData(
         typeof s.distance_method === "string" &&
         typeof s.entrance_status === "string" &&
         (s.d_park_m === undefined || numeric(s.d_park_m)) &&
+        (s.area_ha === undefined || numeric(s.area_ha)) &&
         Array.isArray(s.explanation) &&
         s.explanation.every(
           (e) =>

@@ -7,6 +7,8 @@ import {
   navigationUrl,
   distanceLabel,
   parseData,
+  isStandaloneTarget,
+  MIN_STANDALONE_AREA_HA,
 } from "./model";
 import { readSaved, saveRegion } from "./storage";
 import type { Score, Stands, Region } from "./model";
@@ -179,6 +181,41 @@ describe("data and classification", () => {
     expect(distanceLabel(undefined)).toBe("Brak danych");
     expect(distanceLabel(0)).toBe("0 m");
     expect(distanceLabel(1250)).toBe("1,3 km");
+  });
+  it("isStandaloneTarget hides small stands but not unknown-area ones (plan 2.1 step A4)", () => {
+    expect(isStandaloneTarget(score("A", 40))).toBe(true); // no area_ha field at all
+    expect(isStandaloneTarget({ ...score("A", 40), area_ha: null })).toBe(
+      true,
+    );
+    expect(isStandaloneTarget({ ...score("A", 40), area_ha: 0.1 })).toBe(
+      false,
+    );
+    expect(
+      isStandaloneTarget({
+        ...score("A", 40),
+        area_ha: MIN_STANDALONE_AREA_HA,
+      }),
+    ).toBe(true); // boundary is inclusive
+    expect(isStandaloneTarget({ ...score("A", 40), area_ha: 5 })).toBe(true);
+  });
+  it("parseData accepts scores without area_ha (older exports) and validates it when present", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    expect(parseData(scores, stands).scores[0].area_ha).toBeUndefined();
+    expect(
+      parseData(
+        [{ ...score("A", 40), area_ha: 0.3 }, score("B", 30)],
+        stands,
+      ).scores[0].area_ha,
+    ).toBe(0.3);
+    expect(() =>
+      parseData(
+        [
+          { ...score("A", 40), area_ha: "big" as unknown as number },
+          score("B", 30),
+        ],
+        stands,
+      ),
+    ).toThrow();
   });
 });
 

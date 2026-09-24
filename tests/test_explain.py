@@ -61,3 +61,68 @@ def test_generate_explanation_handles_no_negative_contributions():
     meta = {"species_cd": "SO", "site_type": "BMSW", "age": 60, "P": 0.0}
     entries = generate_explanation(contributions, values, meta, PROFILE)
     assert all(e["contribution"] > 0 for e in entries)
+
+
+def test_generate_explanation_host_down_distinguishes_low_share_from_poor_species_match():
+    # Plan 2.1 step A4 (spec §5.3 "Poprawka wyjasnien"): BK (buk) has
+    # host_affinity 0.9 in the profile -- a good match -- but at only 4/10
+    # udzial: S_host = 0.4*0.9 + 0.6*0.5 = 0.66, diluted below a
+    # hypothetical area median and flagged as a "down" contributor. The old
+    # wording ("slabo pasuje", literally "poorly suited") wrongly implied
+    # the SPECIES itself was a weak match, not just its coverage.
+    contributions = {"host": -0.2}
+    values = {"host": 0.66}
+    meta = {
+        "species_cd": "BK", "site_type": "BMSW", "age": 60, "P": 0.1,
+        "part_cd": 4, "host_affinity": PROFILE["host_affinity"]["BK"],
+    }
+    entries = generate_explanation(contributions, values, meta, PROFILE)
+    text = entries[0]["text"]
+    assert "4/10" in text
+    assert "słabo" not in text
+    assert "0.66" in text
+
+
+def test_generate_explanation_host_down_keeps_poor_species_wording_at_full_share():
+    # GB (grab) has host_affinity 0.3 -- a genuinely weak partner -- at full
+    # 10/10 share: S_host == affinity == 0.3, no dilution involved, so the
+    # original "slabo pasuje" wording is accurate here.
+    contributions = {"host": -0.5}
+    values = {"host": 0.3}
+    meta = {
+        "species_cd": "GB", "site_type": "BMSW", "age": 60, "P": 0.1,
+        "part_cd": 10, "host_affinity": PROFILE["host_affinity"]["GB"],
+    }
+    entries = generate_explanation(contributions, values, meta, PROFILE)
+    text = entries[0]["text"]
+    assert "słabo pasuje" in text
+    assert "/10" not in text
+
+
+def test_generate_explanation_host_down_falls_back_without_part_cd_or_affinity_meta():
+    # Backward compatible: a caller that doesn't pass part_cd/host_affinity
+    # in meta (e.g. the other tests in this file) still gets the original
+    # wording, not a KeyError/crash.
+    contributions = {"host": -0.2}
+    values = {"host": 0.4}
+    meta = {"species_cd": "SO", "site_type": "BMSW", "age": 60, "P": 0.1}
+    entries = generate_explanation(contributions, values, meta, PROFILE)
+    assert "słabo pasuje" in entries[0]["text"]
+
+
+def test_generate_explanation_host_down_uses_poor_species_wording_when_affinity_itself_is_low():
+    # DB.C (dab czerwony) has host_affinity 0.4 -- below the 0.5 "unknown
+    # admixture" baseline -- even at a partial 6/10 share: mixing with 0.5
+    # actually pulls S_host UP toward neutral here, not down, so a low
+    # S_host in this case still means the dominant species itself is the
+    # problem, not its share.
+    contributions = {"host": -0.3}
+    values = {"host": 0.4 * 0.6 + 0.5 * 0.4}
+    meta = {
+        "species_cd": "DB.C", "site_type": "BMSW", "age": 60, "P": 0.1,
+        "part_cd": 6, "host_affinity": PROFILE["host_affinity"]["DB.C"],
+    }
+    entries = generate_explanation(contributions, values, meta, PROFILE)
+    text = entries[0]["text"]
+    assert "słabo pasuje" in text
+    assert "/10" not in text

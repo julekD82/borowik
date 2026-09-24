@@ -2,10 +2,18 @@ import math
 import pytest
 
 from pipeline.habitat import (
-    load_profile, score_host, score_site, score_age, compute_habitat, passes_mask,
+    load_profile, host_affinity, score_host, score_site, score_age, compute_habitat, passes_mask,
 )
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
+
+
+def test_host_affinity_looks_up_known_species():
+    assert host_affinity("BK", PROFILE) == pytest.approx(0.9)
+
+
+def test_host_affinity_falls_back_to_unknown_default():
+    assert host_affinity("ZZZ", PROFILE) == pytest.approx(PROFILE["unknown_host_affinity"])
 
 
 def test_score_host_pure_stand_matches_affinity():

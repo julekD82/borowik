@@ -33,6 +33,12 @@ def build_score_record(row, day: str) -> dict:
     record["day"] = day
     record["R"] = _json_safe(float(row["R_final"]))
     record["mask"] = bool(row["mask_full"])
+    # Plan 2.1 step A4 (spec §5.2): from the EPSG:2180 geometry itself (same
+    # source pipeline.regions.py already uses for its own area_ha), not
+    # BDL's own sub_area attribute -- unused elsewhere, possibly stale.
+    # Frontend-only presentation filter (hide sub-0.5ha stands as standalone
+    # targets); not a mask, so every stand still gets a real value here.
+    record["area_ha"] = _json_safe(float(row["geometry"].area / 10000.0))
     return record
 
 

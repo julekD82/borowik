@@ -12,6 +12,7 @@ import {
   topExplanations,
   navigationUrl,
   finite,
+  isStandaloneTarget,
 } from "./model";
 import type { StandView, Score, Region, RegionView } from "./model";
 import { ForestMap } from "./map";
@@ -181,9 +182,15 @@ function renderRegionsPanel() {
     '<span class="gradient-legend"></span> Niższy → wyższy ranking względny';
 }
 function visibleEntries(): StandView[] {
-  if (!regionFilterId) return entries;
+  // Plan 2.1 step A4: sub-0.5ha stands are hidden as standalone targets in
+  // the flat "Wydzielenia" list, but NOT when browsing a region's own
+  // members (regionFilterId set) -- they still count toward that region's
+  // area (pipeline/regions.py, A2) and a user drilling into a region should
+  // see every stand that actually makes it up.
+  if (!regionFilterId)
+    return entries.filter((e) => isStandaloneTarget(e.score));
   const view = regionViews.find((v) => v.region.region_id === regionFilterId);
-  if (!view) return entries;
+  if (!view) return entries.filter((e) => isStandaloneTarget(e.score));
   const memberIds = new Set(view.members.map((m) => m.score.stand_id));
   return entries.filter((e) => memberIds.has(e.score.stand_id));
 }
@@ -236,7 +243,7 @@ function renderPanel() {
     : undefined;
   $("#panel-heading").innerHTML = filterView
     ? `<div><button class="back-button" id="back-to-regions">← Wróć do rejonów</button><h2>Rejon ${escape(filterView.region.region_id)} <span class="count-pill">${visible.length}</span></h2><p>Wydzielenia należące do tego rejonu</p></div>`
-    : `<div><h2>Wydzielenia <span class="count-pill">${entries.length}</span></h2><p>Każde ocenione osobno · po filtrach modelu</p></div><span class="sort-label">Najlepsze najpierw ↓</span>`;
+    : `<div><h2>Wydzielenia <span class="count-pill">${visible.length}</span></h2><p>Każde ocenione osobno · po filtrach modelu</p></div><span class="sort-label">Najlepsze najpierw ↓</span>`;
   $("#cards").innerHTML = visible.length
     ? visible
         .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -248,7 +255,7 @@ function renderPanel() {
       "</span><h2>Brak propozycji w tej analizie</h2><p>Żadne wydzielenie nie spełniło kryteriów. Sprawdź inny obszar lub przygotuj nową analizę bliżej wyjazdu.</p></div>";
   $("#map-title").textContent = filterView
     ? `Rejon ${filterView.region.region_id} · ${visible.length} wydzieleń`
-    : `${entries.length} wydzieleń · przygotowany obszar`;
+    : `${visible.length} wydzieleń · przygotowany obszar`;
   $("#legend-content").innerHTML =
     '<span class="gradient-legend"></span> Niższy → wyższy ranking względny';
 }

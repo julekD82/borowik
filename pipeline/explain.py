@@ -13,6 +13,17 @@ TEMPLATES = {
     "host": {
         "up": "gatunek panujący {species_cd} ma wysokie powinowactwo do borowika (S_host={value:.2f})",
         "down": "gatunek panujący {species_cd} słabo pasuje do borowika (S_host={value:.2f})",
+        # Plan 2.1 step A4 (spec §5.3 "Poprawka wyjaśnień"): S_host blends a
+        # species' own affinity with a neutral 0.5 "unknown admixture" in
+        # proportion to part_cd (pipeline.habitat.score_host). When the
+        # dominant species itself is a GOOD match (affinity >= the neutral
+        # baseline) but only holds a partial share, a low composite S_host
+        # reflects missing-domieszka-data dilution, not a poor species --
+        # see _host_down_is_low_share below for exactly when this applies.
+        "down_low_share": (
+            "gatunek panujący {species_cd} dobrze pasuje do borowika, ale stanowi tylko "
+            "{part_cd:.0f}/10 udziału w drzewostanie (S_host={value:.2f})"
+        ),
     },
     "site": {
         "up": "siedlisko {site_type} sprzyja owocnikowaniu (S_site={value:.2f})",
@@ -52,6 +63,28 @@ def compute_log_contributions(values: dict, area_medians: dict) -> dict:
     return contributions
 
 
+def _host_down_is_low_share(meta: dict, profile: dict) -> bool:
+    """True when a "down" S_host contribution is explained by a good
+    species diluted by a low part_cd share, rather than the species itself
+    being a poor match (plan 2.1 step A4). `meta` needs `part_cd` and
+    `host_affinity` (pipeline.habitat.host_affinity) -- callers that don't
+    pass them (or pass a missing part_cd, e.g. BDL didn't report one) get
+    False, i.e. the original wording, not a crash."""
+    part_cd = meta.get("part_cd")
+    affinity = meta.get("host_affinity")
+    if part_cd is None or affinity is None:
+        return False
+    try:
+        if math.isnan(part_cd):
+            return False
+    except TypeError:
+        pass
+    # part_cd == 10 means no admixture dilution occurred at all (score_host
+    # returns the affinity unchanged); affinity below the neutral baseline
+    # means the dominant species is the problem regardless of its share.
+    return 0 < part_cd < 10 and affinity >= profile["unknown_host_affinity"]
+
+
 def generate_explanation(contributions: dict, values: dict, meta: dict, profile: dict) -> list:
     cfg = profile["explanation"]
     ranked = sorted(contributions.items(), key=lambda kv: kv[1], reverse=True)
@@ -61,7 +94,10 @@ def generate_explanation(contributions: dict, values: dict, meta: dict, profile:
     entries = []
     for factor, contribution in ups + downs:
         direction = "up" if contribution > 0 else "down"
-        template = TEMPLATES[factor][direction]
+        template_key = direction
+        if factor == "host" and direction == "down" and _host_down_is_low_share(meta, profile):
+            template_key = "down_low_share"
+        template = TEMPLATES[factor][template_key]
         fmt_args = {**meta, "value": values.get(factor, 0.0)}
         text = template.format(**fmt_args)
         entries.append({"factor": factor, "contribution": float(contribution), "text": text})

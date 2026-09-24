@@ -2,6 +2,7 @@ import json
 import math
 import geopandas as gpd
 import pandas as pd
+import pytest
 from shapely.geometry import box
 
 from pipeline.export import (
@@ -53,6 +54,16 @@ def test_build_score_record_includes_distance_method_and_entrance_status():
     record = build_score_record(row, day="2026-09-23")
     assert record["distance_method"] == "network"
     assert record["entrance_status"] == "confirmed"
+
+
+def test_build_score_record_includes_area_ha_from_geometry():
+    # Plan 2.1 step A4 (spec §5.2): the frontend needs a stand's area to
+    # filter out sub-0.5ha standalone-target listings -- computed from the
+    # EPSG:2180 geometry itself (same source as pipeline.regions' own
+    # area_ha), not BDL's own sub_area attribute (unused, possibly stale).
+    row = _enriched_stands().iloc[0]  # box(0, 0, 1, 1) -- CRS units, 1 m^2
+    record = build_score_record(row, day="2026-09-23")
+    assert record["area_ha"] == pytest.approx(1.0 / 10000.0)
 
 
 def test_write_scores_json_writes_one_record_per_stand(tmp_path):

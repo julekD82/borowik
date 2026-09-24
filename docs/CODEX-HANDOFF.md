@@ -1,5 +1,24 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (15): A4 — filtr małych wydzieleń + poprawka wyjaśnień S_host
+
+Zrealizowany krok A4 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §5.2 i §5.3 "Poprawka wyjaśnień").
+
+**Część 1 — filtr < 0,5 ha:**
+- Sprawdzone: powierzchnia nie była w eksporcie (`stands.geojson` ma tylko `stand_id`+geometrię; `scores_{day}.json` żadnego pola powierzchni). Dodane `area_ha` do `SCORE_FIELDS`/`build_score_record` (`pipeline/export.py`), liczone z geometrii EPSG:2180 (`geometry.area / 10000`) — to samo źródło co `pipeline.regions`' własne `area_ha`, nie pole BDL `sub_area` (nieużywane, potencjalnie nieaktualne). Pole zawsze obecne w nowych eksportach (nie jest maską, więc każde wydzielenie je dostaje).
+- **Decyzja: próg w jednym miejscu frontendu (`MIN_STANDALONE_AREA_HA` w `frontend/src/model.ts`), nie w profilu YAML.** Uzasadnienie: to wartość czysto prezentacyjna, nigdy nie wchodzi do scoringu Pythona (H/F/R/rejony) — umieszczenie jej w profilu sugerowałoby, że wpływa na wynik, i wymagałoby dodatkowego pola eksportu tylko po to, żeby przenieść liczbę, której backend i tak nigdy nie używa.
+- `frontend/src/model.ts`: `Score.area_ha?: number | null` (opcjonalne — **stare eksporty bez tego pola dalej się ładują**, `parseData` waliduje je tylko gdy obecne, tak jak istniejące `d_park_m`). Nowa `isStandaloneTarget(score)`: brak/`null` `area_ha` → nie ukrywaj (nieznana powierzchnia ≠ za mała).
+- `frontend/src/main.ts`: `visibleEntries()` filtruje `isStandaloneTarget` **tylko w płaskiej liście "Wydzielenia"** (`!regionFilterId`) — przeglądanie członków konkretnego rejonu (`regionFilterId` ustawiony) pokazuje wszystkich członków bez filtra, zgodnie z wymaganiem "nadal liczą się w rejonach". Poprawione też liczniki w nagłówku/tytule mapy (`entries.length` → `visible.length`), które wcześniej pokazywałyby łączną liczbę nawet gdy lista poniżej jest przefiltrowana. Mapa (`setData`) pozostaje bez zmian — nadal pokazuje wszystkie poligony, zgodnie z istniejącą zasadą UI.
+
+**Część 2 — poprawka wyjaśnień S_host (`pipeline/explain.py`):**
+- Nowa `pipeline.habitat.host_affinity(species_cd, profile)` — surowe powinowactwo gatunku, wydzielone z `score_host` (który nadal blenduje je z neutralnym 0,5 wg `part_cd`). Bez tego `pipeline/explain.py` nie miał dostępu do samego powinowactwa, tylko do już wymieszanego S_host.
+- `pipeline/mvp.py`: `meta` przekazywane do `generate_explanation` dostało `part_cd` i `host_affinity` (poprzednio brakowało obu).
+- `pipeline/explain.py`: nowy szablon `host.down_low_share` + `_host_down_is_low_share(meta, profile)` — dla ujemnego wkładu "host" rozróżnia: gatunek panujący z powinowactwem ≥ 0,5 (neutralna wartość "nieznanej domieszki") przy `0 < part_cd < 10` → "gatunek panujący {sp} dobrze pasuje do borowika, ale stanowi tylko X/10 udziału (S_host=...)"; w przeciwnym razie (powinowactwo < 0,5, albo `part_cd == 10` czyli brak rozcieńczenia) → oryginalne "słabo pasuje". Przykład z audytu (BK 4/10, S_host=0,66) był dokładnie tym pierwszym przypadkiem — buk ma powinowactwo 0,9, więc "słabo pasuje" było mylące. Brak `part_cd`/`host_affinity` w `meta` (stare wywołania) → zachowanie bez zmian, bez wyjątku.
+
+**Weryfikacja:** 280 testów Python (279→280, TDD na każdym kroku: `host_affinity`, `area_ha` w eksporcie, `_host_down_is_low_share` z osobnymi przypadkami BK-4/10 vs GB-10/10 vs DB.C-6/10 vs brak meta), 31 testów frontendu (29→31: `isStandaloneTarget`, walidacja opcjonalnego `area_ha` w `parseData`), `tsc --noEmit` i `vite build` bez błędów. **Ręczna weryfikacja w przeglądarce nie była możliwa w tej sesji** — połączona przeglądarka Chrome działa na innej maszynie niż lokalny dev-server (`127.0.0.1` po stronie przeglądarki nie wskazuje na ten komputer) — nie testowano wizualnie, tylko automatycznymi testami + build.
+
+**Nie ruszono w tym kroku:** reszta planu 2.1 (B1–B3, C1, C3).
+
 ## 2026-09-24 — aktualne (14): A3 — pogoda liczona do dnia wyjazdu + porządki (C2)
 
 Zrealizowany krok A3 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §3.3 "Prognoza do dnia wyjazdu" i §5.4 "Zmiany w F"), plus przy okazji C2 (usunięcie martwych zmiennych pogodowych). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu.

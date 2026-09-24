@@ -5,6 +5,7 @@ import pandas as pd
 from pipeline.confidence import compute_confidence
 from pipeline.explain import compute_log_contributions, generate_explanation
 from pipeline.gdos import mark_gdos_blocked
+from pipeline.habitat import host_affinity
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
 from pipeline.routing import build_road_graph, nearest_entrance_distance
 from pipeline.scoring import compute_ranking
@@ -131,7 +132,12 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
         values["pressure_factor"] = row["pressure_factor"]
         contributions = compute_log_contributions(values, area_medians)
         meta = {"species_cd": row.get("species_cd"), "site_type": row.get("site_type"),
-                 "age": row.get("spec_age"), "P": row.get("P", 0.0)}
+                 "age": row.get("spec_age"), "P": row.get("P", 0.0),
+                 # plan 2.1 step A4: lets generate_explanation distinguish a
+                 # genuinely poor species match from a good species diluted
+                 # by a low part_cd share (pipeline.explain._host_down_is_low_share).
+                 "part_cd": row.get("part_cd"),
+                 "host_affinity": host_affinity(row.get("species_cd"), profile)}
         explanations.append(generate_explanation(contributions, values, meta, profile))
     stands["explanation"] = explanations
 
