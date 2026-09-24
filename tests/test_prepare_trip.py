@@ -5,6 +5,7 @@ import requests
 from pipeline.prepare_trip import (
     parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM,
     _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable, _is_transient_network_error,
+    _radius_scaled_spacing, REFERENCE_RADIUS_KM,
 )
 
 
@@ -66,6 +67,26 @@ def test_is_overpass_retryable_matches_429_406_and_504():
     assert _is_overpass_retryable(_http_error(504)) is True
     assert _is_overpass_retryable(_http_error(500)) is False
     assert _is_overpass_retryable(ValueError("unrelated")) is False
+
+
+def test_radius_scaled_spacing_matches_the_base_value_at_the_reference_radius():
+    # REFERENCE_RADIUS_KM is the CLI's own default (--radius-km 25) --
+    # WEATHER_GRID_SPACING_M/CLIMATOLOGY_GRID_SPACING_M in orchestrate.py
+    # are themselves defined at that radius, so scaling must be a no-op
+    # there, matching every point count already verified live at 25km.
+    assert _radius_scaled_spacing(5000.0, REFERENCE_RADIUS_KM) == pytest.approx(5000.0)
+
+
+def test_radius_scaled_spacing_scales_linearly_with_radius():
+    # User request 2026-09-24: a smaller search radius should use a finer
+    # grid instead of the same fixed spacing "wasting" its point budget
+    # over less ground -- total point count (and so API cost) stays
+    # roughly constant across the whole 10-50km CLI range instead of
+    # growing with the search area.
+    assert _radius_scaled_spacing(5000.0, 15.0) == pytest.approx(3000.0)
+    assert _radius_scaled_spacing(20000.0, 15.0) == pytest.approx(12000.0)
+    assert _radius_scaled_spacing(5000.0, MIN_RADIUS_KM) == pytest.approx(2000.0)
+    assert _radius_scaled_spacing(5000.0, MAX_RADIUS_KM) == pytest.approx(10000.0)
 
 
 def test_is_transient_network_error_matches_connection_errors_not_arbitrary_exceptions():

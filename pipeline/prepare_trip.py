@@ -19,7 +19,7 @@ from pipeline.export import (
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
-from pipeline.orchestrate import run_poc, CLIMATOLOGY_GRID_SPACING_M
+from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M
 from pipeline.osm import fetch_osm_features, _default_overpass_call
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
@@ -39,6 +39,21 @@ from pipeline.zakazy import check_periodic_ban
 
 MIN_RADIUS_KM = 10.0
 MAX_RADIUS_KM = 50.0
+
+# WEATHER_GRID_SPACING_M/CLIMATOLOGY_GRID_SPACING_M (orchestrate.py) are
+# defined at this radius -- the CLI's own default (--radius-km above).
+REFERENCE_RADIUS_KM = 25.0
+
+
+def _radius_scaled_spacing(base_spacing_m: float, radius_km: float) -> float:
+    """Scale a grid spacing linearly with the search radius, so total
+    point count (and so API cost/weight -- see docs/CODEX-HANDOFF.md for
+    the Open-Meteo weighting derivation) stays roughly constant across the
+    whole 10-50km CLI range instead of growing with the search area: a
+    15km search gets a finer grid than the 25km-reference spacing rather
+    than the same fixed spacing "wasting" its point budget over less
+    ground. User request 2026-09-24."""
+    return base_spacing_m * radius_km / REFERENCE_RADIUS_KM
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -157,15 +172,24 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     if not len(stands):
         raise TripPreparationError("Brak wydzielen BDL w podanym promieniu. Poprzednie wyniki pozostawiono bez zmian.")
 
-    point_count = len(make_grid(bbox))
-    climatology_point_count = len(make_grid(bbox, spacing_m=CLIMATOLOGY_GRID_SPACING_M))
+    # Spacing scales with radius_km so total point count (API cost) stays
+    # roughly constant across the whole 10-50km range instead of growing
+    # with the search area -- a smaller radius gets a finer grid rather
+    # than "wasting" the same point budget over less ground. See
+    # _radius_scaled_spacing's own docstring.
+    grid_spacing_m = _radius_scaled_spacing(WEATHER_GRID_SPACING_M, radius_km)
+    climatology_grid_spacing_m = _radius_scaled_spacing(CLIMATOLOGY_GRID_SPACING_M, radius_km)
+    point_count = len(make_grid(bbox, spacing_m=grid_spacing_m))
+    climatology_point_count = len(make_grid(bbox, spacing_m=climatology_grid_spacing_m))
     print(
-        f"Siatka pogodowa: {point_count} punktow, pobierane partiami po "
-        f"{_OPEN_METEO_BATCH_SIZE} w jednym zapytaniu (nie jeden punkt na zapytanie).",
+        f"Siatka pogodowa: {point_count} punktow (odstep {grid_spacing_m/1000:.1f} km), "
+        f"pobierane partiami po {_OPEN_METEO_BATCH_SIZE} w jednym zapytaniu "
+        "(nie jeden punkt na zapytanie).",
         flush=True,
     )
     print(
-        f"Siatka klimatologii: {climatology_point_count} punktow (rzadsza niz pogoda -- "
+        f"Siatka klimatologii: {climatology_point_count} punktow "
+        f"(odstep {climatology_grid_spacing_m/1000:.1f} km, rzadsza niz pogoda -- "
         "30 lat archiwum na punkt jest znacznie kosztowniejsze niz biezaca pogoda).",
         flush=True,
     )
@@ -205,6 +229,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         climatology_fetcher=functools.partial(
             fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
         ),
+        grid_spacing_m=grid_spacing_m,
+        climatology_grid_spacing_m=climatology_grid_spacing_m,
     )
     print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
 

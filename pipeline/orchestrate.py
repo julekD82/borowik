@@ -13,10 +13,15 @@ from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
 )
 
-# Default spacing for the climatology grid (see run_poc / _nearest_climatology_cell
-# for why it's coarser than the weather grid). Exposed as a module constant so
-# callers that print progress (pipeline/prepare_trip.py) can report the real
-# point count without duplicating the number.
+# Default weather grid spacing, and the climatology grid's own (see run_poc /
+# _nearest_climatology_cell for why climatology is coarser). Both are defined
+# at the CLI's default 25km search radius (pipeline/prepare_trip.py's
+# REFERENCE_RADIUS_KM) -- prepare_trip.py scales both proportionally to the
+# actual radius requested, so total point count (and so API cost) stays
+# roughly constant across the whole 10-50km range instead of growing with
+# the search area. Exposed as module constants so callers that print
+# progress or scale spacing (pipeline/prepare_trip.py) share one number.
+WEATHER_GRID_SPACING_M = 5000.0
 CLIMATOLOGY_GRID_SPACING_M = 20000.0
 
 
@@ -53,7 +58,7 @@ def _nearest_climatology_cell(grid_points, climatology_grid_points, crs) -> dict
 
 def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              bdl_fetcher, weather_fetcher, climatology_fetcher,
-             grid_spacing_m: float = 5000.0, past_days: int = 92,
+             grid_spacing_m: float = WEATHER_GRID_SPACING_M, past_days: int = 92,
              climatology_grid_spacing_m: float = CLIMATOLOGY_GRID_SPACING_M) -> gpd.GeoDataFrame:
     """Score every wydzielenie in the tile and return the stands GeoDataFrame
     with mask/H/F/F_loc/R columns added.
