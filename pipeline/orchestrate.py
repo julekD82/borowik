@@ -4,7 +4,9 @@ from datetime import date
 import geopandas as gpd
 import pandas as pd
 
-from pipeline.habitat import compute_habitat, passes_mask, score_site, score_host, score_age
+from pipeline.habitat import (
+    compute_habitat, passes_mask, score_site, score_host, score_age, score_host_composition,
+)
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
     apply_moisture_modulation, compute_ranking,
@@ -60,7 +62,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              bdl_fetcher, weather_fetcher, climatology_fetcher,
              grid_spacing_m: float = WEATHER_GRID_SPACING_M, past_days: int = 92,
              climatology_grid_spacing_m: float = CLIMATOLOGY_GRID_SPACING_M,
-             target_date: date | None = None) -> gpd.GeoDataFrame:
+             target_date: date | None = None, package_index: dict | None = None) -> gpd.GeoDataFrame:
     """Score every wydzielenie in the tile and return the stands GeoDataFrame
     with mask/H/F/F_loc/R columns added.
 
@@ -80,7 +82,14 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     year, not today's (validated against a real forecast API request 2026-
     09-24, see pipeline.weather._default_open_meteo_call's docstring; CLI
     validation of target_date itself -- past dates, >16 days ahead -- lives
-    in pipeline.prepare_trip.parse_args, not here)."""
+    in pipeline.prepare_trip.parse_args, not here).
+
+    `package_index` (plan 2.1 step B2): optional `adr_for ->
+    pipeline.bdl_packages.PackageComposition` map (pipeline.bdl_packages.
+    load_packages). A stand whose `adr_for` is present gets S_host from its
+    real DRZEW-storey species composition instead of the WFS
+    panujący+part_cd fallback -- `None` (the default) or a miss for this
+    particular stand reproduces the exact pre-B2 behaviour."""
     target_date = target_date or date.today()
     # Open-Meteo's forecast_days counts today as day 1, so N days ahead
     # needs forecast_days = N+1. max(1, ...) is a defensive floor for a
@@ -128,6 +137,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
 
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
     s_host_values, s_site_values, s_age_values = [], [], []
+    s_host_source_values, s_host_package_date_values = [], []
     m_values, t_values, k_frost_values = [], [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
     # a plausible-looking number (see spec review: 59% of stands were hitting
@@ -136,6 +146,9 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     unknown_species_count = 0
     empty_climatology_count = 0
     nan_h_count = 0
+    package_index = package_index or {}
+    package_stand_count = 0
+    package_unknown_species_count = 0
     for _, row in stands.iterrows():
         mask = passes_mask(row, profile)
         if mask:
@@ -147,11 +160,23 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
             if row.get("species_cd") not in profile["host_affinity"]:
                 unknown_species_count += 1
 
-        h = compute_habitat(row, profile)
+        # plan 2.1 step B2: a real BDL package's full DRZEW composition
+        # replaces the WFS panujący+part_cd fallback when this stand's
+        # adr_for is covered by one.
+        package = package_index.get(row.get("adr_for"))
+        if package is not None:
+            s_host, unk = score_host_composition(package.species, profile)
+            s_host_source, s_host_package_date = "paczka", package.package_date
+            package_stand_count += 1
+            package_unknown_species_count += unk
+        else:
+            s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
+            s_host_source, s_host_package_date = "wfs", None
+
+        h = compute_habitat(row, profile, s_host=s_host)
         if h is not None and not math.isfinite(h):
             nan_h_count += 1
         _s_site, moisture_cls = score_site(row["site_type"], profile)
-        s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
         s_age = score_age(row.get("spec_age"), profile)
 
         centroid = row.geometry.centroid
@@ -189,6 +214,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         s_host_values.append(s_host)
         s_site_values.append(_s_site)
         s_age_values.append(s_age)
+        s_host_source_values.append(s_host_source)
+        s_host_package_date_values.append(s_host_package_date)
         m_values.append(m)
         t_values.append(t)
         k_frost_values.append(k_frost)
@@ -201,6 +228,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["S_host"] = s_host_values
     stands["S_site"] = s_site_values
     stands["S_age"] = s_age_values
+    stands["s_host_source"] = s_host_source_values
+    stands["s_host_package_date"] = s_host_package_date_values
     stands["M"] = m_values
     stands["T"] = t_values
     stands["K_frost"] = k_frost_values
@@ -217,5 +246,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "empty_climatology_count": empty_climatology_count,
         "nan_h_count": nan_h_count,
         "forecast_days": forecast_days,
+        "package_stand_count": package_stand_count,
+        "package_unknown_species_count": package_unknown_species_count,
     }
     return stands

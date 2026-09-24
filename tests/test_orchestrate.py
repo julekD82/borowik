@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from pipeline.habitat import load_profile
+from pipeline.bdl_packages import PackageComposition
+from pipeline.habitat import load_profile, score_host_composition
 from pipeline.orchestrate import run_poc
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
@@ -274,3 +275,60 @@ def test_run_poc_uses_target_date_not_today_for_climatology_day_of_year(monkeypa
     )
 
     assert result.attrs["diagnostics"]["empty_climatology_count"] == 0
+
+
+def test_run_poc_defaults_s_host_source_to_wfs_without_package_index():
+    # Plan 2.1 step B2: no package_index (or one that misses every stand)
+    # must reproduce pre-B2 behaviour exactly.
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+    )
+    assert (result["s_host_source"] == "wfs").all()
+    assert result["s_host_package_date"].isna().all()
+    assert result.attrs["diagnostics"]["package_stand_count"] == 0
+
+
+def test_run_poc_uses_package_composition_per_stand_with_wfs_fallback():
+    # A-1 is covered by a package (mixed SO/BK composition); A-2 is not --
+    # this exercises per-stand fallback within a single mixed run, not just
+    # an all-or-nothing package_index.
+    composition = [("SO", 0.6), ("BK", 0.4)]
+    package_index = {
+        "A-1": PackageComposition(species=composition, source_name="PKG_TEST", package_date="2026-06-23"),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    a2 = result.loc[result["stand_id"] == "A-2@2026"].iloc[0]
+
+    assert a1["s_host_source"] == "paczka"
+    assert a1["s_host_package_date"] == "2026-06-23"
+    expected_s_host, _unknown = score_host_composition(composition, PROFILE)
+    assert a1["S_host"] == pytest.approx(expected_s_host)
+    assert a1["S_host"] != pytest.approx(1.0)  # WFS fallback (SO, part_cd=10) would have given 1.0
+
+    assert a2["s_host_source"] == "wfs"
+    assert pd.isna(a2["s_host_package_date"])  # pandas stores the column's None as NaN
+    assert a2["S_host"] == pytest.approx(1.0)  # unchanged: SO, part_cd=10, no package coverage
+
+    assert result.attrs["diagnostics"]["package_stand_count"] == 1
+    assert result.attrs["diagnostics"]["package_unknown_species_count"] == 0
+
+
+def test_run_poc_counts_unknown_species_from_package_composition():
+    package_index = {
+        "A-1": PackageComposition(species=[("SO", 0.5), ("ZZZ", 0.5)], source_name="PKG", package_date=None),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    assert result.attrs["diagnostics"]["package_unknown_species_count"] == 1

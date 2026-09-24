@@ -42,6 +42,45 @@ def test_compute_confidence_includes_species_unknown_reason():
     assert PROFILE["confidence"]["reasons"]["species_unknown"] in reasons
 
 
+def test_score_data_quality_full_composition_beats_known_dominant_species():
+    # Plan 2.1 step B2: a BDL-package-derived S_host (full DRZEW
+    # composition) is a strictly better data source than "just the
+    # dominant species" -- kompletnosc_pelny_sklad must exceed
+    # kompletnosc_gatunek_panujacy regardless of species_cd.
+    row = {"species_cd": "SO", "s_host_source": "paczka"}
+    cfg = PROFILE["confidence"]["data_quality_factors"]
+    expected = cfg["kompletnosc_pelny_sklad"] * cfg["swiezosc_bez_s2"] * cfg["pogoda_nwp_2km"]
+    assert score_data_quality(row, PROFILE) == pytest.approx(expected)
+    assert score_data_quality(row, PROFILE) > score_data_quality({"species_cd": "SO"}, PROFILE)
+
+
+def test_compute_confidence_drops_dominant_only_reason_when_s_host_from_package():
+    # "tylko gatunek panujacy" must disappear for a package-covered stand
+    # (task requirement) -- replaced by species_full_composition.
+    row = {"species_cd": "SO", "s_host_source": "paczka"}
+    _final, reasons = compute_confidence(row, PROFILE)
+    assert PROFILE["confidence"]["reasons"]["species_full_composition"] in reasons
+    assert PROFILE["confidence"]["reasons"]["species_dominant_only"] not in reasons
+    assert PROFILE["confidence"]["reasons"]["species_unknown"] not in reasons
+
+
+def test_compute_confidence_package_source_still_capped_at_model_confidence():
+    # Higher underlying data quality (1.0 vs 0.7) doesn't lift the
+    # displayed class past model_confidence_cap (spec §10: capped through
+    # phase 1-4 regardless of input quality) -- only the reason text
+    # changes.
+    row = {"species_cd": "SO", "s_host_source": "paczka"}
+    final, _reasons = compute_confidence(row, PROFILE)
+    assert final == "SREDNIA"
+
+
+def test_compute_confidence_wfs_source_unaffected_by_new_path():
+    # Absent/"wfs" s_host_source must reproduce the exact pre-B2 behaviour.
+    row = {"species_cd": "SO"}
+    row_explicit_wfs = {"species_cd": "SO", "s_host_source": "wfs"}
+    assert compute_confidence(row, PROFILE) == compute_confidence(row_explicit_wfs, PROFILE)
+
+
 def test_compute_confidence_never_exceeds_niska_when_data_quality_is_niska(monkeypatch):
     low_profile = {**PROFILE, "confidence": {
         **PROFILE["confidence"],

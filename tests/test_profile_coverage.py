@@ -41,6 +41,13 @@ BDL_SPECIES = [
     # catch-all); user decision 2026-09-24: mask both like OL/JS/KL/WZ/AK
     # (Prunus/Sorbus are AM, not EcM, genera).
     "SO.C", "SO.WE", "DB.C", "JW", "OL.S", "WB", "CZM.P", "JB",
+    # Uzupełnienie 2.1 step B2 (docs/bdl-paczki-rozpoznanie.md): species
+    # found in real BDL package DRZEW composition (Będziemyśl area) with no
+    # profile entry, resolved via the package's own f_tree_species_dic
+    # (name + Latin binomial) -- see profiles/boletus_edulis.yaml comments.
+    # "ŚL.A" carries a diacritic (Ś) in the raw BDL spelling, unlike the
+    # other seven.
+    "CZM", "KSZ", "CZR", "ŚL.A", "GR", "KL.PE", "WZ.S", "TP.C",
 ]
 
 

@@ -36,14 +36,34 @@ host_affinity:
   # User decision 2026-09-24: not named in the plan's table (only its "inne
   # pojedyncze" catch-all) -- both Prunus/Sorbus are AM, not EcM, genera,
   # same reasoning as OL/JS/KL/WZ/AK below.
-  CZM.P: 0.0  # czeremcha pospolita -- brak EcM
+  CZM.P: 0.0  # czeremcha pozna (Prunus serotina) -- brak EcM. Comment fixed
+              # 2.1 step B2: f_tree_species_dic says "pozna", not "pospolita"
+              # (that's plain CZM below) -- value unchanged, both non-EcM.
   JB: 0.0     # jarzab -- brak EcM
+  # Uzupelnienie 2.1 step B2 (docs/bdl-paczki-rozpoznanie.md): species found
+  # in real BDL package DRZEW composition (Bedziemysl area) with no profile
+  # entry. Resolved via the package's own f_tree_species_dic (name + Latin
+  # binomial), not guessed -- all non-EcM Prunus/Aesculus/Pyrus/Acer/Ulmus
+  # genera per user instruction, except TP.C (poplar, same genus as TP).
+  CZM: 0.0    # czeremcha pospolita, Prunus padus -- brak EcM
+  KSZ: 0.0    # kasztanowiec bialy, Aesculus hippocastanum -- brak EcM
+  CZR: 0.0    # czeresnia pospolita -- brak EcM (Prunus)
+  SL.A: 0.0   # sliwa alycza, Prunus cerasifera -- brak EcM
+  GR: 0.0     # grusza pospolita, Pyrus communis -- brak EcM
+  KL.PE: 0.0  # klon pensylwanski, Acer pensylvanicum -- jak KL, brak EcM
+  WZ.S: 0.0   # wiaz szypulkowy, Ulmus laevis -- jak WZ, brak EcM
+  TP.C: 0.2   # topola czarna, Populus nigra -- jak TP
 unknown_host_affinity: 0.5     # "nieznana domieszka" default, spec §4.3
 # hard mask threshold, spec §4.2 (see plan note re: "Tp" ambiguity).
 # JW, OL.S, WB, CZM.P, JB added per plan 2.1 step A1 / user decision
 # 2026-09-24: masked when dominant (part_cd >= 8) even though WB keeps a
 # small non-zero host_affinity above for when it's a minor admixture.
-zero_affinity_mask_species: [OL, JS, KL, WZ, AK, JW, OL.S, WB, CZM.P, JB]
+# CZM, KSZ, CZR, SL.A, GR, KL.PE, WZ.S added per step B2 -- same pattern,
+# all zero-affinity above. TP.C (0.2, like TP) deliberately not masked.
+zero_affinity_mask_species: [
+  OL, JS, KL, WZ, AK, JW, OL.S, WB, CZM.P, JB,
+  CZM, KSZ, CZR, SL.A, GR, KL.PE, WZ.S,
+]
 
 # site_type -> [S_site, moisture_cls] (0=suche,1=swieze,2=wilgotne,3=bagienne)
 site_scores:
@@ -151,6 +171,7 @@ confidence:
   data_quality_factors:
     kompletnosc_gatunek_panujacy: 0.7     # spec §10: "0,7 tylko gatunek panujący (WFS)"
     kompletnosc_gatunek_nieznany: 0.5     # [E] MVP fallback: species_cd absent from host_affinity entirely
+    kompletnosc_pelny_sklad: 1.0          # spec §10: "1,0 pełny skład" -- plan 2.1 step B2, S_host z paczki BDL (pipeline.bdl_packages), nie tylko z LMN jak pierwotnie zakładano
     swiezosc_bez_s2: 1.0                  # spec §10: "1,0 jeśli brak sygnału zmiany w S2" -- no S2 in this plan, always true
     pogoda_nwp_2km: 0.8                   # spec §10: "0,8 NWP 2 km" (Open-Meteo forecast/ICON-D2)
   data_quality_classes:
@@ -163,6 +184,7 @@ confidence:
     weather_nwp: "pogoda z modelu ~2 km (brak radaru w archiwum)"
     species_dominant_only: "skład gatunkowy: tylko gatunek panujący"
     species_unknown: "gatunek panujący nierozpoznany w profilu gatunku"
+    species_full_composition: "skład gatunkowy: pełny (paczka BDL)"  # plan 2.1 step B2
 
 explanation:
   max_positive: 2   # spec §9: "generujemy zdania z szablonów (2 plusy i 1-2 minusy)"

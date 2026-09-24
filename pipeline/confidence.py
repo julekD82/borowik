@@ -3,8 +3,15 @@ CONFIDENCE_ORDER = {"NISKA": 0, "SREDNIA": 1, "WYSOKA": 2}
 
 def score_data_quality(row: dict, profile: dict) -> float:
     cfg = profile["confidence"]["data_quality_factors"]
-    species_known = row.get("species_cd") in profile["host_affinity"]
-    kompletnosc = cfg["kompletnosc_gatunek_panujacy"] if species_known else cfg["kompletnosc_gatunek_nieznany"]
+    if row.get("s_host_source") == "paczka":
+        # plan 2.1 step B2: S_host from a real BDL package's full DRZEW
+        # composition (pipeline.bdl_packages) is strictly better data than
+        # "just the dominant species", regardless of whether that species
+        # itself is in the profile.
+        kompletnosc = cfg["kompletnosc_pelny_sklad"]
+    else:
+        species_known = row.get("species_cd") in profile["host_affinity"]
+        kompletnosc = cfg["kompletnosc_gatunek_panujacy"] if species_known else cfg["kompletnosc_gatunek_nieznany"]
     return kompletnosc * cfg["swiezosc_bez_s2"] * cfg["pogoda_nwp_2km"]
 
 
@@ -26,9 +33,15 @@ def compute_confidence(row: dict, profile: dict) -> tuple[str, list[str]]:
     factors = cfg["data_quality_factors"]
     if factors["pogoda_nwp_2km"] < 1.0:
         reasons.append(cfg["reasons"]["weather_nwp"])
-    species_known = row.get("species_cd") in profile["host_affinity"]
-    if species_known:
-        reasons.append(cfg["reasons"]["species_dominant_only"])
+    if row.get("s_host_source") == "paczka":
+        # "tylko gatunek panujący" no longer applies -- the whole point of
+        # plan 2.1 step B2 is that this stand's S_host came from a real,
+        # full species composition, not just the dominant one.
+        reasons.append(cfg["reasons"]["species_full_composition"])
     else:
-        reasons.append(cfg["reasons"]["species_unknown"])
+        species_known = row.get("species_cd") in profile["host_affinity"]
+        if species_known:
+            reasons.append(cfg["reasons"]["species_dominant_only"])
+        else:
+            reasons.append(cfg["reasons"]["species_unknown"])
     return final_class, reasons

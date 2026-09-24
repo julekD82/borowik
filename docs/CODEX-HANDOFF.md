@@ -1,5 +1,33 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-25 — aktualne (19): B2 — pełny skład gatunkowy z paczek BDL do S_host
+
+Zrealizowany krok B2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, §5.3 "Różnicowanie H" pkt 1), na podstawie rozpoznania B1. Przed planem implementacji pokazane i przeanalizowane liczby z realnej paczki Kędzierzyn (patrz `docs/bdl-paczki-rozpoznanie.md`, sekcja "B2 — wdrożenie"); plan skorygowany przez użytkownika trzy razy (kody gatunków, dodatkowa weryfikacja płaskowyżu, zmiana obszaru testowego na Będziemyśl) przed akceptacją.
+
+**Co zrobione:**
+- Nowy `pipeline/bdl_packages.py::load_packages(packages_dir)` — auto-wykrywa paczki BDL pod `cache/bdl_packages/*/` po polu `adr_for` (join z `G_SUBAREA.shp`), zwraca `adr_for -> PackageComposition` (skład warstwy `DRZEW`, tylko wiersze z liczbowym `part_cd_act` — kody `MJS`/`PJD` z `f_part_dic` to "poniżej 5%, niezmierzone" i celowo nie wchodzą do sumy). Brak katalogu/pustej paczki → `{}`, bez błędu.
+- `pipeline/habitat.py::score_host_composition` — `Σ udział_i × powinowactwo_i` z realnego składu; nieznany gatunek → `unknown_host_affinity` + licznik diagnostyczny (nie błąd). `compute_habitat` dostał opcjonalny `s_host` override (`None` = dokładnie dawne zachowanie).
+- `pipeline/orchestrate.py::run_poc` — nowy `package_index` param; per wydzielenie sprawdza `package_index.get(adr_for)` i wybiera S_host z paczki albo z WFS (mieszany przebieg możliwy, przetestowany). Nowe kolumny `s_host_source`/`s_host_package_date`, nowe diagnostyki `package_stand_count`/`package_unknown_species_count`.
+- `pipeline/confidence.py` — `s_host_source == "paczka"` → nowy czynnik `kompletnosc_pelny_sklad = 1,0` i powód `species_full_composition`; **"tylko gatunek panujący" znika** dla wydzieleń z paczką. Wynikowa klasa nadal capped `SREDNIA` (`model_confidence_cap`, bez zmian fazy 1-4) — zmienia się tylko uzasadnienie.
+- `pipeline/export.py` — `s_host_source`/`s_host_package_date` w `scores_{day}.json`.
+- `pipeline/prepare_trip.py` — `load_packages(cache_dir / "bdl_packages")` wołane automatycznie, przekazywane do `run_poc`; print liczby wykrytych wydzieleń z paczki.
+- `profiles/boletus_edulis.yaml` — 8 nowych kodów gatunków (`CZM`, `KSZ`, `CZR`, `SL.A`, `GR`, `KL.PE`, `WZ.S` → 0,0; `TP.C` → 0,2 jak `TP`), rozwiązanych jednoznacznie przez `f_tree_species_dic.txt` samej paczki (nazwa + łacińska), nie zgadywane; dopisane też do `zero_affinity_mask_species` (poza `TP.C`). Poprawiony komentarz przy `CZM.P` (to *Prunus serotina*, "czeremcha późna", nie "pospolita" — `CZM` to prawdziwa pospolita; wartości 0,0 bez zmian). Nowy `confidence.data_quality_factors.kompletnosc_pelny_sklad` i `confidence.reasons.species_full_composition`.
+
+**Zakres — tylko S_host:** do H wchodzi wyłącznie skład warstwy `DRZEW`. Zwarcie, podszyt, typ gleby — **nie do H** (brak zwalidowanych wag), najwyżej pola informacyjne na karcie w B3.
+
+**Region testowy zmienił się w trakcie tego kroku** (notatka (18) niżej) — Kędzierzyn posłużył tylko do testu formatu (B1) i wstępnych liczb; **weryfikacja końcowa zrobiona na Będziemyślu, 20 km** (patrz (18)), z 5 paczkami już pobranymi w `cache/bdl_packages/` (Głogów, Strzyżów, Tuszyma, Dębica, Kolbuszowa — pokrycie 4054/4149 = 97,7% wydzieleń D-STAN w promieniu).
+
+**Weryfikacja na realnych danych** (bez sieci — `pipeline.search_area` + `cache/bdl_tiles_v2`, testowany "no-network fetcher" jawnie rzuca wyjątkiem, gdyby próbował sięgnąć po sieć; bez pełnego `prepare_trip` — porównanie nie potrzebuje pogody/OSM), przez **prawdziwy kod pipeline'u** (nie ręczny skrypt): dla n=3778 wydzieleń D-STAN Będziemyśla (po masce wieku, pokrytych paczką):
+- S_host średnia 0,740→0,806, H średnia 0,721→0,747.
+- **S_host = 1,0 dokładnie: 743→861 (+118).** **H ≥ 0,95: 472→601 (+129).** H ≥ 0,90: 746→966 (+220).
+- **Potwierdzona hipoteza użytkownika: płaskowyż rośnie, nie maleje** — zero wydzieleń wypadło z S_host=1,0 (czysty gatunek o powinowactwie 1,0 przy `part_cd=10` dawał 1,0 już wcześniej), nowe dołączają tam, gdzie gatunek panujący WFS miał `part_cd<10`, ale reszta udziału z paczki to inne gatunki o powinowactwie 1,0 (np. SO+ŚW). **Wzór bez zmian** — to obserwacja do zanotowania na przyszłość (dalsze dostrajanie wag), nie problem do naprawy teraz.
+
+Testy: 310 (280→310, +30: `test_bdl_packages.py` nowy plik + rozszerzenia `test_habitat.py`/`test_confidence.py`/`test_orchestrate.py`/`test_export.py`/`test_profile_coverage.py`), wszystkie bez sieci (syntetyczne fixture'y, nie realne paczki).
+
+**Dokumentacja pobierania paczek:** nowa sekcja w `docs/bdl-paczki-rozpoznanie.md` ("Jak pobrać i rozpakować kolejną paczkę") — formularz, `cache/bdl_packages/<nazwa>/`, auto-wykrywanie po `adr_for`. **Przypomnienie z notatki (18): nigdy nie wpisywać e-maila użytkownika do żadnego pliku w repo.**
+
+**Nie ruszono:** podszyt/zwarcie/gleba do H (B3 najwyżej), pobieranie kolejnych paczek poza już obecnymi 5, rejony/pogoda/R (poza zakresem tego kroku).
+
 ## 2026-09-25 — aktualne (18): region docelowy zmieniony na Będziemyśl (Podkarpacie), 20 km
 
 Decyzja użytkownika: pierwsze wyjazdy testowe z **Będziemyśla** (50.0555, 21.7889, gm. Sędziszów Małopolski), **promień 20 km**. Od B2 wszystkie kryteria z planu 2.1 sprawdzać na tym obszarze, nie na Kieleczce: `prepare_trip --lat 50.0555 --lon 21.7889 --radius-km 20`.

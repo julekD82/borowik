@@ -159,3 +159,65 @@ wydzielenia bez paczki (fallback na dzisiejszy WFS-owy `species_cd`/
 `part_cd`), zdecydować co z podszytem (informacja na karcie vs. wpływ na
 H — pytanie analogiczne do "domieszki z sąsiedztwa" z §5.3 pkt 2/3),
 ustalić harmonogram odświeżania paczek per nadleśnictwo w regionie domowym.
+
+---
+
+## B2 — wdrożenie (2026-09-25)
+
+Zrealizowane: `pipeline/bdl_packages.py::load_packages` auto-wykrywa
+paczki po `adr_for`; `S_host` liczony z pełnego składu warstwy `DRZEW`
+tam, gdzie paczka jest dostępna, z fallbackiem na dzisiejszą metodę WFS w
+pozostałych przypadkach — szczegóły w `docs/CODEX-HANDOFF.md`.
+
+**Co znalazłem przy okazji, wcześniej nieoczywiste:**
+- `part_cd_act` (udział) w `f_storey_species` ma nie tylko liczby 1–10
+  (10–100%, `f_part_dic`), ale dwa kody specjalne: `MJS` ("poniżej 5% —
+  miejscami") i `PJD` ("poniżej 5% — pojedynczo"). Tylko wiersze liczbowe
+  wchodzą do S_host — sumują się do dokładnie 10 dla 100% sprawdzonych
+  wydzieleń D-STAN (Kędzierzyn: 2674/2674; 5 paczek Będziemyśla:
+  13 437/13 574 = 99,0%), więc `Σ (udział_i/10) × powinowactwo_i` nie
+  wymaga normalizacji. Ten sam gatunek może mieć dwa liczbowe wiersze w
+  jednym wydzieleniu (różne klasy wieku drzewostanu nierównowiekowego) —
+  to prawdziwa struktura, nie duplikat.
+- Nieznane kody gatunków (`CZM`, `KSZ`, `CZR`, `ŚL.A`, `GR`, `KL.PE`,
+  `WZ.S`, `TP.C`) rozwiązane jednoznacznie przez `f_tree_species_dic.txt`
+  samej paczki (nazwa + łacińska) — nie zgadywane, dopisane do
+  `profiles/boletus_edulis.yaml`.
+- `CZM.P` (dodane w A1 jako "czeremcha pospolita") to wg tego słownika w
+  rzeczywistości *Prunus serotina*, "czeremcha **późna**" — `CZM` (nowe w
+  B2) to prawdziwa pospolita (*P. padus*). Wartości bez zmian (oba 0,0),
+  tylko komentarz w profilu poprawiony.
+- **Płaskowyż S_host=1,0/H≥0,95 rośnie, nie maleje** (zweryfikowane na
+  realnym obszarze Będziemyśl 20 km, prawdziwym kodem pipeline'u, nie
+  ręcznym skryptem — `n=3778` wydzieleń D-STAN po masce wieku, pokrycie
+  paczkami 4054/4149 = 97,7%): S_host=1,0 dokładnie 743→861 (+118), H≥0,95
+  472→601 (+129), H≥0,90 746→966 (+220). Zero wydzieleń wypadło z
+  S_host=1,0 (stare S_host=1,0 zawsze wymagało `part_cd=10` samego
+  gatunku o powinowactwie 1,0 — pełny udział, nic do rozcieńczenia, więc
+  nowa formuła daje ten sam wynik). Nowe wydzielenia dołączają tam, gdzie
+  gatunek panujący WFS miał `part_cd<10`, ale reszta udziału z paczki to
+  *inne* gatunki o powinowactwie 1,0 (np. SO+ŚW) — suma ważona nadal
+  wychodzi 1,0. Wzór bez zmian (decyzja użytkownika) — to obserwacja do
+  śledzenia przy dalszym dostrajaniu wag, nie problem do naprawy teraz.
+
+### Jak pobrać i rozpakować kolejną paczkę
+
+1. Formularz `bdl.lasy.gov.pl/portal/wniosek`: podaj e-mail, wybierz rok
+   (najnowszy dostępny) i nadleśnictwo(a) z drzewa RDLP → nadleśnictwo
+   (szukajka po nazwie działa dobrze), zaakceptuj oba wymagane pola zgody.
+   Formularz **nie wymaga logowania/konta**, ale zawiera dane osobowe
+   (e-mail) — sam formularz trzeba wypełnić samodzielnie albo świadomie
+   przekazać asystentowi e-mail do jednorazowego użycia; **nie wpisywać
+   adresu e-mail do żadnego pliku w repo** (dokumentacja, notatki, commity).
+2. Portal wysyła e-mail z linkiem do pobrania (nie ma natychmiastowego
+   pobrania w przeglądarce) — pobierz `.zip` z tego linku.
+3. Rozpakuj **cały** katalog paczki (SHP + TXT, dowolna nazwa katalogu) do
+   `cache/bdl_packages/<nazwa>/` — np.
+   `cache/bdl_packages/BDL_04_08_GLOGOW_2026/G_SUBAREA.shp`,
+   `.../f_storey_species.txt`, `.../metadane.txt` itd. Ten katalog jest
+   poza repo (gitignored, jak cała `cache/`).
+4. `pipeline.bdl_packages.load_packages` wykrywa automatycznie każdy
+   podkatalog `cache/bdl_packages/*/` zawierający `G_SUBAREA.shp` i
+   `f_storey_species.txt` — nie trzeba nigdzie rejestrować nazwy
+   nadleśnictwa w kodzie ani w configu. Brak katalogu lub katalog bez
+   tych plików = brak wpływu na wynik (fallback na WFS, bez błędu).

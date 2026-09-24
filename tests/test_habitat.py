@@ -2,7 +2,8 @@ import math
 import pytest
 
 from pipeline.habitat import (
-    load_profile, host_affinity, score_host, score_site, score_age, compute_habitat, passes_mask,
+    load_profile, host_affinity, score_host, score_host_composition,
+    score_site, score_age, compute_habitat, passes_mask,
 )
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
@@ -74,6 +75,52 @@ def test_compute_habitat_combines_weighted_geometric_mean():
     s_age = score_age(27, PROFILE)
     expected = s_host ** 0.40 * s_site ** 0.35 * s_age ** 0.25
     assert compute_habitat(row2, PROFILE) == pytest.approx(expected)
+
+
+def test_score_host_composition_weighted_sum_of_real_shares():
+    # SO 0.7*1.0 + BK 0.3*0.9 -- plan 2.1 step B2, real package composition
+    # replacing the panujacy+0.5 blend.
+    s_host, unknown = score_host_composition([("SO", 0.7), ("BK", 0.3)], PROFILE)
+    assert s_host == pytest.approx(0.7 * 1.0 + 0.3 * 0.9)
+    assert unknown == 0
+
+
+def test_score_host_composition_pure_stand_equals_one():
+    s_host, unknown = score_host_composition([("SO", 1.0)], PROFILE)
+    assert s_host == pytest.approx(1.0)
+    assert unknown == 0
+
+
+def test_score_host_composition_unknown_species_falls_back_and_counts():
+    # Unknown species_cd gets unknown_host_affinity (same fallback as an
+    # unquantified WFS admixture), and is counted rather than silently
+    # dropped (B2: diagnostic, not an error).
+    s_host, unknown = score_host_composition([("SO", 0.6), ("ZZZ", 0.4)], PROFILE)
+    assert s_host == pytest.approx(0.6 * 1.0 + 0.4 * PROFILE["unknown_host_affinity"])
+    assert unknown == 1
+
+
+def test_score_host_composition_empty_list():
+    s_host, unknown = score_host_composition([], PROFILE)
+    assert s_host == 0.0
+    assert unknown == 0
+
+
+def test_compute_habitat_uses_s_host_override_when_given():
+    row = {"species_cd": "SO", "part_cd": 10, "site_type": "BMSW", "spec_age": 60}
+    default = compute_habitat(row, PROFILE)
+    overridden = compute_habitat(row, PROFILE, s_host=0.5)
+    assert overridden != default
+    s_site, _ = score_site("BMSW", PROFILE)
+    s_age = score_age(60, PROFILE)
+    w = PROFILE["weights"]
+    expected = 0.5 ** w["host"] * s_site ** w["site"] * s_age ** w["age"]
+    assert overridden == pytest.approx(expected)
+
+
+def test_compute_habitat_none_override_matches_default_behaviour():
+    row = {"species_cd": "DB", "part_cd": 5, "site_type": "LSW", "spec_age": 27}
+    assert compute_habitat(row, PROFILE, s_host=None) == compute_habitat(row, PROFILE)
 
 
 def test_compute_habitat_none_when_masked_by_age():

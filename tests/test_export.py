@@ -24,6 +24,8 @@ def _enriched_stands():
         "entrance_status": ["confirmed", "not_evaluated"],
         "d_park_m": [1234.5, float("nan")],
         "forecast_days": [1, 1],
+        "s_host_source": ["paczka", "wfs"],
+        "s_host_package_date": ["2026-06-23", None],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
 
 
@@ -47,6 +49,15 @@ def test_build_score_record_shape_matches_architecture_schema():
     assert record["R"] == 48.6
     assert record["mask"] is True
     assert record["forecast_days"] == 1
+    assert record["s_host_source"] == "paczka"
+    assert record["s_host_package_date"] == "2026-06-23"
+
+
+def test_build_score_record_s_host_package_date_is_null_for_wfs_source():
+    row = _enriched_stands().iloc[1]
+    record = build_score_record(row, day="2026-09-23")
+    assert record["s_host_source"] == "wfs"
+    assert record["s_host_package_date"] is None
 
 
 def test_build_score_record_includes_distance_method_and_entrance_status():

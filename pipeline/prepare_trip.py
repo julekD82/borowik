@@ -11,6 +11,7 @@ import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 
 from pipeline.bdl import fetch_bdl
+from pipeline.bdl_packages import load_packages
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
@@ -198,6 +199,14 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     if not len(stands):
         raise TripPreparationError("Brak wydzielen BDL w podanym promieniu. Poprzednie wyniki pozostawiono bez zmian.")
 
+    # plan 2.1 step B2: auto-detected by adr_for, no config/CLI flag needed.
+    # A missing cache/bdl_packages/ (or one with nothing usable in it)
+    # gives {} -- every stand just falls back to the WFS panujący+part_cd
+    # S_host, same as before this step existed.
+    package_index = load_packages(cache_dir / "bdl_packages")
+    if package_index:
+        print(f"Paczki BDL: {len(package_index)} wydzielen z pelnym skladem gatunkowym.", flush=True)
+
     # Spacing scales with radius_km so total point count (API cost) stays
     # roughly constant across the whole 10-50km range instead of growing
     # with the search area -- a smaller radius gets a finer grid rather
@@ -264,8 +273,12 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         grid_spacing_m=grid_spacing_m,
         climatology_grid_spacing_m=climatology_grid_spacing_m,
         target_date=target_date,
+        package_index=package_index,
     )
-    print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
+    print(
+        f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask, "
+        f"{scored.attrs['diagnostics']['package_stand_count']} z paczki BDL"
+    )
 
     gdos_gdf, gdos_failed_tiles = fetch_cached_gdos(tiles, cache_dir, _gdos_call_api)
     osm_features, osm_failed_tiles = fetch_cached_osm(

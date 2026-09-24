@@ -26,6 +26,31 @@ def score_host(species_cd: str, part_cd: int, profile: dict) -> float:
     return share * affinity + (1 - share) * profile["unknown_host_affinity"]
 
 
+def score_host_composition(composition: list[tuple[str, float]], profile: dict) -> tuple[float, int]:
+    """S_host = Sigma udzial_i * powinowactwo_i from a real BDL package's
+    DRZEW-storey species composition (plan 2.1 step B2, replacing the
+    panujacy+unknown_host_affinity blend when a package is available --
+    see pipeline.bdl_packages.load_packages). `composition` is
+    [(species_cd, share 0-1), ...]; verified on real packages (B2 research)
+    that the numeric shares already sum to ~1.0 per stand, so no
+    renormalization here.
+
+    A species_cd missing from the profile falls back to
+    unknown_host_affinity (same neutral default as an unquantified WFS
+    admixture) and is counted rather than silently absorbed -- callers
+    surface that count as a diagnostic (orchestrate.run_poc's
+    package_unknown_species_count), not an error."""
+    total = 0.0
+    unknown = 0
+    for species_cd, share in composition:
+        affinity = profile["host_affinity"].get(species_cd)
+        if affinity is None:
+            affinity = profile["unknown_host_affinity"]
+            unknown += 1
+        total += share * affinity
+    return total, unknown
+
+
 def score_site(site_type: str, profile: dict) -> tuple[float, int]:
     entry = profile["site_scores"].get(site_type)
     if entry is None:
@@ -49,9 +74,15 @@ def score_age(age: int | None, profile: dict) -> float | None:
     return cfg["above_120"]
 
 
-def compute_habitat(row: dict, profile: dict) -> float | None:
+def compute_habitat(row: dict, profile: dict, s_host: float | None = None) -> float | None:
+    """`s_host` lets a caller (orchestrate.run_poc) pass an already-resolved
+    S_host -- e.g. from score_host_composition when a BDL package covers
+    this wydzielenie (plan 2.1 step B2) -- instead of the WFS
+    panujacy+part_cd fallback computed below. `None` (the default)
+    preserves the exact pre-B2 behaviour for every existing caller/test."""
     weights = profile["weights"]
-    s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
+    if s_host is None:
+        s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
     s_site, _moisture_cls = score_site(row["site_type"], profile)
     s_age = score_age(row.get("spec_age"), profile)
     if s_age is None:
