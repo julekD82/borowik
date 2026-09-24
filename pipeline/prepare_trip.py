@@ -86,14 +86,21 @@ def _is_open_meteo_rate_limit(exc: Exception) -> bool:
     return isinstance(exc, OpenMeteoRequestsError) and "limit" in str(exc).lower()
 
 
-def _is_overpass_rate_limit(exc: Exception) -> bool:
-    # overpass-api.de's own usage policy (wiki.openstreetmap.org/wiki/Overpass_API):
-    # "If you receive an HTTP error code such as 429 or 406, pause for 30
-    # seconds before making a new request."
+def _is_overpass_retryable(exc: Exception) -> bool:
+    # 429/406: overpass-api.de's own usage policy (wiki.openstreetmap.org/
+    # wiki/Overpass_API) -- "If you receive an HTTP error code such as 429
+    # or 406, pause for 30 seconds before making a new request." 504: the
+    # Overpass API author's own guidance (olbricht.nrw/command_line.html)
+    # -- "sent if the server has already so much load that the request
+    # cannot be executed... in most cases, it is best to try again later"
+    # -- observed live 2026-09-24 on tile 1/30 of a real 25km-radius run,
+    # despite the same query succeeding earlier in isolated testing (see
+    # profiles/boletus_edulis.yaml's routing_highway_types comment): the
+    # public instance's own load varies, not just our query's shape.
     return (
         isinstance(exc, requests.exceptions.HTTPError)
         and exc.response is not None
-        and exc.response.status_code in (429, 406)
+        and exc.response.status_code in (429, 406, 504)
     )
 
 
@@ -163,9 +170,9 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     def _osm_call_api(query):
         # overpass-api.de has no request-count DI seam like Open-Meteo's
         # client -- pace every call a little (not documented as required,
-        # just defensive) and retry once on the 429/406 the docs describe.
+        # just defensive) and retry on the 429/406/504 the docs describe.
         return _rate_limited(
-            _default_overpass_call, query, should_retry=_is_overpass_rate_limit, backoff_s=30, pace_s=1.0,
+            _default_overpass_call, query, should_retry=_is_overpass_retryable, backoff_s=30, pace_s=1.0,
         )
 
     scored = run_poc(

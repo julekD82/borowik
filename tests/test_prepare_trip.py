@@ -4,7 +4,7 @@ import requests
 
 from pipeline.prepare_trip import (
     parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM,
-    _rate_limited, _is_open_meteo_rate_limit, _is_overpass_rate_limit,
+    _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable,
 )
 
 
@@ -55,11 +55,17 @@ def test_rate_limited_reraises_after_exhausting_max_attempts(monkeypatch):
     assert len(calls) == 3
 
 
-def test_is_overpass_rate_limit_matches_429_and_406_only():
-    assert _is_overpass_rate_limit(_http_error(429)) is True
-    assert _is_overpass_rate_limit(_http_error(406)) is True
-    assert _is_overpass_rate_limit(_http_error(500)) is False
-    assert _is_overpass_rate_limit(ValueError("unrelated")) is False
+def test_is_overpass_retryable_matches_429_406_and_504():
+    # 429/406: overpass-api.de's own usage policy. 504: the Overpass API
+    # author's own guidance (olbricht.nrw/command_line.html) -- "sent if
+    # the server has already so much load that the request cannot be
+    # executed... in most cases, it is best to try again later" -- and
+    # observed live 2026-09-24 on tile 1/30 of a real run.
+    assert _is_overpass_retryable(_http_error(429)) is True
+    assert _is_overpass_retryable(_http_error(406)) is True
+    assert _is_overpass_retryable(_http_error(504)) is True
+    assert _is_overpass_retryable(_http_error(500)) is False
+    assert _is_overpass_retryable(ValueError("unrelated")) is False
 
 
 def test_is_open_meteo_rate_limit_matches_documented_message_only():
