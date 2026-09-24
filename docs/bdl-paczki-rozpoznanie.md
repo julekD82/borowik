@@ -6,158 +6,156 @@
 
 ## Skrót wyniku
 
-**Tak, portal BDL udostępnia paczki danych per nadleśnictwo z pełnym opisem
-taksacyjnym** — w tym **pełny skład gatunkowy z udziałami per piętro**,
-**zwarcie** i **typ/podtyp gleby**. To potwierdza nadzieję z §3.1: jeśli dane
-rzeczywiście są wypełnione (patrz "Co założone, nie zweryfikowane" niżej), to
-jest to największy możliwy zysk dla różnicowania H bez zgadywanych wag.
+**Tak — zweryfikowane na realnej paczce Nadl. Kędzierzyn (nie tylko na
+dokumentacji schematu).** Portal BDL udostępnia paczki per nadleśnictwo z
+pełnym opisem taksacyjnym: **pełny skład gatunkowy z udziałami per piętro
+drzewostanu (98,3% wydzieleń ma >1 gatunek w warstwie drzew)**, **zwarcie
+(88% wypełnienia)**, **podszyt jako osobna, dobrze wypełniona warstwa (78%
+wydzieleń)** i **typ/podtyp gleby (98,7% wypełnienia)**. Pole `adr_for` w
+paczce jest **bajt-w-bajt identyczne** ze stringiem z WFS dla tego samego
+wydzielenia — join jest trywialny, bez żadnego przetwarzania. To w pełni
+potwierdza nadzieję z §3.1: **to jest największy możliwy zysk dla
+różnicowania H bez zgadywanych wag.**
 
-**Pobranie nie jest jednak samoobsługowym plikiem do kliknięcia** — wymaga
-wypełnienia formularza (e-mail + zgoda RODO) i przyjścia linku pocztą.
-Zgodnie z poleceniem zadania, przed wysłaniem tego formularza **zatrzymałem
-się i zapytałem użytkownika**; otrzymałem zgodę i adres e-mail, złożyłem
-wniosek dla Nadl. Kędzierzyn (RDLP Katowice, rok 2026), ale **e-mail ze
-sposobem pobrania danych trafia na skrzynkę użytkownika, do której nie mam
-dostępu** — sama zawartość paczki (rzeczywiste wartości pól, rozmiar pliku)
-jest więc **nadal niezweryfikowana** i wymaga kroku po stronie użytkownika
-(przesłania linku/pliku). Rekomendacja niżej jest oparta na oficjalnej
-dokumentacji schematu, nie na przejrzeniu realnych danych.
+**Rekomendacja: integrujemy w B2.**
 
-## Co sprawdzone (źródła, bez logowania, bez scrapowania popupów)
+## Jak dane zostały pozyskane
 
-Wszystko poniżej pobrane z jawnie linkowanych, publicznych dokumentów na
-`bdl.lasy.gov.pl/portal/o-udostepnianiu` — **nie z wniosku interaktywnego**,
-więc nie wymagało żadnej personalizacji ani zgody. Pliki zapisane w
-`cache/bdl_research/` (poza repo, gitignored):
+Pobranie paczki wymaga formularza interaktywnego
+(`bdl.lasy.gov.pl/portal/wniosek`: e-mail + zgoda RODO + wybór roku i
+nadleśnictwa; brak logowania/konta, ale są dane osobowe i zgoda). Zgodnie z
+poleceniem zadania **zatrzymałem się przed wysłaniem formularza i zapytałem
+użytkownika**. Użytkownik podał e-mail (`[adres e-mail usunięty]`) i zgodę;
+wniosek złożony dla RDLP Katowice → Nadl. Kędzierzyn, rok 2026. Portal nie
+daje pliku od razu — wysyła link e-mailem. Użytkownik przekazał ten link w
+kolejnej wiadomości; paczka (`BDL_02_10_KEDZIERZYN_2026.zip`) pobrana stąd i
+przeanalizowana. Wszystkie pliki (paczka + dokumentacja schematu pobrana
+wcześniej z publicznego linku, bez formularza) leżą w `cache/bdl_research/`
+— **poza repo, gitignored, nic z tego nie jest commitowane**.
 
-- `opisdanych_datadescription.zip` → `OpisDanych.pdf` (11 str., PL),
-  `DataDescription.pdf` (EN), `ModelDanych_DataModel.pdf` (diagram ER) —
-  pełny opis schematu pakietu danych.
-- `katalog_informacji_udostepnianych_z_bdl.pdf` (2 str.) — skrócona lista
-  udostępnianych informacji, potwierdza `OpisDanych.pdf`.
-- `sektor-publiczny.pdf` (37 str.) — pełny tekst ustawy licencyjnej (patrz
-  "Licencja" niżej), pobrany dla kompletności, nie analizowany strona po
-  stronie (treść generycznej ustawy, nie specyficznej dla BDL).
+## Format, rozmiar, zawartość
 
-### Format i sposób pobierania
+- **Rozmiar:** 1,26 MB spakowane, **4,9 MB rozpakowane** dla jednego
+  nadleśnictwa (Kędzierzyn: 4137 wydzieleń/obiektów, w tym 2676 `D-STAN`).
+  Rząd wielkości dla regionu domowego (~64 kafle 10×10 km z §8.1, kilka do
+  kilkunastu nadleśnictw) to więc pojedyncze dziesiątki MB — nieistotne
+  obciążenie w porównaniu do NMT/S2 z sekcji 7.1.
+- **Format:** pliki `SHP`+`dbf`+`prj` (geometria: `G_SUBAREA`,
+  `G_COMPARTMENT`, `G_FOREST_RANGE`, `G_INSPECTORATE`) + pliki `TXT`
+  tabulator-separated (opis taksacyjny). **Kodowanie realnie UTF-8**
+  (zweryfikowane `file`/pandas, nie tylko deklaracja w `.cpg`) — instrukcja
+  BDL o ręcznej zmianie kodowania w QGIS dotyczy najwyraźniej tylko
+  domyślnego wykrywania sterownika QGIS, nie samego pliku.
+- **Metadane paczki** (`metadane.txt`): `Rok stanu danych: 2026`, `Data
+  wytworzenia danych: 2026-06-23` — czyli to jest **migawka z czerwca**, nie
+  gwarantowanie tak świeża jak WFS w danym dniu. Do uwzględnienia w
+  `data_quality`/`confidence` (§10), jeśli paczka zostanie zintegrowana:
+  potrzebne odświeżanie okresowe (wniosek ponownie, nie ma API), nie
+  codzienne jak WFS.
+- **Licencja** (plik `warunki_wykorzystania.txt` w samej paczce, identyczny
+  tekst co w formularzu): ustawa z 11.08.2021 o otwartych danych i
+  ponownym wykorzystywaniu informacji sektora publicznego (Dz.U. 2021 poz.
+  1641, zm. 2022 poz. 1700). Obowiązek: (1) podać źródło, czas wytworzenia
+  i pozyskania, (2) przekazywać dalej w formie pierwotnej, (3) informować
+  DGLP/operatora BDL o przetworzeniu (e-mail na `bdl@bdl.lasy.gov.pl`).
+  Brak odpowiedzialności cywilnoprawnej LP/operatora. Brak wzmianki o
+  zakazie użytku komercyjnego.
 
-- Pakiet = **pliki SHP** (geometria) + **pliki TXT** (opis taksacyjny,
-  separator tabulacji, kodowanie nie zawsze poprawnie rozpoznawane — instrukcja
-  BDL każe ręcznie ustawić UTF-8 przy wczytywaniu do QGIS).
-- Pobranie **wymaga formularza interaktywnego**
-  (`bdl.lasy.gov.pl/portal/wniosek`): e-mail (wymagany), rok danych
-  (2015–2026), wybór jednego lub więcej nadleśnictw z drzewa RDLP →
-  nadleśnictwo, opcjonalna warstwa granic zasięgów nadleśnictw, akceptacja
-  warunków wykorzystania danych i zgoda RODO na przetwarzanie e-maila. **Nie
-  ma logowania/konta** — to jednorazowy formularz, ale zawiera dane osobowe
-  (e-mail) i zgodę RODO, więc zgodnie z poleceniem zadania zatrzymałem się i
-  zapytałem, zanim go wysłałem.
-- Po wysłaniu formularza: strona potwierdza *"Informacja o sposobie
-  pobrania zamówionych danych została wysłana na podany w formularzu adres
-  email"* — czyli **nie ma natychmiastowego pobrania w przeglądarce**, sam
-  link/plik przychodzi mailem. Nie mam dostępu do tej skrzynki.
-- Dla nadleśnictwa spoza standardowego pakietu (dane niestandardowe) trzeba
-  złożyć osobny wniosek o ponowne wykorzystanie informacji sektora
-  publicznego (`bdl@bdl.lasy.gov.pl`) — nie dotyczy standardowego pakietu
-  taksacyjnego, którego dotyczy ten dokument.
+## Tabele i pola — zweryfikowane na realnych danych
 
-### Tabele i pola (z `OpisDanych.pdf`, sekcja A)
+Wszystkie tabele z dokumentacji schematu (`OpisDanych.pdf`) są obecne w
+paczce dokładnie tak, jak opisane; poniżej tylko to, co dodaje realna
+zawartość ponad sam schemat.
 
-**Tabele opisowe (TXT), klucz `arodes_int_num` + `a_year`:**
+**`f_arod_storey.txt` — 13 kodów warstw, z realnym `f_storey_dic.txt`:**
 
-| Tabela | Zawartość | Kluczowe pola |
+| `storey_cd` | Znaczenie | Wydzieleń D-STAN z tą warstwą (z 2676) |
 |---|---|---|
-| `F_ARODES` | adresy wydzieleń drzewostanowych | `adress_forest` (adres leśny), `arodes_typ_cd` |
-| `F_SUBAREA` | opis wydzielenia | `area_type_cd`, `site_type_cd`, `moisture_cd`, `degradation_cd`, **`soil_subtype_cd`** (typ+podtyp gleby), `plant_comm_cd` (zespół roślinny), `stand_struct_cd`, `forest_func_cd`, `silviculture_cd`, `rotation_age`, `sub_area`, `veg_cover_cd`, `damage_degree`, `cause_cd` |
-| `F_AROD_STOREY` | **warstwy (piętra) drzewostanu** | `storey_cd` (kod warstwy), **`density_cd`** (stopień zwarcia koron), `mixture_cd` (sposób zmieszania gatunków), `standdensity_index` (stopień zadrzewienia), `tree_stock_cd` (stopień zagęszczenia), `st_rank_order_act` (ranga warstwy) |
-| `F_STOREY_SPECIES` | **gatunki w warstwie** | `storey_cd`, `sp_rank_order_act` (ranga gatunku w warstwie), `species_cd`, `species_age`, **`part_cd_act`** (udział gatunku), `site_class_cd` (bonitacja), `height`, `bhd` (pierśnica), `volume` (miąższość) |
-| `F_AROD_CUE` | wskazówki gospodarcze | `measure_cd`, `urgency`, `cutting_nr`, `cutting_area`, `large_timber_perc` |
-| `F_AROD_CATEGORY` | kategorie ochronności | `prot_category_cd`, `prot_rank_order` |
-| `F_AROD_PROT_SITE` | siedliska przyrodnicze (Natura 2000-podobne) | `prot_site_cd`, `prot_site_state` |
-| `F_INSPECTORATE` | nazwa nadleśnictwa | `inspectorate_name` |
+| `DRZEW` | warstwa drzew (główny drzewostan) | 2674 (99,9%) |
+| **`PODSZ`** | **podszyt** | **2086 (78%)** |
+| `PRZES` | przestoje, nasienniki, przedrosty | 874 (33%) |
+| `PODR` | podrost | 190 (7%) |
+| `PODS` | podsadzenia pod osłoną | 95 (4%) |
+| `PODRII` | podrost o charakt. II piętra | 33 (1%) |
+| `NAL` | nalot | 8 |
+| `IP`, `IIP` | piętro pierwsze/drugie | po 2 |
+| `PLANT`, `SAMOS`, `ZADRZEW`, `ZAKRZEW` | plantacja choinkowa, samosiew, zadrzewienie, zakrzewienie | 0 w tej próbce |
 
-**Tabele geometryczne (SHP):** `G_SUBAREA` (wydzielenia — **ma pole `adr_for`
-wprost**, plus zdublowane atrybuty jak w WFS: `area_type`, `site_type`,
-`silvicult`, `forest_fun`, `stand_stru`, `rotat_age`, `sub_area`,
-`prot_categ`, `species_cd`, `part_cd`, `spec_age`, `a_year`),
-`G_COMPARTMENT` (oddziały), `G_FOREST_RANGE` (leśnictwa), `G_INSPECTORATE`
-(granica nadleśnictwa).
+**Podszyt istnieje jako osobna warstwa i jest dobrze wypełniony** — §3.1
+pytał o to wprost, odpowiedź jest **tak**, nie tylko "prawdopodobnie" jak w
+poprzedniej wersji tej notatki (przed dostępem do realnej paczki).
+`density_cd` (zwarcie) na warstwie `DRZEW`: **wypełnione dla 87,8%**
+wydzieleń D-STAN.
 
-**Tabele słownikowe:** `f_forest_func_dic`, `f_prot_categ_dic`,
-`f_area_type_dic`, `f_density_dic`, `f_mixture_dic`, `f_part_dic`,
-`f_plant_comm_dic`, `f_site_type_dic`, `f_storey_dic`, `f_tree_species_dic`,
-`f_prot_site_dic`, `f_silviculture_dic`, **`f_soil_subtype_dic`**. Kody w
-tabelach głównych rozwijają się przez te słowniki — same wartości kodów
-(np. konkretne `storey_cd`, `soil_subtype_cd`) nie są wymienione w
-dokumentacji schematu, tylko w rzeczywistych plikach paczki.
+**`f_storey_species.txt` — skład gatunkowy, warstwa `DRZEW` (2674
+wydzieleń, 21 459 wierszy gatunek×wydzielenie):**
 
-Katalog (`katalog_informacji_udostepnianych_z_bdl.pdf`) opisuje to samo z
-perspektywy użytkownika i dodatkowo wymienia dla każdego gatunku w warstwie:
-nazwa, ranga, **udział**, wiek, wysokość, pierśnica, **zwarcie**,
-**zmieszanie**, **zadrzewienie**, zagęszczenie, miąższość — potwierdza, że
-"zwarcie" jest atrybutem **per gatunek w warstwie**, nie tylko per warstwa
-zbiorczo.
+- Tylko **46 wydzieleń (1,7%) ma dokładnie 1 gatunek** w warstwie drzew —
+  **98,3% ma więcej**, mediana ok. 6–8 gatunków na wydzielenie, ogon do
+  39 gatunków w jednym wydzieleniu.
+- `part_cd_act` (udział) i `species_age` (wiek gatunku) wypełnione w
+  **100%** wierszy warstwy `DRZEW`.
+- Najczęstsze gatunki w `DRZEW`: DB, BRZ, SO, ŚW, OL, DB.C, MD, BK, LP,
+  CZM, JW, GB, WZ, OS, KL — niemal wszystkie mają już wpisy w
+  `profiles/boletus_edulis.yaml::host_affinity` (uzupełnione w kroku A1).
+- Gatunek o `sp_rank_order_act = 1` w warstwie `DRZEW` **zgadza się w
+  100% (2681/2681 porównanych wydzieleń)** z `species_cd`/`part_cd` z
+  `G_SUBAREA` (odpowiednik `species_cd`/`part_cd` z WFS) — potwierdza, że
+  ranga 1 to dokładnie "gatunek panujący", ta sama definicja co dziś w
+  `pipeline/habitat.py::score_host`.
+- Podszyt (`PODSZ`) ma **własny, częściowo inny skład gatunkowy**: CZM,
+  BRZ, **KRU** (kruszyna), CZM.P, ŚW, DB, BK, **JRZ** (jarząb — inny kod niż
+  `JB` widziany w `species_cd` z WFS/A1; do wyjaśnienia przy integracji,
+  czy to ten sam gatunek pod innym kodem czy inny słownik), DB.C, OL. Kilka
+  z tych kodów (`KRU`, `JRZ`) **nie ma jeszcze wpisu w profilu** — istotne
+  tylko jeśli B2 zdecyduje się używać podszytu w scoringu, nie dla samej
+  warstwy `DRZEW`.
 
-### Odpowiedzi na pytania z §3.1
+**`f_subarea.txt` — typ gleby:** `soil_subtype_cd` wypełnione dla **98,7%**
+wydzieleń D-STAN (2676 sprawdzonych). Najczęstsze podtypy w Kędzierzynie:
+`Bw`, `RDb`, `Bgw`, `RDw`, `OGb`, `OGw`, `Gw`, `MRms`, `Pog`, `MDbr` —
+rozwijane przez `f_soil_subtype_dic.txt` (110 kodów łącznie).
 
-| Pytanie | Odpowiedź | Pewność |
-|---|---|---|
-| Pełny skład gatunkowy z udziałami (per piętro)? | **Tak** — `F_STOREY_SPECIES.part_cd_act` per `storey_cd` z `F_AROD_STOREY` | Wysoka (ze schematu); rzeczywiste wypełnienie nie zweryfikowane |
-| Zwarcie? | **Tak** — `F_AROD_STOREY.density_cd` (+ `standdensity_index`, `tree_stock_cd`), także per gatunek wg katalogu | Wysoka |
-| Podszyt? | **Prawdopodobnie tak** — `storey_cd` to kod z otwartego słownika `f_storey_dic`; przykład filtra w samej dokumentacji BDL (`storey_cd IN ('DRZEW','IP','IIP')` przy wyciąganiu gatunku panującego) sugeruje, że **istnieją inne kody warstw** poza tymi trzema — najpewniej `PODROST`/`PODSZYT`, zgodnie z nazwą pola "Warstwa: Nazwa" w katalogu. **Nie potwierdzone literalnie** — wymaga realnej paczki albo zawartości `f_storey_dic` | Średnia — wniosek pośredni, nie literalny cytat |
-| Typ gleby? | **Tak** — `F_SUBAREA.soil_subtype_cd` (typ+podtyp gleby) + `f_soil_subtype_dic` | Wysoka |
-| Łączenie z `adr_for` z WFS? | `G_SUBAREA` ma pole `adr_for` **o identycznej nazwie** jak w WFS (`pipeline/bdl.py`). Format stringa (spacje, myślniki) nie zweryfikowany na realnym rekordzie — WFS i paczka pochodzą z tego samego systemu źródłowego (SILP), więc bezpośrednie dopasowanie stringów jest prawdopodobne, ale **do potwierdzenia na próbce** | Średnia |
-| Licencja / warunki ponownego wykorzystania | Ustawa z 11.08.2021 o otwartych danych i ponownym wykorzystywaniu informacji sektora publicznego (Dz.U. 2021 poz. 1641, zm. 2022 poz. 1700). Formularz wniosku wymaga zaakceptowania: (1) informowania o źródle, czasie wytworzenia i pozyskania danych, (2) przekazywania danych dalej w formie pierwotnej, (3) informowania operatora o dalszym przetworzeniu. Brak wzmianki o zakazie użytku komercyjnego w samych warunkach formularza (w przeciwieństwie np. do iNaturalist/CC BY-NC) | Wysoka (tekst z formularza) |
-| Rozmiar paczki | **Nieustalone** — wymaga faktycznego pobrania (patrz niżej) | Brak danych |
+**Join z `adr_for` — zweryfikowany bajt-w-bajt na realnym wydzieleniu:**
+wydzielenie `02-10-1-05-317   -d   -00` (to samo, które posłużyło jako
+przykład w §5.3 "Poprawka wyjaśnień"/kroku A4: BK, 4/10 udziału) ma w
+`G_SUBAREA` z paczki **dokładnie ten sam string** `adr_for`, ten sam
+`species_cd=BK`, `part_cd=4`, `site_type=LMW`, co w cache WFS
+(`cache/bdl_tiles_v2`) tego projektu. **Zero przetwarzania stringów
+potrzebne do joina.**
 
-## Co złożone, ale nie dokończone
+## Co nadal nie sprawdzone / do decyzji w B2
 
-Wniosek na `bdl.lasy.gov.pl/portal/wniosek` **złożony w tej sesji**, za
-zgodą i z adresem e-mail podanym przez użytkownika:
-
-- E-mail: `[adres e-mail usunięty]` (podany przez użytkownika w tej rozmowie)
-- Rok: 2026
-- Zakres: RDLP KATOWICE → Nadl. KĘDZIERZYN (obszar testowy z zadania,
-  odpowiada prefiksowi `adr_for` `02-10-...` już widocznemu w
-  `cache/bdl_tiles_v2` z wcześniejszych przebiegów projektu)
-- Warstwa granic zasięgów nadleśnictw: nieodznaczona (niepotrzebna do tej
-  weryfikacji)
-- Portal potwierdził wysłanie instrukcji pobrania na podany e-mail.
-
-**Nie mam dostępu do tej skrzynki e-mail**, więc nie mogłem dokończyć
-pobrania samej paczki ani zweryfikować rzeczywistych wartości pól,
-kodowania plików TXT ani rozmiaru pliku. **Żaden plik z rzeczywistymi
-danymi nadleśnictwa Kędzierzyn nie został pobrany ani zapisany.**
-
-## Co założone, nie zweryfikowane
-
-- Rzeczywiste wypełnienie `F_STOREY_SPECIES`/`F_AROD_STOREY` dla realnego
-  nadleśnictwa — dokumentacja opisuje *strukturę*, nie *kompletność* danych.
-  Możliwe, że część wydzieleń ma tylko gatunek panujący wypełniony (tak jak
-  dziś w WFS), a reszta pól jest pusta lub rzadko uzupełniana.
-- Dokładne kody `storey_cd` (czy `PODSZYT`/`PODROST` faktycznie istnieją
-  jako osobne wartości, i czy mają wypełniony skład gatunkowy).
-- Format i zgodność stringa `adr_for` między WFS a `G_SUBAREA` (spacje,
-  wielkość liter, końcowe `-00`).
-- Rozmiar pobranej paczki dla jednego nadleśnictwa (wpływa na to, czy dla
-  17 RDLP / ~430 nadleśnictw pobranie regionu domowego jest praktyczne).
-- Czy pakiet jest aktualizowany tak samo jak WFS (`a_year` = rok bieżący)
-  czy z opóźnieniem.
+- Czy inne nadleśnictwa (spoza Kędzierzyna) mają podobnie wysokie
+  wypełnienie, czy Kędzierzyn jest akurat lepiej opisany niż przeciętna.
+  Jedna próbka to nie dowód dla całej Polski.
+- Znaczenie kodów `KRU`/`JRZ` (podszyt) względem istniejących kodów
+  profilu — do ustalenia przed użyciem składu podszytu w H.
+- Strategia odświeżania: paczka to migawka (tu: z czerwca), nie ma API do
+  automatycznego pobierania jak WFS — pobieranie przez wniosek e-mail
+  najwyżej okresowo (rocznie?), nie da się wpiąć w codzienny cron.
+- Czy `part_cd_act` sumuje się do 10 w obrębie jednej warstwy (nie
+  sprawdzone arytmetycznie) — istotne dla wzoru `S_host = Σ udział_i ×
+  powinowactwo_i` z §5.3.
 
 ## Rekomendacja
 
-**Warunkowo: integrujemy w B2**, pod warunkiem potwierdzenia na realnej
-paczce (Nadl. Kędzierzyn albo inne), że `F_STOREY_SPECIES` rzeczywiście
-zawiera wypełniony skład gatunkowy z udziałami dla więcej niż
-pojedynczych wydzieleń — dopiero to jest dowodem, że warto zastąpić
-"nieznaną domieszkę 0,5" (§5.3) realnymi danymi. Schemat danych **w pełni
-pokrywa** to, czego brakuje w WFS (skład gatunkowy per piętro, zwarcie, typ
-gleby) i jest to jedyne zidentyfikowane źródło, które może rozbić płaskowyż
-745 wydzieleń z R ≥ 90 (§0.1) bez nowych, zgadywanych wag eksperckich —
-dokładnie tak, jak przewidywano w §3.1.
+**Integrujemy w B2.** Uzasadnienie, teraz oparte na realnych danych, nie
+tylko na schemacie:
+1. Skład gatunkowy z udziałami jest **faktycznie i gęsto wypełniony**
+   (98,3% wydzieleń ma >1 gatunek, 100% wypełnienia `part_cd_act`) — to
+   bezpośrednio zastępuje "nieznaną domieszkę 0,5" z §5.3 realnymi danymi,
+   dla niemal każdego wydzielenia, nie tylko wybranych przypadków.
+2. Zwarcie i typ gleby też są dobrze wypełnione (88% i 98,7%) — dodatkowe
+   kandydatki na cechy H poza pierwotnym zakresem §3.1.
+3. Join z `adr_for` jest bezkosztowy (identyczny string).
+4. To jedyne zidentyfikowane źródło, które może rozbić płaskowyż 745
+   wydzieleń z R ≥ 90 (§0.1) bez nowych, zgadywanych wag eksperckich.
 
-**Następny krok (poza zakresem B1):** użytkownik sprawdza skrzynkę
-`[adres e-mail usunięty]`, pobiera paczkę Nadl. Kędzierzyn i przekazuje
-plik/link — dopiero wtedy można dokończyć weryfikację (rzeczywiste wartości,
-rozmiar, zgodność `adr_for`) i podjąć ostateczną decyzję B2. Do tego czasu
-rekomendacja pozostaje warunkowa.
+**Zakres B2 (poza tym dokumentem, do osobnego planu):** sparsować pełny
+skład `F_STOREY_SPECIES` (warstwa `DRZEW`) per wydzielenie, zastąpić
+`unknown_host_affinity` realnym `Σ udział_i × powinowactwo_i`, obsłużyć
+wydzielenia bez paczki (fallback na dzisiejszy WFS-owy `species_cd`/
+`part_cd`), zdecydować co z podszytem (informacja na karcie vs. wpływ na
+H — pytanie analogiczne do "domieszki z sąsiedztwa" z §5.3 pkt 2/3),
+ustalić harmonogram odświeżania paczek per nadleśnictwo w regionie domowym.

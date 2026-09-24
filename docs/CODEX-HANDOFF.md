@@ -1,5 +1,21 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (17): B1 — potwierdzone na realnej paczce Kędzierzyn (zastępuje notatkę (16))
+
+Ta notatka **zastępuje** poprzednią (16) co do stanu weryfikacji — tamta miała rekomendację warunkową (tylko ze schematu dokumentacji), bez dostępu do realnych danych. Użytkownik przesłał link do pobrania paczki (BDL wysłał go na podany e-mail); paczka `BDL_02_10_KEDZIERZYN_2026.zip` pobrana i przeanalizowana (`cache/bdl_research/kedzierzyn/`, poza repo). Pełne dane: `docs/bdl-paczki-rozpoznanie.md` (przepisana z realnymi liczbami).
+
+**Kluczowe potwierdzenia na realnych danych (nie tylko schemat):**
+- Skład gatunkowy z udziałami per piętro: **98,3% wydzieleń D-STAN ma >1 gatunek w warstwie `DRZEW`** (mediana ~6-8 gatunków), `part_cd_act`/`species_age` wypełnione w 100% wierszy. Gatunek `sp_rank_order_act=1` zgadza się w 100% (2681/2681) z `species_cd`/`part_cd` z `G_SUBAREA` (= WFS) — ranga 1 to dokładnie dzisiejsze "gatunek panujący".
+- Podszyt (`PODSZ`) to potwierdzona, osobna warstwa (13 kodów w `f_storey_dic`: DRZEW, IP, IIP, NAL, PLANT, PODR, PODRII, PODS, **PODSZ**, PRZES, SAMOS, ZADRZEW, ZAKRZEW) — obecna dla **78% wydzieleń D-STAN**, z częściowo innym składem gatunkowym (CZM, BRZ, KRU, CZM.P, ŚW, DB, BK, JRZ, DB.C, OL — `KRU`/`JRZ` nie mają jeszcze wpisu w profilu).
+- Zwarcie (`density_cd` na warstwie `DRZEW`): wypełnione dla 87,8% wydzieleń D-STAN.
+- Typ gleby (`soil_subtype_cd`): wypełnione dla 98,7% wydzieleń D-STAN.
+- **Join z `adr_for` zweryfikowany bajt-w-bajt** na tym samym realnym wydzieleniu co przykład z A4 (`02-10-1-05-317   -d   -00`, BK 4/10, LMW) — identyczny string w paczce i w `cache/bdl_tiles_v2` (WFS). Zero przetwarzania potrzebne do joina.
+- Rozmiar: 1,26 MB spakowane / 4,9 MB rozpakowane dla jednego nadleśnictwa (4137 obiektów, 2676 D-STAN) — nieistotne obciążenie dla regionu domowego.
+- Paczka to migawka (`metadane.txt`: dane wytworzone 2026-06-23), nie codziennie odświeżana jak WFS — brak API, tylko wniosek e-mail.
+- Licencja (plik `warunki_wykorzystania.txt` w paczce, identyczny tekst co w formularzu wniosku): ustawa z 11.08.2021 o otwartych danych..., wymóg atrybucji + przekazywania w formie pierwotnej + informowania o przetworzeniu; brak zakazu komercyjnego.
+
+**Rekomendacja zmieniona z warunkowej na: integrujemy w B2**, bez zastrzeżeń — dane są gęsto i realnie wypełnione, nie tylko strukturalnie udokumentowane. Zakres B2 (do osobnego planu): sparsować pełny skład `F_STOREY_SPECIES`/`DRZEW` per wydzielenie, zastąpić `unknown_host_affinity=0.5` realnym ważonym składem, fallback na dzisiejszy WFS dla wydzieleń bez paczki, decyzja co z podszytem (informacja na karcie vs. wpływ na H), harmonogram odświeżania paczek.
+
 ## 2026-09-24 — aktualne (16): B1 — rozpoznanie paczek BDL per nadleśnictwo (bez zmian w kodzie)
 
 Zrealizowany krok B1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, kryterium z §3.1 "Do sprawdzenia w pierwszej kolejności"). To rozpoznanie — `pipeline/` nie zostało dotknięte. Pełna notatka: `docs/bdl-paczki-rozpoznanie.md`.
