@@ -1,6 +1,27 @@
 # Notatki przekazania dla Claude Code
 
-## 2026-09-24 — aktualne: grupowanie przywrócone, przełącznik Rejony/Wydzielenia w UI, naprawiony limit Open-Meteo
+## 2026-09-24 — aktualne (2): druga naprawa Open-Meteo — limit danych na zapytanie (klimatologia)
+
+Ta notatka **zastępuje** poniższą co do stanu limitu Open-Meteo. Batching (opisany niżej) naprawił błąd limitu liczby zapytań, ale przy ponownym uruchomieniu `--radius-km 25` przez użytkownika ujawnił się **inny, nowy błąd**: `OpenMeteoRequestsError: Your API call requests too much data. Please reduce the number of variables, locations and/or weather models.` — to osobny, natychmiastowy błąd limitu **objętości danych na pojedyncze zapytanie**, nie limitu licznika zapytań.
+
+**Sprawdzone źródła (nie zgadywane):**
+- `open-meteo.com/en/pricing` (źródło pierwotne): darmowy plan = 600/min, 5000/godz., 10000/dzień, 300000/mies. Cytat: *"Requests for data covering more than 10 weather variables or extending over a period of more than 2 weeks for a single location are considered multiple API calls."* Przykład: 2 tygodnie + 15 zmiennych = 1,5 "wywołania".
+- Oficjalna dokumentacja **nie podaje** dokładnego wzoru łączącego lokalizacje × dni × zmienne — [GitHub issue #485](https://github.com/open-meteo/open-meteo/issues/485) potwierdza, że użytkownicy Open-Meteo też się tego domagają i nie dostali odpowiedzi.
+- Najbliższe półoficjalne źródło: blog Open-Meteo na Substacku (`openmeteo.substack.com/p/weather-data-for-multiple-locations`) podaje wzór wagowy: `weight = nLokalizacji × (nDni / 14) × (nZmiennych / 10)`.
+- Wyliczenie dla naszego przypadku: klimatologia pyta o 30 lat (~10950 dni) × 3 zmienne (2 daily + 1 hourly) → waga **jednego punktu** ≈ (10950/14) × (3/10) ≈ **235**. Batch 50 punktów w jednym zapytaniu (rozmiar użyty wcześniej dla lżejszego zapytania o bieżącą pogodę) → waga ≈ 50 × 235 ≈ **11750** w jednym zapytaniu — to właśnie padło z błędem „too much data" na żywo.
+
+**Naprawa (dwie niezależne warstwy):**
+1. `pipeline/orchestrate.py`: klimatologia jest teraz pobierana na **osobnej, rzadszej siatce** niż bieżąca pogoda (`CLIMATOLOGY_GRID_SPACING_M = 20000` m, vs `grid_spacing_m = 5000` m domyślnie dla pogody) — klimatologia zmienia się przestrzennie znacznie wolniej niż bieżąca pogoda, więc redukcja rozdzielczości ~10x jest uzasadniona merytorycznie, nie tylko jako obejście limitu. Każda komórka pogodowa mapowana jest na najbliższy punkt klimatologiczny przez `_nearest_climatology_cell` (`gpd.sjoin_nearest`, ten sam wzorzec co `pipeline/validate.py`). Cache percentyli (`percentiles_by_cell`) kluczowany jest teraz po (rzadszej) komórce klimatologicznej, więc więcej wydzieleń dzieli ten sam wynik.
+2. `pipeline/weather.py`: nowa, mniejsza stała `_OPEN_METEO_CLIMATOLOGY_BATCH_SIZE = 10` (osobna od `_OPEN_METEO_BATCH_SIZE = 50` używanej dla bieżącej pogody) — dodatkowy margines bezpieczeństwa niezależny od redukcji siatki, żeby żadne pojedyncze zapytanie nie zbliżało się do zaobserwowanej granicy awarii (~11750 wagi).
+3. `pipeline/prepare_trip.py`: dopisany print rozmiaru siatki klimatologii obok istniejącego printu siatki pogodowej.
+
+**Nadal niezweryfikowane na żywo**: limit dzienny/godzinowy darmowego planu był wyczerpany w momencie commitu, więc pełne `--radius-km 25` (a tym bardziej maksymalne 50 km) nie zostało ponownie uruchomione po tej poprawce. Wyliczenia wagi (patrz wyżej) sugerują, że przy nowych ustawieniach domyślnych mieści się to bezpiecznie w limitach, ale to wciąż wyliczenie na podstawie półoficjalnego wzoru, nie potwierdzenie z realnego przebiegu.
+
+Testy: `tests/test_orchestrate.py` — dwa nowe testy (`test_run_poc_fetches_climatology_on_a_coarser_grid_than_weather`, `test_run_poc_defaults_climatology_grid_coarser_than_weather_grid`) potwierdzają mniejszą liczbę punktów klimatologii niż pogody. 222 testy Python przechodzą.
+
+Przy okazji odkryto i skomitowano **trzeci przypadek** nigdy niezakomitowanej pracy Codexa: `pipeline/search_area.py` (cały moduł promienia wyszukiwania — `search_tiles`/`merge_frames`/`within_radius`/`fetch_search_stands`, od którego zależy `prepare_trip.py` i `tests/test_search_area.py`) był plikiem `??` (nieśledzonym) mimo że testy go używające były już zacommitowane. Podobnie `pipeline/export.py` (pole `d_park_m`, `export_stand_geometries_geojson`) i poprawki `pipeline/rdlp.py` (`.covers()` zamiast `.contains()`, poprawne CRS dla przecięcia bbox) — wszystko opisane w sekcji „Promień" niżej, ale nigdy niezacommitowane. Teraz w git.
+
+## 2026-09-24 — aktualne: grupowanie przywrócone, przełącznik Rejony/Wydzielenia w UI, naprawiony limit Open-Meteo (częściowo — patrz sekcja wyżej)
 
 Ta notatka **zastępuje** poniższą sekcję „grupowanie wyłączone" — użytkownik ponownie poprosił o widok rejonów, więc grupowanie wróciło do aktywnego przepływu. Sekcja poniżej (o wyłączeniu) pozostaje jako historia decyzji, nie jako aktualny stan.
 
