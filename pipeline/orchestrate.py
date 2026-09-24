@@ -59,7 +59,8 @@ def _nearest_climatology_cell(grid_points, climatology_grid_points, crs) -> dict
 def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              bdl_fetcher, weather_fetcher, climatology_fetcher,
              grid_spacing_m: float = WEATHER_GRID_SPACING_M, past_days: int = 92,
-             climatology_grid_spacing_m: float = CLIMATOLOGY_GRID_SPACING_M) -> gpd.GeoDataFrame:
+             climatology_grid_spacing_m: float = CLIMATOLOGY_GRID_SPACING_M,
+             target_date: date | None = None) -> gpd.GeoDataFrame:
     """Score every wydzielenie in the tile and return the stands GeoDataFrame
     with mask/H/F/F_loc/R columns added.
 
@@ -68,12 +69,32 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     returned frame as `.attrs["diagnostics"]` rather than added to the
     signature, so callers that only want the scores are unaffected. The
     unknown-code counts are restricted to mask-passing stands, since the tile
-    also holds non-stand polygons with no site_type/species_cd at all."""
+    also holds non-stand polygons with no site_type/species_cd at all.
+
+    `target_date` (plan 2.1 step A3, spec §3.3/§5.4): defaults to today,
+    unchanged pre-A3 behaviour. When it's in the future, weather windows are
+    fetched through that date (forecast_days below) -- pipeline.weather.
+    compute_weather_features's windows already end on the last fetched row,
+    so no separate "end date" logic is needed once forecast_days is right
+    -- and climatology percentiles are looked up for target_date's day of
+    year, not today's (validated against a real forecast API request 2026-
+    09-24, see pipeline.weather._default_open_meteo_call's docstring; CLI
+    validation of target_date itself -- past dates, >16 days ahead -- lives
+    in pipeline.prepare_trip.parse_args, not here)."""
+    target_date = target_date or date.today()
+    # Open-Meteo's forecast_days counts today as day 1, so N days ahead
+    # needs forecast_days = N+1. max(1, ...) is a defensive floor for a
+    # direct caller (tests, notebooks) passing a past target_date without
+    # going through prepare_trip's CLI validation -- not a silent fallback
+    # for the CLI's own user-facing --date, which is rejected before it
+    # ever reaches here.
+    forecast_days = max(1, (target_date - date.today()).days + 1)
+
     stands = bdl_fetcher(layer, bbox_2180)
     stands["stand_id"] = stands["adr_for"] + "@" + stands["a_year"].astype(str)
 
     grid_points = make_grid(bbox_2180, spacing_m=grid_spacing_m)
-    weather_daily = weather_fetcher(grid_points, past_days)
+    weather_daily = weather_fetcher(grid_points, past_days, forecast_days=forecast_days)
     weather_feat = compute_weather_features(weather_daily)
     # compute_weather_features (Task 6) doesn't carry today's soil_moisture
     # through to its output row (it's a windowed-features table, not a daily
@@ -95,7 +116,10 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     climatology_grid_points = make_grid(bbox_2180, spacing_m=climatology_grid_spacing_m)
     clim_df = climatology_fetcher(climatology_grid_points, 1991, 2020)
     weather_to_clim_cell = _nearest_climatology_cell(grid_points, climatology_grid_points, stands.crs)
-    today_doy = date.today().timetuple().tm_yday
+    # Percentiles are for the TRIP date's day of year, not today's --
+    # otherwise a forecast fetched for next week would still be compared
+    # against this week's climatology window (plan 2.1 step A3).
+    target_doy = target_date.timetuple().tm_yday
     # Many stands share a weather cell, and many weather cells share a
     # (coarser) climatology cell. Avoid rescanning the whole 30-year archive
     # for every stand when the search spans dozens of tiles.
@@ -136,8 +160,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         cell = weather_to_clim_cell[(wrow["lat"], wrow["lon"])]
         if cell not in percentiles_by_cell:
             history = climate_cells.get(cell, clim_df.iloc[:0])
-            cwb26_hist = climatology_window_values(history, *cell, today_doy, "cwb26")
-            sm_hist = climatology_window_values(history, *cell, today_doy, "soil_moisture")
+            cwb26_hist = climatology_window_values(history, *cell, target_doy, "cwb26")
+            sm_hist = climatology_window_values(history, *cell, target_doy, "soil_moisture")
             percentiles_by_cell[cell] = (
                 percentile_rank(wrow["cwb26"], cwb26_hist),
                 percentile_rank(wrow["soil_moisture"], sm_hist),
@@ -180,6 +204,11 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["M"] = m_values
     stands["T"] = t_values
     stands["K_frost"] = k_frost_values
+    # Same forecast_days for every stand in the run (one weather fetch, one
+    # target_date) -- exported per stand anyway (spec §3.3: "Oznaczyć w UI,
+    # ile dni okna pochodzi z prognozy"), matching how every other weather-
+    # derived column already flows through to scores_{day}.json.
+    stands["forecast_days"] = forecast_days
     stands.attrs["diagnostics"] = {
         "stand_count": len(stands),
         "mask_passing_count": int(sum(mask_values)),
@@ -187,5 +216,6 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "unknown_species_count": unknown_species_count,
         "empty_climatology_count": empty_climatology_count,
         "nan_h_count": nan_h_count,
+        "forecast_days": forecast_days,
     }
     return stands

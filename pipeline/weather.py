@@ -119,7 +119,8 @@ def _parse_open_meteo_response(response) -> dict:
     }
 
 
-def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int) -> list[dict]:
+def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int,
+                               forecast_days: int = 1) -> list[dict]:
     """Thin IO boundary around the real Open-Meteo archive+forecast API.
     Not covered by unit tests (network); exercised manually.
 
@@ -136,7 +137,18 @@ def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int) 
     if a single request handles more comfortably) so one pathologically
     large request doesn't risk a timeout or an undocumented limit either.
     Returns one dict per point, same order as `points`, same per-point
-    shape this function used to return for a single point."""
+    shape this function used to return for a single point.
+
+    `forecast_days` (plan 2.1 step A3, spec 3.3 "Prognoza do dnia
+    wyjazdu"): Open-Meteo returns `past_days` historical days plus
+    `forecast_days` days starting today (today counts as day 1) in one
+    contiguous daily series -- verified live 2026-09-24 against
+    api.open-meteo.com/v1/forecast (not the archive API) with
+    past_days=5, forecast_days=16: 21 contiguous rows, no gap, no NaNs.
+    compute_weather_features's windows are `.iloc[-N:]` on that series, so
+    setting forecast_days = (target_date - today).days + 1 (see
+    orchestrate.run_poc) makes every window end on the trip date for free,
+    with no separate "end date" logic needed here."""
     import openmeteo_requests
     import requests_cache
     from retry_requests import retry
@@ -156,7 +168,7 @@ def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int) 
                            "temperature_2m_max", "et0_fao_evapotranspiration"],
                 "hourly": ["soil_moisture_9_to_27cm"],
                 "past_days": past_days,
-                "forecast_days": 1,
+                "forecast_days": forecast_days,
                 "timezone": "Europe/Warsaw",
             },
         )
@@ -164,17 +176,23 @@ def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int) 
     return results
 
 
-def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92, call_api=None,
+def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92,
+                        forecast_days: int = 1, call_api=None,
                         cache_dir: Path | None = None) -> pd.DataFrame:
     call_api = call_api or _default_open_meteo_call
     if cache_dir is None:
-        results = call_api(points, past_days)
+        results = call_api(points, past_days, forecast_days=forecast_days)
     else:
-        # Scoped to today: past_days is a rolling window ending "now", so
-        # yesterday's cached values would silently look like today's.
+        # Scoped to today AND forecast_days (plan 2.1 step A3): past_days is
+        # a rolling window ending "now", so yesterday's cached values would
+        # silently look like today's -- and two runs on the same day with a
+        # different --date (so a different forecast_days) fetch a
+        # genuinely different Open-Meteo response (a different forecast
+        # length), so they must not share a cache entry either.
         results = _fetch_with_point_cache(
-            points, Path(cache_dir) / "weather_points", date.today().isoformat(),
-            lambda pts: call_api(pts, past_days),
+            points, Path(cache_dir) / "weather_points",
+            f"{date.today().isoformat()}_fd{forecast_days}",
+            lambda pts: call_api(pts, past_days, forecast_days=forecast_days),
         )
     frames = []
     for (lat, lon), data in zip(points, results):
@@ -198,6 +216,19 @@ def _exp_weighted_sum(series: pd.Series, window: int, half_life_days: float = 10
 
 
 def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
+    """Each window is `.iloc[-N:]` on `group`, sorted chronologically --
+    i.e. it ends on whatever the LAST row of `daily_df` is, not "today".
+    That's what makes plan 2.1 step A3 ("okna liczone do dnia wyjazdu")
+    work with no extra "end date" parameter here: the caller just needs to
+    have fetched data ending on the trip date (orchestrate.run_poc's
+    forecast_days), and every window below follows automatically.
+
+    P1/P3/P7/P14/P21/P30 and dry_spell_days (plan 2.1 step C2, spec §5.4
+    "Zmiany w F (2.1)") were removed: never fed into F (spec §14 rejects
+    them as features -- redundant with P26w/CWB26), dead weight kept only
+    for a table nobody read. days_since_p10 stays -- it's the one dead-to-F
+    window feature spec §5.4 explicitly keeps, for the regional banner
+    ("ostatni opad >= 10 mm: X dni temu"), not as an F input."""
     rows = []
     for (lat, lon), group in daily_df.sort_values("date").groupby(["lat", "lon"]):
         p = group["precipitation_mm"]
@@ -212,23 +243,15 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
             days_since_p10 = (len(group) - 1) - last_p10_pos
         else:
             days_since_p10 = len(group)
-        dry_mask = (p < 1.0).to_numpy()
-        dry_spell = 0
-        for is_dry in dry_mask[::-1]:
-            if not is_dry:
-                break
-            dry_spell += 1
         rows.append({
             "lat": lat, "lon": lon, "date": group["date"].iloc[-1],
-            "p1": _rolling_sum(p, 1), "p3": _rolling_sum(p, 3),
             # p5 feeds score_temperature's heat penalty (spec §4.3: Tmean5 >
             # 17.5 °C AND P5 < 5 mm), profile key heat_penalty_p5_mm.
-            "p5": _rolling_sum(p, 5), "p7": _rolling_sum(p, 7),
-            "p14": _rolling_sum(p, 14), "p21": _rolling_sum(p, 21), "p30": _rolling_sum(p, 30),
+            "p5": _rolling_sum(p, 5),
             "p26w": p26w, "cwb26": p26w - et026w,
             "tmean5": tmean.iloc[-5:].mean(), "tmean20": tmean.iloc[-20:].mean(),
             "tmin3": tmin.iloc[-3:].min(),
-            "days_since_p10": days_since_p10, "dry_spell_days": dry_spell,
+            "days_since_p10": days_since_p10,
         })
     return pd.DataFrame(rows)
 

@@ -70,7 +70,7 @@ def test_fetch_weather_raw_batches_all_points_into_one_call_api_call():
     # per point, in the same order.
     calls = []
 
-    def fake_call_api(points, past_days):
+    def fake_call_api(points, past_days, forecast_days=1):
         calls.append((list(points), past_days))
         return [_fake_daily_payload(offset=i) for i in range(len(points))]
 
@@ -89,16 +89,30 @@ def test_fetch_weather_raw_batches_all_points_into_one_call_api_call():
 def test_fetch_weather_raw_handles_a_single_point():
     df = fetch_weather_raw(
         [(50.5, 18.6)], past_days=3,
-        call_api=lambda points, past_days: [_fake_daily_payload()],
+        call_api=lambda points, past_days, forecast_days=1: [_fake_daily_payload()],
     )
     assert len(df) == 3
     assert (df["lat"] == 50.5).all()
 
 
+def test_fetch_weather_raw_passes_forecast_days_through_to_call_api():
+    # spec 3.3 "Prognoza do dnia wyjazdu" (plan 2.1 step A3): forecast_days
+    # must reach the real Open-Meteo request, not stay hardcoded at 1.
+    calls = []
+
+    def fake_call_api(points, past_days, forecast_days=1):
+        calls.append((past_days, forecast_days))
+        return [_fake_daily_payload() for _ in points]
+
+    fetch_weather_raw([(50.5, 18.6)], past_days=3, forecast_days=7, call_api=fake_call_api)
+
+    assert calls == [(3, 7)]
+
+
 def test_fetch_weather_raw_with_cache_dir_skips_call_api_on_a_repeat_call(tmp_path):
     calls = []
 
-    def fake_call_api(points, past_days):
+    def fake_call_api(points, past_days, forecast_days=1):
         calls.append(list(points))
         return [_fake_daily_payload(offset=i) for i in range(len(points))]
 
@@ -113,7 +127,7 @@ def test_fetch_weather_raw_with_cache_dir_skips_call_api_on_a_repeat_call(tmp_pa
 def test_fetch_weather_raw_with_cache_dir_fetches_only_the_new_point(tmp_path):
     calls = []
 
-    def fake_call_api(points, past_days):
+    def fake_call_api(points, past_days, forecast_days=1):
         calls.append(list(points))
         return [_fake_daily_payload(offset=i) for i in range(len(points))]
 
@@ -121,6 +135,29 @@ def test_fetch_weather_raw_with_cache_dir_fetches_only_the_new_point(tmp_path):
     fetch_weather_raw([(50.5, 18.6), (50.6, 18.7)], past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
 
     assert calls == [[(50.5, 18.6)], [(50.6, 18.7)]]
+
+
+def test_fetch_weather_raw_point_cache_distinguishes_different_forecast_horizons_same_day(tmp_path):
+    # Two runs on the same day with a different --date (so a different
+    # forecast_days) must NOT share a cache entry: the underlying Open-Meteo
+    # response actually differs (different forecast length), so a shared
+    # entry would silently serve a stale/too-short window (plan 2.1 step A3
+    # requirement).
+    calls = []
+
+    def fake_call_api(points, past_days, forecast_days=1):
+        calls.append(forecast_days)
+        return [_fake_daily_payload() for _ in points]
+
+    points = [(50.5, 18.6)]
+    fetch_weather_raw(points, past_days=3, forecast_days=1, call_api=fake_call_api, cache_dir=tmp_path)
+    fetch_weather_raw(points, past_days=3, forecast_days=5, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert calls == [1, 5]  # both fetched -- no false cache hit across horizons
+
+    # Re-running the SAME horizon again on the same day is still a cache hit.
+    fetch_weather_raw(points, past_days=3, forecast_days=5, call_api=fake_call_api, cache_dir=tmp_path)
+    assert calls == [1, 5]
 
 
 def test_fetch_weather_raw_point_cache_expires_the_next_day(tmp_path, monkeypatch):
@@ -136,7 +173,7 @@ def test_fetch_weather_raw_point_cache_expires_the_next_day(tmp_path, monkeypatc
     monkeypatch.setattr(weather_mod, "date", FrozenDate)
     calls = []
 
-    def fake_call_api(points, past_days):
+    def fake_call_api(points, past_days, forecast_days=1):
         calls.append(list(points))
         return [_fake_daily_payload() for _ in points]
 
@@ -164,16 +201,19 @@ def _synthetic_daily_df():
 
 
 def test_compute_weather_features_windows():
+    # spec 5.4 "Zmiany w F (2.1)" / plan 2.1 step C2: P1/P3/P7/P14/P21/P30
+    # and dry_spell_days are dead (never fed into F, spec 14 rejects them as
+    # features) and were removed. p5 stays (heat-penalty input,
+    # heat_penalty_p5_mm); days_since_p10 stays (banner only, not an F
+    # input).
     feat = compute_weather_features(_synthetic_daily_df())
     row = feat.iloc[0]
     assert row["p5"] == pytest.approx(5.0)
-    assert row["p7"] == pytest.approx(7.0)
-    assert row["p14"] == pytest.approx(14.0)
-    assert row["p30"] == pytest.approx(30.0)
     assert row["tmean20"] == pytest.approx(13.0)
     assert row["tmin3"] == pytest.approx(5.0)
     assert row["days_since_p10"] >= 29  # no day ever reached 10mm
-    assert row["dry_spell_days"] == 0  # 1mm/day never below 1mm threshold
+    for dead_column in ("p1", "p3", "p7", "p14", "p21", "p30", "dry_spell_days"):
+        assert dead_column not in feat.columns
 
 
 def test_fetch_climatology_raw_batches_all_points_into_one_call_api_call():

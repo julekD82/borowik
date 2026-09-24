@@ -1,5 +1,26 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (14): A3 — pogoda liczona do dnia wyjazdu + porządki (C2)
+
+Zrealizowany krok A3 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §3.3 "Prognoza do dnia wyjazdu" i §5.4 "Zmiany w F"), plus przy okazji C2 (usunięcie martwych zmiennych pogodowych). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu.
+
+**Przyczyna:** `--date` był tylko etykietą nazwy pliku — `pipeline/weather.py` zawsze pytał Open-Meteo o `forecast_days=1` (tylko dziś), a `pipeline/orchestrate.py` liczył percentyle klimatologii dla dnia roku `date.today()`, niezależnie od `--date`. Planując wyjazd za kilka dni użytkownik dostawał więc warunki "na teraz".
+
+**Kluczowe ustalenie z kodu (bez którego zmiana byłaby dużo większa):** `pipeline.weather.compute_weather_features` już liczy każde okno jako `.iloc[-N:]` na chronologicznie posortowanym `daily_df` — czyli kończy się na *ostatnim* wierszu pobranych danych, jakikolwiek by nie był. Wystarczyło więc poprawnie ustawić `forecast_days`, żeby dzień wyjazdu był ostatnim pobranym dniem — P26w, CWB26, Tmean20, Tmean5, Tmin3 i wilgotność gleby dostały poprawne okno "za darmo", bez osobnej logiki "koniec okna".
+
+**Zweryfikowane pojedynczym zapytaniem na żywo** (nie zgadywane, `api.open-meteo.com/v1/forecast`, NIE `archive-api` — limit dzienny archive API nadal wyczerpany, forecast API działa): `past_days=5, forecast_days=16` → 21 ciągłych dziennych wierszy, bez luki, bez NaN. Potwierdza, że `forecast_days` faktycznie steruje długością prognozy i że parsowanie odpowiedzi (`_parse_open_meteo_response`) nie wymaga zmian.
+
+**Zmiany:**
+- `pipeline/weather.py`: `_default_open_meteo_call`/`fetch_weather_raw` dostały parametr `forecast_days` (zamiast zahardkodowanego `1`). **Cache per punkt:** klucz (`_fetch_with_point_cache`'s `suffix`) zmieniony z `date.today().isoformat()` na `f"{date.today().isoformat()}_fd{forecast_days}"` — dwa przebiegi tego samego dnia z różnym `--date` (różnym `forecast_days`) nie dzielą już wpisu cache. **C2:** `compute_weather_features` przestała liczyć/zwracać `p1, p3, p7, p14, p21, p30, dry_spell_days` (martwa pętla `dry_mask`/`dry_spell` usunięta); zostały `p5` (kara upałowa), `p26w`, `cwb26`, `tmean5`, `tmean20`, `tmin3`, `days_since_p10` (tylko do banera, zgodnie z §5.4).
+- `pipeline/orchestrate.py`: `run_poc(..., target_date=None)` — domyślnie dziś (bez zmian zachowania bez `--date`). `forecast_days = max(1, (target_date - dzis).days + 1)` przekazywane do `weather_fetcher`. Percentyle klimatologii liczone dla `target_date.timetuple().tm_yday`, nie `date.today()`. Nowa kolumna `stands["forecast_days"]` (stała dla całego przebiegu) i wpis w `diagnostics`.
+- `pipeline/export.py`: `SCORE_FIELDS` += `forecast_days` — trafia do `scores_{day}.json` (pole "ile dni okna to prognoza" do przyszłego banera; UI pozostaje poza zakresem, zgodnie z zadaniem).
+- `pipeline/prepare_trip.py`: **walidacja w `parse_args`** — `--date` w przeszłości albo dający `forecast_days > 16` → `parser.error(...)` z czytelnym komunikatem (**decyzja użytkownika: przerwij, bez cichego liczenia "na dziś"**). `main()` przekazuje sparsowaną datę jako `target_date` do `run_trip_preparation` → `run_poc`; usunięty nieaktualny już print `"Uwaga: prognoza pogody odzwierciedla dzisiejsze okno..."`.
+- `notebooks/01_poc.py`, `notebooks/02_mvp.py`: drobna mechaniczna poprawka `_weather_call_api` (nowy parametr `forecast_days=1`), żeby nie zostały po cichu zepsute (nie są testowane, ale rzucałyby `TypeError` przy następnym ręcznym uruchomieniu).
+
+**Testy (bez sieci, na sztucznej prognozie):** nowe testy w `tests/test_weather.py` (przekazywanie `forecast_days` do `call_api`; cache rozróżnia różne `forecast_days` tego samego dnia — dwa wywołania z tym samym `cache_dir`/punktami, różnym `forecast_days` → `call_api` wywołane dwa razy), `tests/test_orchestrate.py` (`run_poc` z `target_date` w przyszłości → `forecast_days` przekazane poprawnie i wyeksponowane per wydzielenie; percentyle klimatologii szukane dla dnia roku *daty wyjazdu* — syntetyczna klimatologia z sygnałem sezonowym tylko wokół dnia roku `target_date`, zamrożone "dziś" przez `monkeypatch` na `pipeline.orchestrate.date`, `empty_climatology_count == 0` dowodzi że użyto właściwego dnia roku), `tests/test_prepare_trip.py` (`parse_args` odrzuca datę w przeszłości i > 16 dni w przyszłości, akceptuje dokładnie na granicy 16 dni). 273 testy Python przechodzą (264→273, +9).
+
+**Nie ruszono w tym kroku:** rejony (A2, zrobione), G_season/stałe okno sezonu (C3), frontendowy baner "X dni to prognoza" (pole w eksporcie gotowe, UI opcjonalne).
+
 ## 2026-09-24 — aktualne (13): A2 — przebudowa rejonów (kończy z jednym-rejonem-na-cały-las)
 
 Zrealizowany krok A2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, algorytm z §5.6 "Nowa definicja rejonu (2.1)", liczby z §0.1). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu (na wyraźną prośbę).

@@ -40,8 +40,8 @@ def _rate_limited(default_call, *args, max_attempts=6, backoff_s=65, pace_s=2.0)
             time.sleep(backoff_s)
 
 
-def _weather_call_api(points, past_days):
-    return _rate_limited(_default_open_meteo_call, points, past_days)
+def _weather_call_api(points, past_days, forecast_days=1):
+    return _rate_limited(_default_open_meteo_call, points, past_days, forecast_days)
 
 
 def _climatology_call_api(points, start_year, end_year):

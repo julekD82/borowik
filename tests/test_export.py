@@ -22,6 +22,7 @@ def _enriched_stands():
         "distance_method": ["network", "euclidean"],
         "entrance_status": ["confirmed", "not_evaluated"],
         "d_park_m": [1234.5, float("nan")],
+        "forecast_days": [1, 1],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
 
 
@@ -40,10 +41,11 @@ def test_build_score_record_shape_matches_architecture_schema():
     record = build_score_record(row, day="2026-09-23")
     assert record["stand_id"] == "A"
     assert record["day"] == "2026-09-23"
-    for key in ["H", "F", "F_loc", "P", "R", "mask", "confidence", "confidence_reasons", "explanation"]:
+    for key in ["H", "F", "F_loc", "P", "R", "mask", "confidence", "confidence_reasons", "explanation", "forecast_days"]:
         assert key in record
     assert record["R"] == 48.6
     assert record["mask"] is True
+    assert record["forecast_days"] == 1
 
 
 def test_build_score_record_includes_distance_method_and_entrance_status():

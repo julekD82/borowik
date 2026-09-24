@@ -7,6 +7,10 @@ import geopandas as gpd
 SCORE_FIELDS = [
     "stand_id", "H", "F", "F_loc", "P", "confidence", "confidence_reasons", "explanation",
     "distance_method", "entrance_status", "d_park_m",
+    # spec §3.3: how many days of the weather window are forecast (not yet
+    # observed) rather than history -- plan 2.1 step A3. Same value for
+    # every stand in a run (pipeline.orchestrate.run_poc's forecast_days).
+    "forecast_days",
 ]
 
 

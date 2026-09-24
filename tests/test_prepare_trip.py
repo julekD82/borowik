@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import geopandas as gpd
 import pytest
 import requests
@@ -149,6 +151,35 @@ def test_parse_args_rejects_malformed_date():
 def test_parse_args_accepts_well_formed_date():
     args = parse_args(["--lat", "50.5", "--lon", "18.6", "--date", "2026-10-05"])
     assert args.date == "2026-10-05"
+
+
+def test_parse_args_rejects_date_in_the_past():
+    # Plan 2.1 step A3, user decision 2026-09-24: abort with a clear error
+    # rather than silently computing for today -- Open-Meteo's forecast
+    # window can't retroactively end on a day that's already gone.
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    with pytest.raises(SystemExit):
+        parse_args(["--lat", "50.5", "--lon", "18.6", "--date", yesterday])
+
+
+def test_parse_args_accepts_date_of_today():
+    today = date.today().isoformat()
+    args = parse_args(["--lat", "50.5", "--lon", "18.6", "--date", today])
+    assert args.date == today
+
+
+def test_parse_args_rejects_date_more_than_16_days_ahead():
+    # Open-Meteo's forecast API caps forecast_days at 16 (today + 15 days
+    # ahead); --date today+16 would need forecast_days=17.
+    too_far = (date.today() + timedelta(days=16)).isoformat()
+    with pytest.raises(SystemExit):
+        parse_args(["--lat", "50.5", "--lon", "18.6", "--date", too_far])
+
+
+def test_parse_args_accepts_date_at_the_16_day_forecast_boundary():
+    boundary = (date.today() + timedelta(days=15)).isoformat()  # forecast_days == 16, the max
+    args = parse_args(["--lat", "50.5", "--lon", "18.6", "--date", boundary])
+    assert args.date == boundary
 
 
 def test_main_returns_1_and_prints_clean_error_outside_poland(monkeypatch, tmp_path, capsys):

@@ -4,7 +4,7 @@ import math
 import pathlib
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import geopandas as gpd
 import requests
@@ -84,9 +84,29 @@ def parse_args(argv=None) -> argparse.Namespace:
         parser.error(f"--radius-km must be between {MIN_RADIUS_KM:.0f} and {MAX_RADIUS_KM:.0f}")
     if args.date is not None:
         try:
-            date.fromisoformat(args.date)
+            parsed_date = date.fromisoformat(args.date)
         except ValueError:
             parser.error(f"--date must be YYYY-MM-DD, got {args.date!r}")
+        else:
+            # Plan 2.1 step A3, user decision 2026-09-24: --date now drives
+            # the actual weather fetch (past + forecast through that day),
+            # so it must be resolvable to a real Open-Meteo forecast_days
+            # value -- abort with a clear error instead of silently
+            # computing for today, which would show numbers labelled with a
+            # --date they don't actually reflect.
+            today = date.today()
+            if parsed_date < today:
+                parser.error(
+                    f"--date {args.date} jest w przeszlosci -- prognoza Open-Meteo "
+                    f"dziala tylko od dzisiaj ({today.isoformat()})."
+                )
+            forecast_days_needed = (parsed_date - today).days + 1
+            if forecast_days_needed > 16:
+                parser.error(
+                    f"--date {args.date} jest za daleko w przyszlosci -- Open-Meteo "
+                    f"daje prognoze maks. 16 dni od dzisiaj (do "
+                    f"{(today + timedelta(days=15)).isoformat()})."
+                )
     return args
 
 
@@ -145,13 +165,19 @@ def _rate_limited(default_call, *args, should_retry, max_attempts=6, backoff_s=6
 
 
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
-                          profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path) -> dict:
+                          profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path,
+                          target_date: date | None = None) -> dict:
     """Analyze stands whose EPSG:2180 centroid lies within the search radius.
 
     Source queries use aligned 10 km tiles; scoring, pressure normalization
     and region grouping run once across the complete area, not per tile.
     Both the per-stand export and the region export are always written --
-    the frontend toggles between them, this function doesn't choose."""
+    the frontend toggles between them, this function doesn't choose.
+
+    `target_date` (plan 2.1 step A3) defaults to today when omitted, same
+    as before this step existed -- `main()` is the only caller that passes
+    a parsed --date through, after parse_args has already validated it's
+    neither in the past nor beyond Open-Meteo's 16-day forecast horizon."""
     center, tiles = search_tiles(lat, lon, radius_km)
     profile = load_profile(profile_path)
     bbox = tile_bbox_2180(lat, lon, size_km=2 * radius_km)
@@ -194,9 +220,15 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         flush=True,
     )
 
-    def _weather_call_api(points_, past_days):
-        print(f"Pogoda: {len(points_)} punktow (partiami po {_OPEN_METEO_BATCH_SIZE})", flush=True)
-        return _rate_limited(_default_open_meteo_call, points_, past_days, should_retry=_is_open_meteo_rate_limit)
+    def _weather_call_api(points_, past_days, forecast_days=1):
+        print(
+            f"Pogoda: {len(points_)} punktow (partiami po {_OPEN_METEO_BATCH_SIZE}), "
+            f"prognoza {forecast_days} dni",
+            flush=True,
+        )
+        return _rate_limited(
+            _default_open_meteo_call, points_, past_days, forecast_days, should_retry=_is_open_meteo_rate_limit,
+        )
 
     def _climatology_call_api(points_, start_year, end_year):
         print(f"Klimatologia: {len(points_)} punktow (partiami po {_OPEN_METEO_CLIMATOLOGY_BATCH_SIZE})", flush=True)
@@ -231,6 +263,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         ),
         grid_spacing_m=grid_spacing_m,
         climatology_grid_spacing_m=climatology_grid_spacing_m,
+        target_date=target_date,
     )
     print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
 
@@ -288,22 +321,22 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "geojson_path": geojson_path, "regions_path": regions_path,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
+        "forecast_days": scored.attrs["diagnostics"]["forecast_days"],
     }
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    today = date.today().isoformat()
-    day = args.date or today
-    if args.date is not None and args.date != today:
-        print(
-            f"Uwaga: prognoza pogody odzwierciedla dzisiejsze okno Open-Meteo, "
-            f"nie dokladnie dzien {args.date} -- patrz docs/projekt-borowik.md sec.7.2."
-        )
+    today = date.today()
+    # parse_args already rejected a past date or one needing forecast_days
+    # > 16, so fromisoformat here is always valid and in Open-Meteo's range.
+    target_date = date.fromisoformat(args.date) if args.date else today
+    day = args.date or today.isoformat()
     try:
         summary = run_trip_preparation(
             lat=args.lat, lon=args.lon, day=day, radius_km=args.radius_km,
             profile_path=args.profile, out_dir=pathlib.Path(args.out_dir), cache_dir=pathlib.Path(args.cache_dir),
+            target_date=target_date,
         )
     except TripPreparationError as exc:
         print(f"Blad: {exc}")
@@ -312,6 +345,7 @@ def main(argv=None) -> int:
         "Gotowe: "
         f"{summary['mask_passing']}/{summary['stand_count']} wydzielen przechodzi maske, "
         f"{summary['region_count']} rejon(y)."
+        + (f" Prognoza: {summary['forecast_days'] - 1} dni naprzod." if summary["forecast_days"] > 1 else "")
     )
     print(
         f"Wyniki: {summary['scores_path']}, {summary['stands_path']}, "
