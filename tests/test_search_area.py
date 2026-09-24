@@ -95,7 +95,7 @@ def configure_sources(monkeypatch):
     def gdos(bbox):
         gd_calls.append(bbox)
         return gpd.GeoDataFrame(geometry=[],crs=2180)
-    def osm(bbox,profile):
+    def osm(bbox,profile,**kw):
         osm_calls.append(bbox)
         return {name:gpd.GeoDataFrame(geometry=[],crs=2180) for name in ['parking','roads','places']}
     monkeypatch.setattr(trip, 'fetch_protected_areas', gdos)

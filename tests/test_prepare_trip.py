@@ -1,7 +1,72 @@
 import geopandas as gpd
 import pytest
+import requests
 
-from pipeline.prepare_trip import parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM
+from pipeline.prepare_trip import (
+    parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM,
+    _rate_limited, _is_open_meteo_rate_limit, _is_overpass_rate_limit,
+)
+
+
+def _http_error(status_code):
+    response = requests.Response()
+    response.status_code = status_code
+    return requests.exceptions.HTTPError(response=response)
+
+
+def test_rate_limited_retries_once_on_a_retryable_error_then_succeeds(monkeypatch):
+    import pipeline.prepare_trip as trip
+    monkeypatch.setattr(trip.time, "sleep", lambda s: None)
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise _http_error(429)
+        return "ok"
+
+    result = _rate_limited(flaky, should_retry=lambda exc: True)
+    assert result == "ok"
+    assert len(calls) == 2
+
+
+def test_rate_limited_reraises_immediately_when_predicate_declines(monkeypatch):
+    import pipeline.prepare_trip as trip
+    monkeypatch.setattr(trip.time, "sleep", lambda s: None)
+
+    def always_fails():
+        raise _http_error(500)
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        _rate_limited(always_fails, should_retry=lambda exc: False)
+
+
+def test_rate_limited_reraises_after_exhausting_max_attempts(monkeypatch):
+    import pipeline.prepare_trip as trip
+    monkeypatch.setattr(trip.time, "sleep", lambda s: None)
+    calls = []
+
+    def always_fails():
+        calls.append(1)
+        raise _http_error(429)
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        _rate_limited(always_fails, should_retry=lambda exc: True, max_attempts=3)
+    assert len(calls) == 3
+
+
+def test_is_overpass_rate_limit_matches_429_and_406_only():
+    assert _is_overpass_rate_limit(_http_error(429)) is True
+    assert _is_overpass_rate_limit(_http_error(406)) is True
+    assert _is_overpass_rate_limit(_http_error(500)) is False
+    assert _is_overpass_rate_limit(ValueError("unrelated")) is False
+
+
+def test_is_open_meteo_rate_limit_matches_documented_message_only():
+    from openmeteo_requests.Client import OpenMeteoRequestsError
+    assert _is_open_meteo_rate_limit(OpenMeteoRequestsError("Hourly API request limit exceeded")) is True
+    assert _is_open_meteo_rate_limit(OpenMeteoRequestsError("Your API call requests too much data")) is False
+    assert _is_open_meteo_rate_limit(ValueError("limit")) is False
 
 
 def test_parse_args_requires_lat_and_lon():

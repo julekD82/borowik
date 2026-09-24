@@ -7,6 +7,7 @@ import time
 from datetime import date
 
 import geopandas as gpd
+import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 
 from pipeline.bdl import fetch_bdl
@@ -19,7 +20,7 @@ from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.orchestrate import run_poc, CLIMATOLOGY_GRID_SPACING_M
-from pipeline.osm import fetch_osm_features
+from pipeline.osm import fetch_osm_features, _default_overpass_call
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
@@ -78,13 +79,31 @@ class TripPreparationError(RuntimeError):
     plan's scope (spec §13 priority 8) and still surface as-is."""
 
 
-def _rate_limited(default_call, *args, max_attempts=6, backoff_s=65, pace_s=2.0):
+def _is_open_meteo_rate_limit(exc: Exception) -> bool:
+    # Distinct from the per-request data-volume error ("Your API call
+    # requests too much data") -- that one is not transient and retrying it
+    # unchanged just fails again; see docs/CODEX-HANDOFF.md.
+    return isinstance(exc, OpenMeteoRequestsError) and "limit" in str(exc).lower()
+
+
+def _is_overpass_rate_limit(exc: Exception) -> bool:
+    # overpass-api.de's own usage policy (wiki.openstreetmap.org/wiki/Overpass_API):
+    # "If you receive an HTTP error code such as 429 or 406, pause for 30
+    # seconds before making a new request."
+    return (
+        isinstance(exc, requests.exceptions.HTTPError)
+        and exc.response is not None
+        and exc.response.status_code in (429, 406)
+    )
+
+
+def _rate_limited(default_call, *args, should_retry, max_attempts=6, backoff_s=65, pace_s=2.0):
     time.sleep(pace_s)
     for attempt in range(max_attempts):
         try:
             return default_call(*args)
-        except OpenMeteoRequestsError as exc:
-            if "limit" not in str(exc).lower() or attempt == max_attempts - 1:
+        except Exception as exc:
+            if not should_retry(exc) or attempt == max_attempts - 1:
                 raise
             print(f"  rate limited, waiting {backoff_s}s (attempt {attempt + 1}/{max_attempts})...")
             time.sleep(backoff_s)
@@ -133,11 +152,21 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
 
     def _weather_call_api(points_, past_days):
         print(f"Pogoda: {len(points_)} punktow (partiami po {_OPEN_METEO_BATCH_SIZE})", flush=True)
-        return _rate_limited(_default_open_meteo_call, points_, past_days)
+        return _rate_limited(_default_open_meteo_call, points_, past_days, should_retry=_is_open_meteo_rate_limit)
 
     def _climatology_call_api(points_, start_year, end_year):
         print(f"Klimatologia: {len(points_)} punktow (partiami po {_OPEN_METEO_CLIMATOLOGY_BATCH_SIZE})", flush=True)
-        return _rate_limited(_default_climatology_call, points_, start_year, end_year)
+        return _rate_limited(
+            _default_climatology_call, points_, start_year, end_year, should_retry=_is_open_meteo_rate_limit,
+        )
+
+    def _osm_call_api(query):
+        # overpass-api.de has no request-count DI seam like Open-Meteo's
+        # client -- pace every call a little (not documented as required,
+        # just defensive) and retry once on the 429/406 the docs describe.
+        return _rate_limited(
+            _default_overpass_call, query, should_retry=_is_overpass_rate_limit, backoff_s=30, pace_s=1.0,
+        )
 
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
@@ -152,7 +181,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     for index, tile in enumerate(tiles, 1):
         print(f"GDOS / OSM: kafel {index}/{len(tiles)}", flush=True)
         protected_frames.append(fetch_protected_areas(tile))
-        tile_osm = fetch_osm_features(tile, profile)
+        tile_osm = fetch_osm_features(tile, profile, call_api=_osm_call_api)
         for name in osm_frames:
             osm_frames[name].append(tile_osm[name])
     gdos_gdf = merge_frames(protected_frames)
