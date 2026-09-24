@@ -1,6 +1,10 @@
+import geopandas as gpd
 import responses
+from shapely.geometry import box
 
-from pipeline.rdlp import fetch_rdlp_boundaries, layer_name_for_region, DEFAULT_WFS_URL
+from pipeline.rdlp import (
+    fetch_rdlp_boundaries, layer_name_for_region, resolve_rdlp_layer, DEFAULT_WFS_URL,
+)
 
 # Verified live 2026-09-24 (see plan Global Constraints): GetCapabilities'
 # 17 real BDL:RDLP_<Name>_wydzielenia layer names, and BDL:RDLP's 17 real
@@ -45,3 +49,33 @@ def test_fetch_rdlp_boundaries_parses_features():
 
     assert len(gdf) == 2
     assert set(gdf["region_name"]) == {"KATOWICE", "KRAKOW"}
+
+
+def _rdlp_gdf():
+    # Two adjacent, non-overlapping "RDLP" boxes in EPSG:2180 (real BDL
+    # CRS), plain ASCII region_name -- layer_name_for_region's diacritic
+    # handling is already covered by the regression test above.
+    return gpd.GeoDataFrame(
+        {"region_name": ["KATOWICE", "KRAKOW"]},
+        geometry=[box(380000, 486000, 390000, 496000), box(400000, 486000, 410000, 496000)],
+        crs="EPSG:2180",
+    )
+
+
+def test_resolve_rdlp_layer_finds_containing_polygon_box1():
+    # WGS84 centroid of box1 (380000,486000,390000,496000), computed via
+    # pyproj EPSG:2180 -> EPSG:4326 during planning.
+    layer = resolve_rdlp_layer(lat=52.2729723880693, lon=17.314011763359918, rdlp_gdf=_rdlp_gdf())
+    assert layer == "BDL:RDLP_Katowice_wydzielenia"
+
+
+def test_resolve_rdlp_layer_finds_containing_polygon_box2():
+    # WGS84 centroid of box2 (400000,486000,410000,496000).
+    layer = resolve_rdlp_layer(lat=52.2767943376323, lon=17.607123274159406, rdlp_gdf=_rdlp_gdf())
+    assert layer == "BDL:RDLP_Krakow_wydzielenia"
+
+
+def test_resolve_rdlp_layer_returns_none_outside_every_polygon():
+    # Well outside both boxes (roughly (600000, 700000) in EPSG:2180).
+    layer = resolve_rdlp_layer(lat=54.15455087660452, lon=20.531757957006068, rdlp_gdf=_rdlp_gdf())
+    assert layer is None
