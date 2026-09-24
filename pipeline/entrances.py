@@ -49,3 +49,19 @@ def find_entrance_points(forest_boundary, roads_gdf: gpd.GeoDataFrame) -> gpd.Ge
     if not rows:
         return empty
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=roads_gdf.crs)
+
+
+def classify_entrances(entrances_gdf: gpd.GeoDataFrame, parking_gdf: gpd.GeoDataFrame,
+                         confirmed_tolerance_m: float) -> gpd.GeoDataFrame:
+    """'confirmed' if within confirmed_tolerance_m of a known OSM parking
+    point, else 'potential' -- spec §5.5.2's two-state entrance model."""
+    entrances_gdf = entrances_gdf.copy()
+    if parking_gdf is None or len(parking_gdf) == 0:
+        entrances_gdf["status"] = "potential"
+        return entrances_gdf
+    statuses = [
+        "confirmed" if parking_gdf.distance(geom).min() <= confirmed_tolerance_m else "potential"
+        for geom in entrances_gdf.geometry
+    ]
+    entrances_gdf["status"] = statuses
+    return entrances_gdf
