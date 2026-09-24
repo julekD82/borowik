@@ -1,5 +1,20 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (6): cache per-kafel dla GDOS i OSM + sprawdzone limity Overpass
+
+Po naprawie 504 (sekcja niżej) użytkownik odpalił `--radius-km 25` jeszcze raz. Doszło dalej niż poprzednio, ale na kaflu 8/30 Overpass wyczerpał wszystkie 6 prób (429/504 na przemian, ~150s backoffu) i się poddał. Użytkownik poprosił: sprawdź dokładnie limity Overpass i czy warto dodać cachowanie.
+
+**Sprawdzone limity (nie zgadywane):**
+- `wiki.openstreetmap.org/wiki/Overpass_API`: <10000 zapytań/dzień i <1GB/dzień dla ręcznego użycia; **podzielone przez 100 dla regularnie uruchamianego skryptu** (~100/dzień, ~10MB/dzień) — nasz przebieg robi 30 zapytań OSM na jedno wywołanie, więc kilka wywołań dziennie już zbliża się do tego nieoficjalnego, ale zalecanego progu.
+- `dev.overpass-api.de/overpass-doc/en/preface/commons.html`: publiczna instancja ma endpoint `GET /api/status` zwracający tekstowo `"Rate limit: N"` (dostępne sloty) w linii 3, a jeśli wszystkie sloty zajęte — od linii 6 czas do zwolnienia każdego slotu. To pozwoliłoby czekać dokładnie tyle ile trzeba zamiast ślepego retry — **rozważone i świadomie odłożone**: dodaje kolejne zapytanie do tego samego, przeciążonego serwera i wymaga parsowania tekstowego protokołu, przy niepewnej korzyści krańcowej ponad to, co daje cache.
+- Ogólny wniosek: publiczna instancja overpass-api.de sama się opisuje jako przeciążona ("this server is overloaded... do not expect high reliability. Use alternatives if possible.") — retry z backoffem łagodzi, ale nie eliminuje ryzyka porażki dla pojedynczego kafla przy dużym obciążeniu serwera.
+
+**Naprawa — cache per-kafel (główna dźwignia):** `pipeline/search_area.py` zyskuje `fetch_cached_gdos`/`fetch_cached_osm`, dokładnie ten sam wzorzec co istniejący cache BDL w `fetch_search_stands` (sprawdź plik → `(cache)`/`(WFS)`/`(Overpass)` w logu → pobierz i zapisz atomowo przy braku). OSM dodatkowo kluczowany hashem konfiguracji `profile["osm"]` (zapytanie zależy od tych ustawień). Efekt: **przebieg przerwany w połowie można uruchomić ponownie i wznowi się za kaflem, który już się udał** — nie trzeba od nowa bić w Overpass za wszystkie 30 kafli. Dwa nakładające się wyszukiwania (inny promień/środek) też reużywają dane GDOS/OSM dla wspólnych kafli, tak jak już działo się dla BDL.
+
+Testy: nowe w `tests/test_search_area.py` (reużycie kafla, pobranie tylko nowego kafla przy częściowym pokryciu, osobny cache OSM per konfiguracja profilu). Istniejąca asercja "jedno wywołanie na kafel na przebieg" w teście integracyjnym promienia zaktualizowana — teraz sumaryczna liczba wywołań GDOS/OSM w dwóch nakładających się przebiegach równa się liczbie kafli WIĘKSZEGO promienia (mniejszy przebieg jest podzbiorem, więc jego kafle są reużyte z cache). 237 testów Python przechodzi.
+
+**Nadal niezweryfikowane w pełni na żywo** — to piąta iteracja poprawek z tego samego live-runu 25km. Warto spróbować ponownie; teraz nawet gdyby znów padło na jakimś kaflu, ponowne uruchomienie powinno zacząć od miejsca przerwania, nie od zera.
+
 ## 2026-09-24 — aktualne (5): Overpass 504 — kolejny błąd z tego samego live-runu
 
 Po naprawie 429 (sekcja niżej) użytkownik odpalił `--radius-km 25` jeszcze raz. Pogoda, klimatologia (z nowym cache per-punkt) i `run_poc` przeszły bez błędu. Ale na kaflu 1/30 GDOS/OSM: `requests.exceptions.HTTPError: 504 Server Error: Gateway Timeout` — inny kod błędu niż poprzednio (429), więc `_is_overpass_rate_limit` (dopasowywał tylko 429/406) go nie łapał i nie próbował ponownie.
