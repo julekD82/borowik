@@ -1,4 +1,5 @@
 import networkx as nx
+from scipy.spatial import cKDTree
 from shapely.geometry import Point
 
 
@@ -20,10 +21,26 @@ def build_road_graph(roads_gdf) -> nx.Graph:
     return graph
 
 
-def _nearest_graph_node(graph: nx.Graph, point):
-    if graph.number_of_nodes() == 0:
+def _build_node_index(graph: nx.Graph):
+    """A cKDTree over the graph's node coordinates for O(log V) nearest-
+    node lookup. A naive linear scan (min() over graph.nodes with a Python
+    lambda) took ~0.2s per call on a real ~19k-node tile graph -- fine
+    once, but ruinous called once per candidate entrance (hundreds) for
+    each of the top-N stands: observed ~117s for a single stand on real
+    data. Returns (tree, node_list) -- node_list[i] is the graph node
+    tree query index i refers to; (None, []) for an empty graph."""
+    nodes = list(graph.nodes)
+    if not nodes:
+        return None, []
+    return cKDTree(nodes), nodes
+
+
+def _nearest_indexed_node(node_index, point):
+    tree, nodes = node_index
+    if tree is None:
         return None
-    return min(graph.nodes, key=lambda n: (n[0] - point.x) ** 2 + (n[1] - point.y) ** 2)
+    _, idx = tree.query((point.x, point.y))
+    return nodes[idx]
 
 
 def network_distance(graph: nx.Graph, point_a, point_b) -> float | None:
@@ -33,8 +50,9 @@ def network_distance(graph: nx.Graph, point_a, point_b) -> float | None:
     node" simplification). None if the graph is empty or the two points
     fall in disconnected components -- callers must fall back to the
     euclidean estimate in that case, not treat None as zero."""
-    node_a = _nearest_graph_node(graph, point_a)
-    node_b = _nearest_graph_node(graph, point_b)
+    node_index = _build_node_index(graph)
+    node_a = _nearest_indexed_node(node_index, point_a)
+    node_b = _nearest_indexed_node(node_index, point_b)
     if node_a is None or node_b is None:
         return None
     try:
@@ -57,17 +75,17 @@ def nearest_entrance_distance(graph: nx.Graph, stand_centroid, entrances_gdf) ->
     network_distance (a fresh single-pair search) once per entrance -- on a
     real tile's track network (hundreds to thousands of edges) with dozens
     of candidate entrances, the naive per-entrance version re-explores
-    largely the same graph repeatedly and was observed taking minutes per
-    stand; this is the same total distances computed, just once per stand
-    instead of once per (stand, entrance) pair."""
-    node_a = _nearest_graph_node(graph, stand_centroid)
+    largely the same graph repeatedly. Node snapping uses the same cKDTree
+    index (_build_node_index) for the same reason -- see its docstring."""
+    node_index = _build_node_index(graph)
+    node_a = _nearest_indexed_node(node_index, stand_centroid)
     if node_a is None or len(entrances_gdf) == 0:
         return (None, None)
     distances = nx.single_source_dijkstra_path_length(graph, node_a, weight="weight")
     snap_a = stand_centroid.distance(Point(node_a))
     best = None
     for _, row in entrances_gdf.iterrows():
-        node_b = _nearest_graph_node(graph, row.geometry)
+        node_b = _nearest_indexed_node(node_index, row.geometry)
         if node_b is None or node_b not in distances:
             continue
         total = distances[node_b] + snap_a + row.geometry.distance(Point(node_b))

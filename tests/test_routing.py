@@ -1,6 +1,7 @@
 import geopandas as gpd
 import networkx as nx
 import pytest
+from scipy.spatial import cKDTree
 from shapely.geometry import LineString, Point
 
 from pipeline.routing import build_road_graph, network_distance, nearest_entrance_distance
@@ -110,3 +111,35 @@ def test_nearest_entrance_distance_runs_one_dijkstra_search_not_one_per_entrance
     nearest_entrance_distance(graph, Point(380000, 486000), entrances)
 
     assert calls["single_source"] == 1
+
+
+def test_nearest_entrance_distance_builds_kdtree_once_not_per_entrance(monkeypatch):
+    # Regression guard for the companion bug: a linear-scan nearest-node
+    # lookup (min() over every graph node) took ~0.2s per call on a real
+    # ~19k-node tile graph -- fine once, but calling it once per candidate
+    # entrance (hundreds) took ~117s for a single stand on real data. Pin
+    # that node lookup goes through exactly one cKDTree build per call,
+    # not one linear scan (or one tree build) per entrance.
+    calls = {"kdtree_init": 0}
+
+    def counting_ckdtree(*args, **kwargs):
+        calls["kdtree_init"] += 1
+        return cKDTree(*args, **kwargs)
+
+    monkeypatch.setattr("pipeline.routing.cKDTree", counting_ckdtree)
+
+    roads = gpd.GeoDataFrame(
+        {"highway": ["track"]},
+        geometry=[LineString([(380000, 486000), (380300, 486000)])],
+        crs="EPSG:2180",
+    )
+    graph = build_road_graph(roads)
+    entrances = gpd.GeoDataFrame(
+        {"status": ["potential", "confirmed", "potential"]},
+        geometry=[Point(380050, 486000), Point(380150, 486000), Point(380250, 486000)],
+        crs="EPSG:2180",
+    )
+
+    nearest_entrance_distance(graph, Point(380000, 486000), entrances)
+
+    assert calls["kdtree_init"] == 1
