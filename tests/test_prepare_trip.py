@@ -4,7 +4,7 @@ import requests
 
 from pipeline.prepare_trip import (
     parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM,
-    _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable,
+    _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable, _is_transient_network_error,
 )
 
 
@@ -66,6 +66,18 @@ def test_is_overpass_retryable_matches_429_406_and_504():
     assert _is_overpass_retryable(_http_error(504)) is True
     assert _is_overpass_retryable(_http_error(500)) is False
     assert _is_overpass_retryable(ValueError("unrelated")) is False
+
+
+def test_is_transient_network_error_matches_connection_errors_not_arbitrary_exceptions():
+    # GDOS (sdi.gdos.gov.pl) has no documented rate-limit policy like
+    # Overpass or Open-Meteo -- a live run hit requests.exceptions.
+    # ConnectionError (a ProtocolError under it) with no HTTP status at
+    # all, so this matches broadly on the requests library's own
+    # transient-error hierarchy rather than a specific status code.
+    assert _is_transient_network_error(requests.exceptions.ConnectionError("reset")) is True
+    assert _is_transient_network_error(requests.exceptions.Timeout("slow")) is True
+    assert _is_transient_network_error(_http_error(500)) is True
+    assert _is_transient_network_error(ValueError("unrelated")) is False
 
 
 def test_is_open_meteo_rate_limit_matches_documented_message_only():

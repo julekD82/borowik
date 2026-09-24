@@ -73,12 +73,45 @@ def test_fetch_cached_gdos_reuses_a_tile_across_calls(tmp_path):
         return gpd.GeoDataFrame({"id": [1]}, geometry=[box(x, x, x + 1, x + 1)], crs=2180)
 
     tiles = [(0, 0, 10000, 10000), (0, 10000, 10000, 20000)]
-    result = fetch_cached_gdos(tiles, tmp_path, gdos)
+    result, failed = fetch_cached_gdos(tiles, tmp_path, gdos)
     assert len(calls) == 2
     assert len(result) == 2
+    assert failed == []
 
     fetch_cached_gdos(tiles, tmp_path, lambda *a: pytest.fail("cache missed"))
     assert len(calls) == 2  # still 2 -- second call served entirely from cache
+
+
+def test_fetch_cached_gdos_skips_a_tile_that_keeps_failing_and_reports_it(tmp_path, capsys):
+    def flaky(bbox):
+        if bbox[1] == 0:
+            raise RuntimeError("network unavailable")
+        return gpd.GeoDataFrame({"id": [1]}, geometry=[box(11, 11, 12, 12)], crs=2180)
+
+    tiles = [(0, 0, 10000, 10000), (0, 10000, 10000, 20000)]
+    result, failed = fetch_cached_gdos(tiles, tmp_path, flaky)
+
+    assert failed == [(0, 0, 10000, 10000)]
+    assert len(result) == 1  # the failing tile contributes no rows, not a crash
+    assert "GDOS" in capsys.readouterr().out
+
+
+def test_fetch_cached_gdos_does_not_cache_a_failed_tile(tmp_path):
+    calls = []
+
+    def eventually_succeeds(bbox):
+        calls.append(bbox)
+        if len(calls) == 1:
+            raise RuntimeError("network unavailable")
+        return gpd.GeoDataFrame({"id": [1]}, geometry=[box(11, 11, 12, 12)], crs=2180)
+
+    tiles = [(0, 0, 10000, 10000)]
+    _, failed = fetch_cached_gdos(tiles, tmp_path, eventually_succeeds)
+    assert failed == tiles
+    result, failed = fetch_cached_gdos(tiles, tmp_path, eventually_succeeds)
+    assert failed == []
+    assert len(result) == 1
+    assert len(calls) == 2  # the failed attempt was not cached -- retried
 
 
 def test_fetch_cached_gdos_fetches_only_a_new_tile(tmp_path):
@@ -114,10 +147,11 @@ def test_fetch_cached_osm_reuses_a_tile_across_calls(tmp_path):
 
     tiles = [(0, 0, 10000, 10000)]
     profile = {"osm": {"road_highway_types": ["track"]}}
-    result = fetch_cached_osm(tiles, tmp_path, profile, osm)
+    result, failed = fetch_cached_osm(tiles, tmp_path, profile, osm)
     assert len(calls) == 1
     assert set(result) == {"parking", "roads", "places"}
     assert len(result["roads"]) == 1
+    assert failed == []
 
     fetch_cached_osm(tiles, tmp_path, profile, lambda *a: pytest.fail("cache missed"))
     assert len(calls) == 1
@@ -135,6 +169,39 @@ def test_fetch_cached_osm_uses_a_separate_cache_per_profile(tmp_path):
     fetch_cached_osm(tiles, tmp_path, {"osm": {"road_highway_types": ["path"]}}, osm)
 
     assert len(calls) == 2  # different profile config -> not treated as the same cache entry
+
+
+def test_fetch_cached_osm_skips_a_tile_that_keeps_failing_and_reports_it(tmp_path, capsys):
+    def flaky(bbox, profile):
+        if bbox[1] == 0:
+            raise RuntimeError("network unavailable")
+        return _fake_osm_frames()
+
+    tiles = [(0, 0, 10000, 10000), (0, 10000, 10000, 20000)]
+    result, failed = fetch_cached_osm(tiles, tmp_path, {"osm": {}}, flaky)
+
+    assert failed == [(0, 0, 10000, 10000)]
+    assert len(result["roads"]) == 1  # only the succeeding tile's data
+    assert "OSM" in capsys.readouterr().out
+
+
+def test_fetch_cached_osm_does_not_cache_a_failed_tile(tmp_path):
+    calls = []
+
+    def eventually_succeeds(bbox, profile):
+        calls.append(bbox)
+        if len(calls) == 1:
+            raise RuntimeError("network unavailable")
+        return _fake_osm_frames()
+
+    tiles = [(0, 0, 10000, 10000)]
+    profile = {"osm": {}}
+    _, failed = fetch_cached_osm(tiles, tmp_path, profile, eventually_succeeds)
+    assert failed == tiles
+    result, failed = fetch_cached_osm(tiles, tmp_path, profile, eventually_succeeds)
+    assert failed == []
+    assert len(result["roads"]) == 1
+    assert len(calls) == 2  # the failed attempt was not cached -- retried
 
 
 def test_merge_removes_repeated_osm_places_without_collapsing_different_geometry():
@@ -155,6 +222,10 @@ def test_cli_rejects_nonfinite_or_invalid_coordinates(args):
 
 def configure_sources(monkeypatch):
     import pipeline.prepare_trip as trip
+    # _gdos_call_api/_osm_call_api pace every real call via time.sleep --
+    # harmless in production, but real wall-clock delay against these
+    # fakes otherwise (each GDOS tile call alone added 0.5s).
+    monkeypatch.setattr(trip.time, 'sleep', lambda s: None)
     rdlp = gpd.GeoDataFrame({"region_name": ["TEST"]}, geometry=[box(0,0,1000000,1000000)], crs=2180)
     monkeypatch.setattr(trip, 'fetch_rdlp_boundaries_cached', lambda *a: rdlp)
     def bdl(layer, bbox):
@@ -213,17 +284,34 @@ def test_real_pipeline_with_mocked_sources_expands_radius_and_exports_consistent
     assert all(b[2]-b[0] == b[3]-b[1] == 10000 for b in osm_calls)
 
 
-def test_failure_in_later_tile_preserves_previous_export(monkeypatch,tmp_path):
+def test_gdos_tile_failure_does_not_abort_the_run(monkeypatch,tmp_path,capsys):
+    # GDOS/OSM per-tile failures are deliberately non-fatal (user request,
+    # 2026-09-24): a tile that can't be fetched is skipped and reported,
+    # not treated as a crash -- see fetch_cached_gdos/fetch_cached_osm in
+    # pipeline/search_area.py and docs/CODEX-HANDOFF.md.
     configure_sources(monkeypatch)
-    marker=tmp_path/'scores_2026-09-24.json'
-    marker.write_text('previous result')
     calls=[]
-    def fail_later(*args):
+    def fail_once(*args):
         calls.append(args)
         if len(calls)==2:
             raise RuntimeError('GDOS unavailable')
         return gpd.GeoDataFrame(geometry=[],crs=2180)
-    monkeypatch.setattr('pipeline.prepare_trip.fetch_protected_areas', fail_later)
-    with pytest.raises(RuntimeError,match='GDOS unavailable'):
+    monkeypatch.setattr('pipeline.prepare_trip.fetch_protected_areas', fail_once)
+    summary = run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache')
+    assert summary['scores_path'].exists()
+    assert 'GDOS unavailable' in capsys.readouterr().out
+
+
+def test_failure_mid_pipeline_preserves_previous_export(monkeypatch,tmp_path):
+    # A genuinely fatal error (not a GDOS/OSM tile, which is now
+    # non-fatal -- see above) still aborts the run and leaves whatever a
+    # previous, successful run already exported untouched.
+    configure_sources(monkeypatch)
+    marker=tmp_path/'scores_2026-09-24.json'
+    marker.write_text('previous result')
+    def fail_ban(*args):
+        raise RuntimeError('Zakazy unavailable')
+    monkeypatch.setattr('pipeline.prepare_trip.check_periodic_ban', fail_ban)
+    with pytest.raises(RuntimeError,match='Zakazy unavailable'):
         run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache')
     assert marker.read_text() == 'previous result'

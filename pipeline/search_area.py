@@ -64,21 +64,37 @@ def within_radius(stands, center, radius_km):
 def fetch_cached_gdos(tiles, cache_dir, fetcher):
     """Per-tile GDOS cache, same check-exists/fetch/save-atomically pattern
     as fetch_search_stands' BDL cache below -- GDOS is keyed by tile alone
-    (no per-layer split needed, DEFAULT_GDOS_LAYERS is fixed)."""
+    (no per-layer split needed, DEFAULT_GDOS_LAYERS is fixed).
+
+    A tile whose fetch keeps failing (network error, not a legitimate
+    empty response) is skipped rather than crashing the whole run --
+    treated the same as "no protected areas found" for that tile, NOT
+    cached (so the next invocation retries it), and returned in a second
+    `failed` list so the caller can surface a loud, explicit warning:
+    this is an optimistic fallback (a stand in a reserve the tile
+    couldn't reach stays unmarked), a real tradeoff the caller must not
+    hide, not a silent one. See docs/CODEX-HANDOFF.md."""
     frames = []
+    failed = []
     for index, bbox in enumerate(tiles, 1):
         cache_path = Path(cache_dir) / "gdos_tiles" / f"E{bbox[1]}N{bbox[0]}S{TILE_M}.parquet"
-        print(f"GDOS {index}/{len(tiles)}: ({'cache' if cache_path.exists() else 'WFS'})", flush=True)
         if cache_path.exists():
-            frame = gpd.read_parquet(cache_path)
-        else:
+            print(f"GDOS {index}/{len(tiles)}: (cache)", flush=True)
+            frames.append(gpd.read_parquet(cache_path))
+            continue
+        try:
             frame = fetcher(bbox)
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = cache_path.with_suffix(".tmp.parquet")
-            frame.to_parquet(temp)
-            temp.replace(cache_path)
+        except Exception as exc:
+            print(f"GDOS {index}/{len(tiles)}: BLAD ({exc}) -- kafel pominiety", flush=True)
+            failed.append(bbox)
+            continue
+        print(f"GDOS {index}/{len(tiles)}: (WFS)", flush=True)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = cache_path.with_suffix(".tmp.parquet")
+        frame.to_parquet(temp)
+        temp.replace(cache_path)
         frames.append(frame)
-    return merge_frames(frames)
+    return merge_frames(frames), failed
 
 
 def fetch_cached_osm(tiles, cache_dir, profile, fetcher):
@@ -88,17 +104,32 @@ def fetch_cached_osm(tiles, cache_dir, profile, fetcher):
     caching here also means a retried CLI invocation resumes past whatever
     tile failed last time instead of re-hitting Overpass for tiles that
     already succeeded. Keyed by tile plus a hash of the profile's osm
-    config, since the query (and so the result) depends on it."""
+    config, since the query (and so the result) depends on it.
+
+    A tile that keeps failing after its own retries (fetcher is expected
+    to already retry transient Overpass errors -- see
+    prepare_trip._osm_call_api) is skipped, not cached, and reported in a
+    `failed` list, the same fallback and the same reasoning as
+    fetch_cached_gdos above: OSM only feeds accessibility/popularity
+    estimates, not a legal mask, but a missing tile is still missing data
+    the caller must disclose, not paper over."""
     profile_key = hashlib.sha256(repr(profile.get("osm")).encode("utf-8")).hexdigest()[:16]
     osm_frames = {name: [] for name in ("parking", "roads", "places")}
+    failed = []
     for index, bbox in enumerate(tiles, 1):
         tile_dir = Path(cache_dir) / "osm_tiles" / profile_key / f"E{bbox[1]}N{bbox[0]}S{TILE_M}"
         cached = (tile_dir / "roads.parquet").exists()
-        print(f"OSM {index}/{len(tiles)}: ({'cache' if cached else 'Overpass'})", flush=True)
         if cached:
+            print(f"OSM {index}/{len(tiles)}: (cache)", flush=True)
             tile_osm = {name: gpd.read_parquet(tile_dir / f"{name}.parquet") for name in osm_frames}
         else:
-            tile_osm = fetcher(bbox, profile)
+            try:
+                tile_osm = fetcher(bbox, profile)
+            except Exception as exc:
+                print(f"OSM {index}/{len(tiles)}: BLAD ({exc}) -- kafel pominiety", flush=True)
+                failed.append(bbox)
+                continue
+            print(f"OSM {index}/{len(tiles)}: (Overpass)", flush=True)
             tile_dir.mkdir(parents=True, exist_ok=True)
             for name, frame in tile_osm.items():
                 temp = tile_dir / f"{name}.tmp.parquet"
@@ -106,7 +137,7 @@ def fetch_cached_osm(tiles, cache_dir, profile, fetcher):
                 temp.replace(tile_dir / f"{name}.parquet")
         for name in osm_frames:
             osm_frames[name].append(tile_osm[name])
-    return {name: merge_frames(frames) for name, frames in osm_frames.items()}
+    return {name: merge_frames(frames) for name, frames in osm_frames.items()}, failed
 
 
 def fetch_search_stands(tiles, rdlp, cache_dir, fetcher):

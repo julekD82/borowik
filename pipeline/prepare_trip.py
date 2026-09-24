@@ -107,6 +107,16 @@ def _is_overpass_retryable(exc: Exception) -> bool:
     )
 
 
+def _is_transient_network_error(exc: Exception) -> bool:
+    # GDOS (sdi.gdos.gov.pl) has no documented rate-limit policy like
+    # Overpass or Open-Meteo -- a live run hit requests.exceptions.
+    # ConnectionError (a urllib3 ProtocolError underneath, no HTTP status
+    # at all) mid-run, tile 18/30. Matches the requests library's own
+    # RequestException hierarchy broadly rather than a specific status
+    # code, since there's no documented policy to be more specific about.
+    return isinstance(exc, requests.exceptions.RequestException)
+
+
 def _rate_limited(default_call, *args, should_retry, max_attempts=6, backoff_s=65, pace_s=2.0):
     time.sleep(pace_s)
     for attempt in range(max_attempts):
@@ -178,6 +188,16 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             _default_overpass_call, query, should_retry=_is_overpass_retryable, backoff_s=30, pace_s=1.0,
         )
 
+    def _gdos_call_api(bbox):
+        # No documented rate-limit policy for GDOS, unlike Overpass/Open-
+        # Meteo -- just a couple of quick retries for a transient network
+        # blip (ConnectionError, observed live 2026-09-24) before
+        # fetch_cached_gdos's own fallback gives up on the tile entirely.
+        return _rate_limited(
+            fetch_protected_areas, bbox, should_retry=_is_transient_network_error,
+            max_attempts=3, backoff_s=5, pace_s=0.5,
+        )
+
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
         bdl_fetcher=lambda _layer, _bbox: stands.copy(),
@@ -188,10 +208,23 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     )
     print(f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask")
 
-    gdos_gdf = fetch_cached_gdos(tiles, cache_dir, fetch_protected_areas)
-    osm_features = fetch_cached_osm(
+    gdos_gdf, gdos_failed_tiles = fetch_cached_gdos(tiles, cache_dir, _gdos_call_api)
+    osm_features, osm_failed_tiles = fetch_cached_osm(
         tiles, cache_dir, profile, functools.partial(fetch_osm_features, call_api=_osm_call_api),
     )
+    if gdos_failed_tiles:
+        print(
+            f"UWAGA: dane GDOS niedostepne dla {len(gdos_failed_tiles)}/{len(tiles)} kafli -- "
+            "ochrona prawna (rezerwaty, parki narodowe) moze byc niepelna w tym obszarze. "
+            "Wydzielenia w tych kaflach NIE sa oznaczone jako zablokowane z tego powodu.",
+            flush=True,
+        )
+    if osm_failed_tiles:
+        print(
+            f"UWAGA: dane OSM niedostepne dla {len(osm_failed_tiles)}/{len(tiles)} kafli -- "
+            "odleglosc do wejscia i szacunek popularnosci moga byc mniej dokladne w tym obszarze.",
+            flush=True,
+        )
 
     print("Detecting forest entrances...")
     # Keep surrounding forest: clipping the forest at the search circle would
@@ -227,6 +260,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "region_count": len(regions),
         "scores_path": scores_path, "stands_path": stands_path,
         "geojson_path": geojson_path, "regions_path": regions_path,
+        "gdos_failed_tile_count": len(gdos_failed_tiles),
+        "osm_failed_tile_count": len(osm_failed_tiles),
     }
 
 
@@ -256,6 +291,12 @@ def main(argv=None) -> int:
         f"Wyniki: {summary['scores_path']}, {summary['stands_path']}, "
         f"{summary['geojson_path']}, {summary['regions_path']}"
     )
+    if summary["gdos_failed_tile_count"] or summary["osm_failed_tile_count"]:
+        print(
+            f"Niepelne dane: GDOS pominiety dla {summary['gdos_failed_tile_count']} kafli, "
+            f"OSM pominiety dla {summary['osm_failed_tile_count']} kafli z {summary['tile_count']}. "
+            "Sprawdz logi wyzej."
+        )
     return 0
 
 
