@@ -1,5 +1,19 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (16): B1 — rozpoznanie paczek BDL per nadleśnictwo (bez zmian w kodzie)
+
+Zrealizowany krok B1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, kryterium z §3.1 "Do sprawdzenia w pierwszej kolejności"). To rozpoznanie — `pipeline/` nie zostało dotknięte. Pełna notatka: `docs/bdl-paczki-rozpoznanie.md`.
+
+**Wynik:** portal `bdl.lasy.gov.pl` udostępnia paczki per nadleśnictwo (SHP + TXT) z pełnym opisem taksacyjnym. Ze schematu danych (`OpisDanych.pdf`, pobrany bez logowania z publicznego linku na `/portal/o-udostepnianiu`, zapisany w `cache/bdl_research/` — poza repo): **`F_STOREY_SPECIES.part_cd_act`** daje pełny skład gatunkowy z udziałami **per piętro drzewostanu** (`F_AROD_STOREY.storey_cd`), **`F_AROD_STOREY.density_cd`** to zwarcie, **`F_SUBAREA.soil_subtype_cd`** to typ+podtyp gleby. `G_SUBAREA` ma pole `adr_for` identyczne z WFS (`pipeline/bdl.py`), więc join wygląda na bezpośredni. Podszyt jako osobna warstwa — prawdopodobne (wniosek pośredni z przykładu filtra w dokumentacji BDL, `storey_cd IN ('DRZEW','IP','IIP')` sugeruje istnienie innych kodów), nie potwierdzone literalnie.
+
+**Licencja:** ustawa z 11.08.2021 o otwartych danych i ponownym wykorzystywaniu informacji sektora publicznego (Dz.U. 2021 poz. 1641, zm. 2022 poz. 1700) — obowiązek atrybucji źródła/daty, przekazywania dalej w formie pierwotnej, informowania o przetworzeniu; brak jawnego zakazu użytku komercyjnego w warunkach formularza.
+
+**Pobranie wymaga formularza (e-mail + zgoda RODO), nie jest samoobsługowym plikiem do kliknięcia** — zgodnie z poleceniem zadania zatrzymałem się przed wysłaniem i zapytałem użytkownika. Użytkownik podał e-mail (`[adres e-mail usunięty]`) i zgodę; **wniosek złożony** dla Nadl. Kędzierzyn (RDLP Katowice, rok 2026, obszar testowy — `adr_for` prefiks `02-10-...` już widoczny w `cache/bdl_tiles_v2`). Portal potwierdził wysyłkę instrukcji pobrania na ten e-mail. **Nie mam dostępu do tej skrzynki** — sama zawartość paczki (rzeczywiste wypełnienie pól, format `adr_for`, rozmiar pliku) pozostaje niezweryfikowana; żaden plik z danymi nadleśnictwa nie został pobrany.
+
+**Rekomendacja: warunkowo integrujemy w B2**, pod warunkiem potwierdzenia na realnej paczce, że `F_STOREY_SPECIES` faktycznie ma wypełniony skład gatunkowy dla więcej niż pojedynczych wydzieleń (dokumentacja opisuje strukturę, nie kompletność danych). To jedyne zidentyfikowane źródło mogące rozbić płaskowyż 745 wydzieleń z R ≥ 90 (§0.1) bez nowych zgadywanych wag.
+
+**Następny krok (poza B1):** użytkownik sprawdza skrzynkę `[adres e-mail usunięty]`, pobiera paczkę i przekazuje plik/link do dokończenia weryfikacji przed ostateczną decyzją B2.
+
 ## 2026-09-24 — aktualne (15): A4 — filtr małych wydzieleń + poprawka wyjaśnień S_host
 
 Zrealizowany krok A4 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §5.2 i §5.3 "Poprawka wyjaśnień").
