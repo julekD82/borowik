@@ -1,5 +1,18 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (10): potwierdzone — dzienny limit archive-api.open-meteo.com wyczerpany
+
+Użytkownik zgłosił, że klimatologia przestała pobierać dane. Sprawdzone bezpośrednim zapytaniem (`curl`), nie zgadywane:
+
+```
+archive-api.open-meteo.com: {"error":true,"reason":"Daily API request limit exceeded. Please try again tomorrow."}
+api.open-meteo.com (bieżąca pogoda): HTTP 200 -- działa normalnie
+```
+
+To osobny, endpoint-specyficzny limit dzienny (nie globalny na cały Open-Meteo) — archive API (klimatologia) jest wyczerpane, forecast API (pogoda) nie. Brak publicznego dashboardu do sprawdzania zużycia z wyprzedzeniem na darmowym planie bez klucza API; jedyny sposób to próba na żywo. Reset "jutro" (prawdopodobnie północ UTC).
+
+Prawdopodobna przyczyna: skumulowane zużycie z wielu przebiegów testowych tego samego dnia (sekcje (2)-(9) niżej) — nawet nieudane/częściowe przebiegi zużywały budżet archive API przed padnięciem na innym błędzie. Po dzisiejszych poprawkach (rzadsza siatka, mniejszy batch, skalowanie z promieniem) pojedynczy przyszły przebieg powinien zużywać znacznie mniej tego budżetu.
+
 ## 2026-09-24 — aktualne (9): rozdzielczość siatki pogody/klimatologii skalowana z promieniem
 
 Pytanie użytkownika: przy `--radius-km 25` siatka pogody/klimatologii ma tę samą, stałą rozdzielczość co przy 15km — czy mniejszy promień nie mógłby "wykorzystać" tego samego budżetu punktów na mniejszym obszarze, czyli dostać dokładniejszą siatkę zamiast po prostu mniej punktów?
