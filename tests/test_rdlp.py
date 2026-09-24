@@ -3,7 +3,8 @@ import responses
 from shapely.geometry import box
 
 from pipeline.rdlp import (
-    fetch_rdlp_boundaries, layer_name_for_region, resolve_rdlp_layer, DEFAULT_WFS_URL,
+    fetch_rdlp_boundaries, layer_name_for_region, resolve_rdlp_layer,
+    fetch_rdlp_boundaries_cached, DEFAULT_WFS_URL,
 )
 
 # Verified live 2026-09-24 (see plan Global Constraints): GetCapabilities'
@@ -79,3 +80,18 @@ def test_resolve_rdlp_layer_returns_none_outside_every_polygon():
     # Well outside both boxes (roughly (600000, 700000) in EPSG:2180).
     layer = resolve_rdlp_layer(lat=54.15455087660452, lon=20.531757957006068, rdlp_gdf=_rdlp_gdf())
     assert layer is None
+
+
+@responses.activate
+def test_fetch_rdlp_boundaries_cached_writes_and_reuses_cache(tmp_path):
+    collection = {"type": "FeatureCollection", "features": [_region_feature(1, "KATOWICE")]}
+    responses.add(responses.GET, DEFAULT_WFS_URL, json=collection, status=200)
+
+    first = fetch_rdlp_boundaries_cached(tmp_path)
+    assert len(first) == 1
+    assert (tmp_path / "rdlp_boundaries.parquet").exists()
+    assert len(responses.calls) == 1
+
+    second = fetch_rdlp_boundaries_cached(tmp_path)  # cache hit -- no new HTTP call
+    assert len(second) == 1
+    assert len(responses.calls) == 1

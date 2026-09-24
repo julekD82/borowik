@@ -1,4 +1,5 @@
 import io
+import pathlib
 
 import geopandas as gpd
 import requests
@@ -42,3 +43,18 @@ def resolve_rdlp_layer(lat: float, lon: float, rdlp_gdf: gpd.GeoDataFrame) -> st
     if len(hits) == 0:
         return None
     return layer_name_for_region(hits.iloc[0]["region_name"])
+
+
+def fetch_rdlp_boundaries_cached(cache_dir, base_url: str = DEFAULT_WFS_URL) -> gpd.GeoDataFrame:
+    """Existence-only cache (same pattern as pipeline.bdl.save_bdl_tile /
+    the notebook's _cached_bdl_fetcher): RDLP boundaries change on the
+    order of years, so no age check -- delete
+    cache/rdlp_boundaries.parquet manually to force a refetch."""
+    cache_dir = pathlib.Path(cache_dir)
+    cache_path = cache_dir / "rdlp_boundaries.parquet"
+    if cache_path.exists():
+        return gpd.read_parquet(cache_path)
+    gdf = fetch_rdlp_boundaries(base_url)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    gdf.to_parquet(cache_path)
+    return gdf
