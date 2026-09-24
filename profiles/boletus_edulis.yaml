@@ -99,6 +99,7 @@ osm:
   # bounding-box centroid, not the point nearest the stand) rather than true
   # point-to-line distance -- accepted simplification, not fixed here.
   road_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential"]
+  routing_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "track", "path", "footway", "bridleway"]
   place_types: ["city", "town", "village", "hamlet"]
 
 confidence:

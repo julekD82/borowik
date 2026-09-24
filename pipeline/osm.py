@@ -2,7 +2,7 @@ import geopandas as gpd
 import pandas as pd
 import requests
 from pyproj import Transformer
-from shapely.geometry import Point
+from shapely.geometry import Point, LineString
 
 _TO_4326 = Transformer.from_crs("EPSG:2180", "EPSG:4326", always_xy=True)
 
@@ -20,7 +20,7 @@ def build_overpass_query(bbox_4326: tuple, profile: dict) -> str:
     south, west, north, east = bbox_4326
     bbox_str = f"{south},{west},{north},{east}"
     cfg = profile["osm"]
-    highway_re = "|".join(cfg["road_highway_types"])
+    highway_re = "|".join(cfg["routing_highway_types"])
     place_re = "|".join(cfg["place_types"])
     return (
         f'[out:json][timeout:25];'
@@ -30,31 +30,49 @@ def build_overpass_query(bbox_4326: tuple, profile: dict) -> str:
         f'way["highway"~"^({highway_re})$"]({bbox_str});'
         f'node["place"~"^({place_re})$"]({bbox_str});'
         f');'
-        f'out center tags;'
+        f'out geom;'
     )
 
 
-def _element_point(element: dict):
+def _element_representative_point(element: dict):
+    """A single representative Point for a node or way. Nodes use their own
+    lat/lon; ways use the centroid of their own linework -- Overpass
+    `out geom;` (replacing `out center tags;`, Task 1 of the accessibility
+    plan) no longer returns a `center` field."""
     if "lat" in element and "lon" in element:
         return Point(element["lon"], element["lat"])
-    center = element.get("center")
-    if center:
-        return Point(center["lon"], center["lat"])
-    return None
+    geometry = element.get("geometry")
+    if not geometry:
+        return None
+    coords = [(pt["lon"], pt["lat"]) for pt in geometry]
+    if len(coords) == 1:
+        return Point(coords[0])
+    return LineString(coords).centroid
+
+
+def _way_linestring(element: dict):
+    geometry = element.get("geometry")
+    if not geometry or len(geometry) < 2:
+        return None
+    return LineString([(pt["lon"], pt["lat"]) for pt in geometry])
 
 
 def parse_osm_elements(elements: list[dict]) -> dict:
     parking_rows, road_rows, place_rows = [], [], []
     for el in elements:
         tags = el.get("tags", {})
-        point = _element_point(el)
-        if point is None:
-            continue
         if tags.get("amenity") == "parking":
-            parking_rows.append({"osm_id": el["id"], "geometry": point})
+            point = _element_representative_point(el)
+            if point is not None:
+                parking_rows.append({"osm_id": el["id"], "geometry": point})
         elif "highway" in tags:
-            road_rows.append({"osm_id": el["id"], "highway": tags["highway"], "geometry": point})
+            line = _way_linestring(el)
+            if line is not None:
+                road_rows.append({"osm_id": el["id"], "highway": tags["highway"], "geometry": line})
         elif "place" in tags:
+            point = _element_representative_point(el)
+            if point is None:
+                continue
             population = pd.to_numeric(tags.get("population"), errors="coerce")
             place_rows.append({
                 "osm_id": el["id"], "place": tags["place"], "name": tags.get("name", ""),
@@ -65,7 +83,7 @@ def parse_osm_elements(elements: list[dict]) -> dict:
         "parking": gpd.GeoDataFrame(parking_rows, geometry="geometry", crs="EPSG:4326") if parking_rows
                     else gpd.GeoDataFrame({"osm_id": []}, geometry=[], crs="EPSG:4326"),
         "roads": gpd.GeoDataFrame(road_rows, geometry="geometry", crs="EPSG:4326") if road_rows
-                  else gpd.GeoDataFrame({"osm_id": []}, geometry=[], crs="EPSG:4326"),
+                  else gpd.GeoDataFrame({"osm_id": [], "highway": []}, geometry=[], crs="EPSG:4326"),
         "places": gpd.GeoDataFrame(place_rows, geometry="geometry", crs="EPSG:4326") if place_rows
                    else gpd.GeoDataFrame({"osm_id": [], "population": []}, geometry=[], crs="EPSG:4326"),
     }
