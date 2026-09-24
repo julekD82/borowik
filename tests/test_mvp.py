@@ -1,7 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import box, Point
+from shapely.geometry import box, Point, LineString
 
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
@@ -100,6 +100,88 @@ def test_enrich_top_n_larger_than_row_count_does_not_raise():
         zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=1000,
     )
     assert len(result) == 2
+
+
+def _routing_test_stands():
+    # Same shape as _scored_stands() but with distinct H so R_final is
+    # unambiguously ordered -- top_n_for_routing must not depend on
+    # sort-tie-breaking behavior.
+    return gpd.GeoDataFrame({
+        "stand_id": ["HIGH", "LOW"],
+        "species_cd": ["SO", "SO"], "site_type": ["BMSW", "BMSW"], "spec_age": [60, 60],
+        "mask": [True, True],
+        "H": [0.9, 0.5], "F": [0.6, 0.6], "F_loc": [0.6, 0.6], "R": [54.0, 30.0],
+        "S_host": [1.0, 1.0], "S_site": [1.0, 1.0], "S_age": [1.0, 1.0],
+        "M": [0.5, 0.5], "T": [0.8, 0.8], "K_frost": [1.0, 1.0],
+    }, geometry=[box(380100, 486100, 380200, 486200), box(390100, 496100, 390200, 496200)], crs="EPSG:2180")
+
+
+def test_enrich_routing_refines_only_top_n_stands_and_records_method():
+    stands = _routing_test_stands()
+    # HIGH's centroid is exactly (380150, 486150); this track starts there.
+    roads_routing = gpd.GeoDataFrame(
+        {"highway": ["track"]},
+        geometry=[LineString([(380150, 486150), (380150, 486250)])],
+        crs="EPSG:2180",
+    )
+    entrances = gpd.GeoDataFrame(
+        {"status": ["confirmed"]},
+        geometry=[Point(380150, 486250)],
+        crs="EPSG:2180",
+    )
+    result = enrich_with_mvp_layers(
+        stands, PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=10,
+        roads_routing_gdf=roads_routing, entrances_gdf=entrances, top_n_for_routing=1,
+    )
+    refined = result[result["stand_id"] == "HIGH"].iloc[0]
+    unrefined = result[result["stand_id"] == "LOW"].iloc[0]
+    assert refined["distance_method"] == "network"
+    assert refined["entrance_status"] == "confirmed"
+    assert refined["d_park_m"] == pytest.approx(100.0)
+    assert unrefined["distance_method"] == "euclidean"
+    assert unrefined["entrance_status"] == "not_evaluated"
+
+
+def test_enrich_without_routing_params_keeps_existing_behavior():
+    # Regression guard: every existing caller (no routing args) is
+    # completely unaffected by this feature's addition.
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=10,
+    )
+    assert (result["distance_method"] == "euclidean").all()
+    assert (result["entrance_status"] == "not_evaluated").all()
+
+
+def test_enrich_routing_with_no_reachable_entrance_falls_back_to_euclidean():
+    stands = _routing_test_stands()
+    # Two genuinely disjoint graph components: one near HIGH's centroid (so
+    # it snaps to a real nearby node), one far away where the entrance is.
+    # A single road segment would still produce *a* (very long but finite)
+    # route via snap distance alone -- it takes two disconnected components
+    # to actually trigger NetworkXNoPath.
+    disconnected_roads = gpd.GeoDataFrame(
+        {"highway": ["track", "track"]},
+        geometry=[
+            LineString([(380150, 486150), (380150, 486160)]),  # HIGH's own component
+            LineString([(500000, 600000), (500100, 600000)]),  # entrance's component
+        ],
+        crs="EPSG:2180",
+    )
+    entrances = gpd.GeoDataFrame(
+        {"status": ["potential"]}, geometry=[Point(500100, 600000)], crs="EPSG:2180",
+    )
+    result = enrich_with_mvp_layers(
+        stands, PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=10,
+        roads_routing_gdf=disconnected_roads, entrances_gdf=entrances, top_n_for_routing=1,
+    )
+    refined_candidate = result[result["stand_id"] == "HIGH"].iloc[0]
+    # A disconnected/unreachable entrance means nearest_entrance_distance
+    # returns (None, None) -- must leave the stand on its euclidean values,
+    # not crash or zero it out.
+    assert refined_candidate["distance_method"] == "euclidean"
 
 
 def test_enrich_explanation_is_a_list_of_dicts_with_expected_keys():

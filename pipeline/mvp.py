@@ -6,6 +6,7 @@ from pipeline.confidence import compute_confidence
 from pipeline.explain import compute_log_contributions, generate_explanation
 from pipeline.gdos import mark_gdos_blocked
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
+from pipeline.routing import build_road_graph, nearest_entrance_distance
 from pipeline.scoring import compute_ranking
 
 _EXPLANATION_FACTORS = ["S_host", "S_site", "S_age", "M", "T", "K_frost"]
@@ -17,7 +18,10 @@ _FACTOR_KEY_MAP = {
 
 def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gpd.GeoDataFrame,
                               osm_features: dict, zakaz_checker, alpha: float | None = None,
-                              top_n_for_ban_check: int = 50) -> gpd.GeoDataFrame:
+                              top_n_for_ban_check: int = 50,
+                              roads_routing_gdf: gpd.GeoDataFrame | None = None,
+                              entrances_gdf: gpd.GeoDataFrame | None = None,
+                              top_n_for_routing: int = 0) -> gpd.GeoDataFrame:
     stands = stands.copy()
     alpha = profile["pressure"]["alpha_default"] if alpha is None else alpha
 
@@ -27,6 +31,14 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
 
     parking = osm_features.get("parking")
     roads = osm_features.get("roads")
+    if roads is not None and "highway" in roads.columns:
+        # osm_features["roads"] now carries the full routing network
+        # (paved + track/path, profile["osm"]["routing_highway_types"],
+        # accessibility plan Task 1) -- the euclidean d_park estimate below
+        # keeps its original, deliberately paved-only scope (see
+        # profiles/boletus_edulis.yaml's own comment on why "track" was
+        # excluded: it made d_park nearly constant across a tile).
+        roads = roads[roads["highway"].isin(profile["osm"]["road_highway_types"])]
     places = osm_features.get("places")
     centroids = stands.geometry.centroid
 
@@ -43,11 +55,32 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
     stands["demand_norm"] = [0.0 if demand_max == 0 else d / demand_max for d in demands]
     stands["P"] = pressures
     stands["pressure_factor"] = [1.0 - alpha * p for p in pressures]
+    stands["distance_method"] = "euclidean"
+    stands["entrance_status"] = "not_evaluated"
 
     stands["R_final"] = [
         compute_ranking(mask, h, f_loc, p=p, alpha=alpha)
         for mask, h, f_loc, p in zip(stands["mask_full"], stands["H"], stands["F_loc"], stands["P"])
     ]
+
+    if top_n_for_routing > 0 and roads_routing_gdf is not None and entrances_gdf is not None and len(entrances_gdf):
+        graph = build_road_graph(roads_routing_gdf)
+        top_idx = stands.sort_values("R_final", ascending=False).head(top_n_for_routing).index
+        for idx in top_idx:
+            centroid = stands.loc[idx, "geometry"].centroid
+            distance, status = nearest_entrance_distance(graph, centroid, entrances_gdf)
+            if distance is None:
+                continue
+            new_p = compute_pressure(distance, stands.loc[idx, "demand"], demand_max, profile)
+            stands.loc[idx, "d_park_m"] = distance
+            stands.loc[idx, "P"] = new_p
+            stands.loc[idx, "pressure_factor"] = 1.0 - alpha * new_p
+            stands.loc[idx, "distance_method"] = "network"
+            stands.loc[idx, "entrance_status"] = status
+            stands.loc[idx, "R_final"] = compute_ranking(
+                stands.loc[idx, "mask_full"], stands.loc[idx, "H"], stands.loc[idx, "F_loc"],
+                p=new_p, alpha=alpha,
+            )
 
     stands["periodic_ban_checked"] = False
     stands["periodic_ban_active"] = False
