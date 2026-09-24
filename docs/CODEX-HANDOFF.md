@@ -1,5 +1,17 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-24 — aktualne (3): naprawa Overpass 429 — kolejny błąd z tego samego live-runu
+
+Po dwóch naprawach Open-Meteo (sekcja niżej) użytkownik odpalił `--radius-km 25` ponownie. Pogoda i klimatologia **przeszły bez błędu** (dowód, że poprzednie dwie naprawy zadziałały). `run_poc` policzył 30120 wydzieleń. Ale przy pobieraniu OSM/Overpass per-kafel (30 kafli) pojawił się nowy błąd na kaflu 3/30: `requests.exceptions.HTTPError: 429 Client Error: Too Many Requests for url: https://overpass-api.de/api/interpreter`.
+
+**Przyczyna:** `pipeline/osm.py::_default_overpass_call` robił gołe `requests.post` bez żadnego retry/backoff, a pętla w `run_trip_preparation` wywoływała go 30 razy pod rząd bez żadnej pauzy między zapytaniami.
+
+**Sprawdzone źródło** (`wiki.openstreetmap.org/wiki/Overpass_API`, polityka użytkowania publicznej instancji overpass-api.de): *"If you receive an HTTP error code such as 429 or 406, pause for 30 seconds before making a new request."* Ta sama strona: limit "10000 zapytań/dzień, <1GB/dzień" dla ręcznego użycia, podzielony przez 100 dla regularnie uruchamianego skryptu (~100/dzień); zalecenie "cache and rate-limit calls", "avoid running multiple scripts in parallel".
+
+**Naprawa:** `pipeline/prepare_trip.py::_rate_limited` uogólniony z twardo wpisanego `except OpenMeteoRequestsError` na parametr `should_retry` (predykat). Dodano `_is_overpass_rate_limit` (429/406) obok przemianowanego `_is_open_meteo_rate_limit` (który teraz też explicite wyklucza komunikat "too much data" — to nie jest błąd przejściowy, retry nic by nie dał). Overpass dostaje 30s backoff (z dokumentacji) + lekkie 1s pacing między kaflami (niepotwierdzone w dokumentacji, defensywne). Nowe testy jednostkowe dla `_rate_limited`/obu predykatów w `tests/test_prepare_trip.py` (bez sieci, `time.sleep` zamockowany).
+
+**Nadal niezweryfikowane na żywo w całości** — to jest trzeci błąd z rzędu wyłapany dopiero na żywym, pełnym przebiegu 25 km; nie wiadomo, czy po tej poprawce cały przebieg (GDOS, wejścia do lasu, eksport) dojdzie do końca bez kolejnej niespodzianki. Warto odpalić jeszcze raz.
+
 ## 2026-09-24 — aktualne (2): druga naprawa Open-Meteo — limit danych na zapytanie (klimatologia)
 
 Ta notatka **zastępuje** poniższą co do stanu limitu Open-Meteo. Batching (opisany niżej) naprawił błąd limitu liczby zapytań, ale przy ponownym uruchomieniu `--radius-km 25` przez użytkownika ujawnił się **inny, nowy błąd**: `OpenMeteoRequestsError: Your API call requests too much data. Please reduce the number of variables, locations and/or weather models.` — to osobny, natychmiastowy błąd limitu **objętości danych na pojedyncze zapytanie**, nie limitu licznika zapytań.
