@@ -25,7 +25,7 @@ Pobranie paczki wymaga formularza interaktywnego
 (`bdl.lasy.gov.pl/portal/wniosek`: e-mail + zgoda RODO + wybór roku i
 nadleśnictwa; brak logowania/konta, ale są dane osobowe i zgoda). Zgodnie z
 poleceniem zadania **zatrzymałem się przed wysłaniem formularza i zapytałem
-użytkownika**. Użytkownik podał e-mail (`[adres e-mail usunięty]`) i zgodę;
+użytkownika**. Użytkownik podał swój e-mail i zgodę;
 wniosek złożony dla RDLP Katowice → Nadl. Kędzierzyn, rok 2026. Portal nie
 daje pliku od razu — wysyła link e-mailem. Użytkownik przekazał ten link w
 kolejnej wiadomości; paczka (`BDL_02_10_KEDZIERZYN_2026.zip`) pobrana stąd i

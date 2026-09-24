@@ -5,6 +5,8 @@
 > - **Nowa kolejność prac** jest w sekcji 13: najpierw błędy wykryte w audycie (rejony, brakujące kody BDL, pogoda do daty wyjazdu), potem lepsze różnicowanie H z danych BDL, potem walidacja.
 > - **Routing sieciowy i wejścia do lasu są zamrożone** (działają, bez dalszej rozbudowy). Bariery i rozbudowa popularności wypadają z planu.
 > - **Krawędzie lasu nie wchodzą do H.** Najwyżej jako informacja na karcie wydzielenia („graniczy z: …”), niski priorytet (sekcja 5.3).
+>
+> **Region docelowy (decyzja użytkownika 2026-09-25): Podkarpacie, start z Będziemyśla** (gm. Sędziszów Małopolski; 50.0555, 21.7889 wg OSM Nominatim), **promień 20 km**. Od kroku B2 wszystkie kryteria z sekcji 13.1 sprawdzamy na tym obszarze, nie na Kieleczce (Śląsk, punkt audytu z sekcji 0.1). Stan rozpoznania: sekcja 0.2.
 
 > **Decyzja użytkownika (2026-09-24, ponownie potwierdzona): grupowanie w rejony znów aktywne.** Backend liczy i eksportuje `regions_{day}.json`; frontend ma przełącznik „Rejony” / „Wydzielenia” (domyślnie Rejony, gdy są dostępne). Krótki epizod „grupowanie wyłączone" tego samego dnia jest historyczny — nie kieruj się nim. Szczegóły: `docs/CODEX-HANDOFF.md` w katalogu projektu.
 
@@ -61,6 +63,25 @@ Przegląd kodu i eksportu `prepare_trip --lat 50.5318 --lon 18.6055 --radius-km 
 **Nieużywane pola BDL już pobierane:** `stand_stru` (DRZEW 34 867, KO 1 001, 2 PIĘT 338, KDO 175), `prot_categ` (m.in. „OCH USZK” — lasy uszkodzone przez przemysł — 19 886 wydzieleń), `sub_area`, `silvicult`, `rotat_age`. Kafel BDL zawiera też poligony nie-drzewostanowe (`ZRĄB` 964, `Ł` 730, `R` 846, `SUKCESJA` 823, `L ENERG` 679, `DROGI L` 468 …), które pozwalają opisać sąsiedztwo wydzielenia.
 
 **Krawędzie lasu (sprawdzone i odłożone):** tylko 8,6% długości granic drzewostanów leży na zewnętrznym obrysie lasów LP (29,7% wydzieleń dotyka go na ≥ 20 m), a część tego to lasy prywatne, nie otwarty teren. Obwód wydzielenia nie jest więc miarą krawędzi. Krawędź trzeba by definiować przez typ sąsiada (zrąb, łąka, droga leśna, młodnik, inny gatunek). Brak ilościowych dowodów na efekt krawędzi dla *B. edulis*, a walidacja na GBIF/iNat jest tu zafałszowana (rekordy skupione przy drogach i skrajach). **Decyzja:** nie do H; opcjonalnie jako informacja na karcie (sekcja 5.3, 13).
+
+### 0.2 Region docelowy: Będziemyśl, 20 km (rozpoznanie BDL 2026-09-25) [K]
+
+Pobrany tylko BDL WFS (22 kafle 10 × 10 km, w cache `cache/bdl_tiles_v2`), bez Open-Meteo, GDOŚ i OSM. Obszar przecina **dwie RDLP: Krosno i Kraków**.
+
+| Nadleśnictwo (paczka BDL) | RDLP | Wydzieleń D-STAN w promieniu 20 km |
+|---|---|---|
+| Głogów (`BDL_04_08_GLOGOW`) | Krosno | 2 328 |
+| Strzyżów (`BDL_04_22_STRZYZOW`) | Krosno | 738 |
+| Tuszyma (`BDL_04_24_TUSZYMA`) | Krosno | 736 |
+| Dębica (`BDL_03_04_DEBICA`) | Kraków | 179 |
+| Kolbuszowa (`BDL_04_10_KOLBUSZOWA`) | Krosno | 172 |
+
+- **Razem 4 153 wydzielenia D-STAN, ~16 850 ha** lasów LP (dla porównania: obszar audytu na Śląsku 25 km — ~36 tys. wydzieleń). Mniej lasu, więc rejony (A2) i płaskowyż czołówki trzeba ocenić na nowo.
+- **Pokrycie profilu: 0 nieznanych kodów** siedlisk i gatunków (dzięki A1).
+- **Inny skład niż na Śląsku:** sosna 60% (na Śląsku 78%), wyraźny udział buka (396) i jodły (341). Siedliska: BMŚW 958, BMW 714, **LWYŻŚW (`LWYZS`) 713**, LMW 673, LMŚW 386.
+- **Do obserwacji [E]:** `LWYZS` ma dziś S_site = 0,6 (jak LŚW). Na pogórzu to często buczyny i jedliny, w których prawdziwki występują. Nie zmieniać bez przesłanek, ale po pierwszym pełnym przebiegu sprawdzić, czy te wydzielenia nie są systematycznie spychane w dół rankingu.
+- **Paczki BDL do B2:** priorytet Głogów (56% wydzieleń), potem Strzyżów i Tuszyma (razem 92% obszaru). Dębica i Kolbuszowa opcjonalnie.
+- **Pierwszy pełny przebieg** (`prepare_trip --lat 50.0555 --lon 21.7889 --radius-km 20`) zrobić z wyprzedzeniem, nie w dniu wyjazdu: klimatologia z archiwum Open-Meteo i OSM/Overpass pobierają się od zera.
 
 ---
 
@@ -729,7 +750,7 @@ To, co system może i czego nie może obiecać — do pokazania użytkownikowi w
 
 ### 13.1 Plan 2.1 (obowiązujący, po audycie z sekcji 0.1)
 
-Grupa A to naprawy wyników, które dziś są błędne. Grupa B poprawia różnicowanie miejsc. Grupa C to walidacja i porządki. Wszystkie kryteria sprawdzane na realnym przebiegu `--lat 50.5318 --lon 18.6055 --radius-km 25` (punkt audytu), obok testów jednostkowych bez sieci.
+Grupa A to naprawy wyników, które dziś są błędne. Grupa B poprawia różnicowanie miejsc. Grupa C to walidacja i porządki. Kryteria A1–A4 sprawdzano na przebiegu `--lat 50.5318 --lon 18.6055 --radius-km 25` (punkt audytu). **Od B2: przebieg `--lat 50.0555 --lon 21.7889 --radius-km 20` (Będziemyśl, sekcja 0.2)**, obok testów jednostkowych bez sieci.
 
 | # | Krok | Dlaczego | Kryterium ukończenia |
 |---|---|---|---|

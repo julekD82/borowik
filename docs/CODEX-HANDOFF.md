@@ -1,5 +1,13 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-25 — aktualne (18): region docelowy zmieniony na Będziemyśl (Podkarpacie), 20 km
+
+Decyzja użytkownika: pierwsze wyjazdy testowe z **Będziemyśla** (50.0555, 21.7889, gm. Sędziszów Małopolski), **promień 20 km**. Od B2 wszystkie kryteria z planu 2.1 sprawdzać na tym obszarze, nie na Kieleczce: `prepare_trip --lat 50.0555 --lon 21.7889 --radius-km 20`.
+
+Rozpoznanie (tylko BDL WFS, 22 kafle już w `cache/bdl_tiles_v2`; Open-Meteo, GDOŚ, OSM jeszcze niepobrane): RDLP Krosno + Kraków, 4 153 wydzielenia D-STAN, 0 kodów spoza profilu. Nadleśnictwa: Głogów 2 328, Strzyżów 738, Tuszyma 736, Dębica 179, Kolbuszowa 172. Paczki BDL do B2: Głogów, Strzyżów, Tuszyma (92% obszaru). Szczegóły i obserwacja o `LWYZS` (S_site 0,6 na pogórzu): `docs/projekt-borowik.md` sekcja 0.2.
+
+Usunięto adres e-mail użytkownika z `docs/bdl-paczki-rozpoznanie.md` i z notatek (16) poniżej — nie wpisywać danych osobowych do repo.
+
 ## 2026-09-24 — aktualne (17): B1 — potwierdzone na realnej paczce Kędzierzyn (zastępuje notatkę (16))
 
 Ta notatka **zastępuje** poprzednią (16) co do stanu weryfikacji — tamta miała rekomendację warunkową (tylko ze schematu dokumentacji), bez dostępu do realnych danych. Użytkownik przesłał link do pobrania paczki (BDL wysłał go na podany e-mail); paczka `BDL_02_10_KEDZIERZYN_2026.zip` pobrana i przeanalizowana (`cache/bdl_research/kedzierzyn/`, poza repo). Pełne dane: `docs/bdl-paczki-rozpoznanie.md` (przepisana z realnymi liczbami).
@@ -24,11 +32,11 @@ Zrealizowany krok B1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, kryterium z 
 
 **Licencja:** ustawa z 11.08.2021 o otwartych danych i ponownym wykorzystywaniu informacji sektora publicznego (Dz.U. 2021 poz. 1641, zm. 2022 poz. 1700) — obowiązek atrybucji źródła/daty, przekazywania dalej w formie pierwotnej, informowania o przetworzeniu; brak jawnego zakazu użytku komercyjnego w warunkach formularza.
 
-**Pobranie wymaga formularza (e-mail + zgoda RODO), nie jest samoobsługowym plikiem do kliknięcia** — zgodnie z poleceniem zadania zatrzymałem się przed wysłaniem i zapytałem użytkownika. Użytkownik podał e-mail (`[adres e-mail usunięty]`) i zgodę; **wniosek złożony** dla Nadl. Kędzierzyn (RDLP Katowice, rok 2026, obszar testowy — `adr_for` prefiks `02-10-...` już widoczny w `cache/bdl_tiles_v2`). Portal potwierdził wysyłkę instrukcji pobrania na ten e-mail. **Nie mam dostępu do tej skrzynki** — sama zawartość paczki (rzeczywiste wypełnienie pól, format `adr_for`, rozmiar pliku) pozostaje niezweryfikowana; żaden plik z danymi nadleśnictwa nie został pobrany.
+**Pobranie wymaga formularza (e-mail + zgoda RODO), nie jest samoobsługowym plikiem do kliknięcia** — zgodnie z poleceniem zadania zatrzymałem się przed wysłaniem i zapytałem użytkownika. Użytkownik podał swój e-mail i zgodę; **wniosek złożony** dla Nadl. Kędzierzyn (RDLP Katowice, rok 2026, obszar testowy — `adr_for` prefiks `02-10-...` już widoczny w `cache/bdl_tiles_v2`). Portal potwierdził wysyłkę instrukcji pobrania na ten e-mail. **Nie mam dostępu do tej skrzynki** — sama zawartość paczki (rzeczywiste wypełnienie pól, format `adr_for`, rozmiar pliku) pozostaje niezweryfikowana; żaden plik z danymi nadleśnictwa nie został pobrany.
 
 **Rekomendacja: warunkowo integrujemy w B2**, pod warunkiem potwierdzenia na realnej paczce, że `F_STOREY_SPECIES` faktycznie ma wypełniony skład gatunkowy dla więcej niż pojedynczych wydzieleń (dokumentacja opisuje strukturę, nie kompletność danych). To jedyne zidentyfikowane źródło mogące rozbić płaskowyż 745 wydzieleń z R ≥ 90 (§0.1) bez nowych zgadywanych wag.
 
-**Następny krok (poza B1):** użytkownik sprawdza skrzynkę `[adres e-mail usunięty]`, pobiera paczkę i przekazuje plik/link do dokończenia weryfikacji przed ostateczną decyzją B2.
+**Następny krok (poza B1):** użytkownik sprawdza swoją skrzynkę, pobiera paczkę i przekazuje plik/link do dokończenia weryfikacji przed ostateczną decyzją B2.
 
 ## 2026-09-24 — aktualne (15): A4 — filtr małych wydzieleń + poprawka wyjaśnień S_host
 
