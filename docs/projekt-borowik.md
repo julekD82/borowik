@@ -1,29 +1,55 @@
 # Borowik GIS — projekt systemu typowania miejsc owocnikowania *Boletus edulis*
 
-> Wersja 1.0 · 2026-09-23 · dokument projektowy (przed implementacją)
+> Wersja 2.0 · 2026-09-24 · dokument projektowy, zaktualizowany pod rzeczywisty sposób użycia (1–3 wyjazdy rocznie)
 >
-> Konwencja: **[Z]** = zweryfikowane w tej sesji (zapytanie do API / lektura źródła), **[L]** = literatura naukowa, **[E]** = wiedza ekspercka / prior do kalibracji, **[?]** = do sprawdzenia przy implementacji.
+> Konwencja: **[Z]** = zweryfikowane (zapytanie do API / lektura źródła), **[L]** = literatura naukowa, **[E]** = wiedza ekspercka / prior do kalibracji, **[?]** = do sprawdzenia przy implementacji, **[K]** = zweryfikowane w tej sesji przez przegląd kodu repozytorium.
+>
+> **Zmiana względem wersji 1.0:** ta wersja nie projektuje systemu od zera. Zachowuje cały działający pipeline (sekcje 2–5, 8) i tylko zmienia to, co wynikało z błędnego założenia o częstym, regularnym użyciu: obowiązkowy dziennik terenowy, walidację na 10–20 znanych miejscówkach, ranking pojedynczych wydzieleń jako główny wynik zamiast rejonów, oraz brak jasnej odpowiedzi na pytanie „jak to w ogóle uruchomić przed wyjazdem”. Sekcja 0 opisuje różnicę; sekcja 6 opisuje, co z wersji 1.0 faktycznie powstało w kodzie.
 
 ---
 
-## 0. Najważniejsze wnioski
+## 0. Cel i sposób korzystania — dopasowanie do rzeczywistości
 
-1. **Najmocniejszą, najtańszą i najdokładniejszą zmienną jest drzewostan z Banku Danych o Lasach.** Publiczny WFS BDL [Z] zwraca dla każdego wydzielenia Lasów Państwowych: typ siedliskowy lasu, gatunek panujący, jego udział, wiek, budowę drzewostanu i typ powierzchni. Robi to w ~0,5 s dla kwadratu 10×10 km. Z tego jednego źródła da się zbudować około 70% wartości MVP.
+**Rzeczywisty wzorzec użycia:** wyjścia na grzyby maksymalnie 3 razy w roku, bez znajomości dobrych miejscówek, bez chęci prowadzenia regularnych obserwacji terenowych ani kalibrowania modelu. Aplikacja jest prywatna, ma wymagać minimalnej obsługi i działać poprawnie także po kilku miesiącach nieużywania.
+
+**Konsekwencje dla projektu (szczegóły w kolejnych sekcjach):**
+
+1. **Główny wynik to 3–5 rejonów poszukiwań, nie ranking pojedynczych wydzieleń.** Sekcja 5.6, 10.
+2. **Analiza uruchamiana ręcznie przed wyjazdem, nie codziennie.** Nie ma powodu do harmonogramu, jeśli i tak nikt nie patrzy na wynik między wyjazdami. Sekcja 7, 9.
+3. **Dziennik obserwacji, eksploracja terenowa i trenowanie modeli ML przechodzą z „obowiązkowe” na „opcjonalne, poza obecnym zakresem”.** Sekcja 16. Aplikacja musi działać i być użyteczna bez ani jednego wpisu w dzienniku.
+4. **Walidacja modelu nie może zakładać znajomości 10–20 dobrych miejscówek** — nie są znane. Sekcja 6.3 i 13 opisują, co w tej sytuacji da się realistycznie zweryfikować (poprawność techniczna danych i rankingu, dostępność terenowa) i czego nie da się zweryfikować (rzeczywista skuteczność predykcji) do czasu zebrania własnych obserwacji.
+5. **Interfejs ma mieć jeden prosty scenariusz** (lokalizacja → dzień → zasięg → ile chodzić / jak ważne unikanie tłumu → wynik), z rozsądnymi wartościami domyślnymi zamiast wielu suwaków wag modelu. Sekcja 10.
+6. **Ocena dostępności i popularności miejsca jest rozbudowana**, bo przy rzadkich wyjazdach liczy się bardziej unikanie tłumu i praktyczny dojazd niż drobne różnice w rankingu siedliskowym. Sekcja 5.5.
+
+**Co NIE się zmienia:** biologia (sekcja 2), analiza źródeł danych (sekcja 3), jednostka obliczeniowa „wydzielenie” (sekcja 4), struktura modelu maska→H→F→P→R (sekcja 5.1), architektura bez serwera/bazy danych w MVP (sekcja 7), zasada „ranking względny i klasy, nie fałszywa precyzja” (sekcja 5.7). Rzadkie użycie samo w sobie nie jest powodem do usuwania klimatologii, percentyli ani innych już działających, bardziej rozbudowanych obliczeń — one nie wymagają bieżącej obsługi, tylko jednorazowo napisanego kodu, który już istnieje i jest przetestowany (sekcja 6).
+
+---
+
+## 1. Najważniejsze wnioski
+
+1. **Najmocniejszą, najtańszą i najdokładniejszą zmienną jest drzewostan z Banku Danych o Lasach.** Publiczny WFS BDL [Z] zwraca dla każdego wydzielenia Lasów Państwowych: typ siedliskowy lasu, gatunek panujący, jego udział, wiek, budowę drzewostanu i typ powierzchni. Robi to w ~0,5 s dla kwadratu 10×10 km. Z tego jednego źródła da się zbudować około 70% wartości MVP. **[K] Zaimplementowane i działające** (`pipeline/bdl.py`).
 2. **„Fruiting score” jest najsłabszą częścią systemu i nie może udawać precyzji.** Nawet 10 lat niemal wyczerpującego monitoringu populacji *B. edulis* pod Bielefeld [L1] dało tylko ogólne prawidłowości: optimum ok. 13 °C i dodatni, liniowy wpływ opadu w oknach 3–4 tygodni. Nie powstała reguła typu „X mm → owocniki po Y dniach”. Fruiting pokazujemy więc w **4 klasach**, a nie jako liczbę 0–100.
 3. **W promieniu 20 km pogoda różnicuje przestrzeń słabo** (temperatura prawie wcale, opad umiarkowanie, przy burzach mocno). Ranking *miejsc* w danym dniu wynika głównie z siedliska. Fruiting mówi przede wszystkim **„czy w ogóle warto jechać w tym tygodniu”** i **„w której części obszaru padało”**.
-4. **Jako model zamiast trzech sumowanych score’ów proponuję model multiplikatywny z bramkami (hard mask) i osobną warstwą niepewności.** Doskonałe siedlisko bez warunków do owocnikowania to 0 szans, a nie 50/100. Presja ludzi to preferencja użytkownika (suwak), a nie biologia.
-5. **Siatka 10 m to fałszywa precyzja.** Jednostką obliczeniową jest **wydzielenie leśne** (typowo 1–10 ha), a dane pogodowe przypinamy do komórek 1–9 km. Mikrotopografia wchodzi dopiero później, jako modyfikator wewnątrz wydzielenia, i tylko w terenie urozmaiconym.
-6. **Satelitarna wilgotność gleby (Sentinel-1 / CLMS SWI) jest dla lasu słaba**, bo radar pasma C słabo przenika zwarte korony. Lepszy jest prosty model bilansu wodnego (opad − ET0) z pojemnością wodną zależną od typu siedliska.
-7. **NDVI/NDMI prawie nie przewidują tygodniowego owocnikowania.** Są za to bardzo przydatne do wykrywania zrębów, wydzielania świerczyn po kornikowych szkodach i innych zmian od ostatniej aktualizacji BDL.
-8. **GBIF/iNaturalist nie nadają się do trenowania modelu przestrzennego.** W całej Polsce jest tylko **1164** georeferencjonowanych rekordów *B. edulis* [Z], a 1073 z nich pochodzą z iNaturalist. Mają silny bias drogowy. Nadają się do fenologii (kiedy sezon), nie do lokalizacji (gdzie).
-9. **Twoje własne obserwacje „szukałem i nic nie znalazłem” z zapisanym wysiłkiem (czas, ślad GPS) są najcenniejszymi danymi w całym projekcie.** Pasują dokładnie do klasy modeli *occupancy / detection*, w której „siedlisko” i „owocnikowanie teraz” są naturalnie rozdzielone.
-10. **Obowiązkowa maska prawna:** rezerwaty, parki narodowe, uprawy do 4 m wysokości, drzewostany nasienne, okresowe zakazy wstępu (art. 26 ustawy o lasach). System, który poleca uprawę albo rezerwat, jest gorszy niż brak systemu.
+4. **Model multiplikatywny z bramkami (hard mask) i osobną warstwą niepewności**, zamiast trzech sumowanych score'ów. Doskonałe siedlisko bez warunków do owocnikowania to 0 szans, a nie 50/100. Presja ludzi to preferencja użytkownika (suwak), a nie biologia. **[K] Zaimplementowane** (`pipeline/scoring.py`, `pipeline/mvp.py`).
+5. **Siatka 10 m to fałszywa precyzja.** Jednostką obliczeniową jest **wydzielenie leśne** (typowo 1–10 ha); dane pogodowe przypinamy do komórek 1–9 km. **Nowość w tej wersji:** dla *wyniku pokazywanego użytkownikowi* jednostką prezentacji jest **rejon** — grupa sąsiadujących obiecujących wydzieleń — a nie pojedyncze wydzielenie. Sekcja 5.6.
+6. **Satelitarna wilgotność gleby (Sentinel-1 / CLMS SWI) jest dla lasu słaba**; lepszy jest prosty model bilansu wodnego (opad − ET0) z pojemnością wodną zależną od typu siedliska. Model bilansu w wersji uproszczonej (bez własnego „wiadra” per siedlisko) jest już policzony przez Open-Meteo/ERA5-Land i użyty. **[K]** (`pipeline/weather.py`, `cwb26`).
+7. **NDVI/NDMI prawie nie przewidują tygodniowego owocnikowania**, ale są przydatne do wykrywania zrębów i zmian od ostatniej aktualizacji BDL. Poza zakresem obecnej wersji — patrz sekcja 17.
+8. **GBIF/iNaturalist nie nadają się do trenowania modelu przestrzennego** (silny bias drogowy, 1164 rekordów w całej PL). Nadają się do fenologii (kiedy sezon), nie do lokalizacji (gdzie).
+9. **Własne obserwacje terenowe byłyby najcenniejszymi danymi w projekcie, ale nie są warunkiem użyteczności.** Przy 1–3 wyjazdach rocznie zebranie próby wystarczającej do kalibracji modelu zajęłoby wiele lat. Dziennik jest więc **opcjonalny** (sekcja 16), a aplikacja musi działać dobrze na samych priorach eksperckich i publicznych danych.
+10. **Obowiązkowa maska prawna:** rezerwaty, parki narodowe, uprawy do 4 m wysokości, drzewostany nasienne, okresowe zakazy wstępu (art. 26 ustawy o lasach). System, który poleca uprawę albo rezerwat, jest gorszy niż brak systemu. **[K] Zaimplementowane** (`pipeline/gdos.py`, `pipeline/zakazy.py`, `pipeline/habitat.py::passes_mask`), z zasadą fail-loud (błąd zapytania o zakaz przerywa działanie zamiast cicho zakładać brak zakazu — sekcja 5.7, punkt o pustej odpowiedzi).
+11. **Sama odległość od oznaczonego parkingu jest niewystarczającą miarą presji ludzi.** Rozbudowana w tej wersji ocena „szacowanej dostępności dla odwiedzających” uwzględnia więcej wejść do kompleksu leśnego, zabudowę przy granicy lasu i sieć dróg — patrz sekcja 5.5. Obecna implementacja (`pipeline/pressure.py`, `pipeline/osm.py`) to pierwsza, uproszczona wersja tego pomysłu; rozbudowa jest priorytetem w planie dalszych kroków (sekcja 13).
+
+**Źródła literaturowe:** patrz sekcja 22 (bez zmian względem wersji 1.0).
+
+**Zasada krytyczna:** w Polsce brakuje ilościowych studiów produkcji *B. edulis* w borach sosnowych. Wszystkie progi w sekcji 5 to **priory do kalibracji**, nie fakty. Przy 1–3 wyjazdach rocznie kalibracja danymi terenowymi realistycznie nie nastąpi szybko — patrz sekcja 15 (ograniczenia skuteczności).
 
 ---
 
-## 1. Problem biologiczny
+## 2. Problem biologiczny
 
-### 1.1 Taksonomia: co właściwie typujemy?
+*(Bez zmian względem wersji 1.0 — treść nie zależy od częstotliwości użycia aplikacji.)*
+
+### 2.1 Taksonomia: co właściwie typujemy?
 
 W polskiej praktyce grzybiarskiej „prawdziwek” to grupa gatunków o różnych preferencjach:
 
@@ -34,9 +60,9 @@ W polskiej praktyce grzybiarskiej „prawdziwek” to grupa gatunków o różnyc
 | *Boletus reticulatus* (b. usiatkowany) | dąb, buk, grab | cieplejszy, **wcześniejszy** (czerwiec–lipiec) |
 | *Boletus aereus* (b. ciemnobrązowy) | dąb, buk | rzadki, ciepłe stanowiska |
 
-**Wniosek projektowy:** profile gatunków trzymać w konfiguracji (YAML): partnerzy, siedliska, okno fenologiczne. MVP liczy jeden profil „prawdziwki (grupa *B. edulis*)” z dominacją *B. edulis* s.str. Wybór gatunku w UI to w praktyce zmiana profilu. Ten sam mechanizm obsłuży później kurki, podgrzybki czy rydze.
+**Wniosek projektowy:** profile gatunków trzymane w konfiguracji YAML (`profiles/boletus_edulis.yaml` [K]): partnerzy, siedliska, okno fenologiczne. Wybór gatunku w UI to w praktyce zmiana profilu — ten sam mechanizm obsłuży później kurki, podgrzybki czy rydze.
 
-### 1.2 Zmienne: wartość predykcyjna i dostępność danych
+### 2.2 Zmienne: wartość predykcyjna i dostępność danych
 
 Legenda: WP = wartość predykcyjna (W/Ś/N), Rozdz. = rozdzielczość, Trudn. = trudność pozyskania.
 
@@ -65,7 +91,7 @@ Legenda: WP = wartość predykcyjna (W/Ś/N), Rozdz. = rozdzielczość, Trudn. =
 | **Temperatura powierzchni (LST)** | Pod koronami mierzy temperaturę koron, nie ściółki. Rozdzielczość 100 m–1 km. | N | Landsat / MODIS | 100 m–1 km | | pomijamy |
 | **Zręby, rębnie** | Wycięcie żywiciela oznacza utratę owocników na lata. Uprawy do 4 m są i tak objęte zakazem wstępu. | **W** (maska) | BDL (wiek, typ pow.), S2 change | wydz. | | niska |
 | **Trzebieże** | Wynik niejednoznaczny. We włoskich jodłach silna trzebież buforowała negatywny wpływ ekstremów klimatycznych [L6]. | N–Ś | brak aktualnej historii zabiegów w WFS | | | |
-| **Depozycja azotu** | Nadmiar N obniża owocnikowanie grzybów EcM [E, ogólna ekologia EcM]. | N | BDL WMS monitoring | regionalna | | faza 6 |
+| **Depozycja azotu** | Nadmiar N obniża owocnikowanie grzybów EcM [E, ogólna ekologia EcM]. | N | BDL WMS monitoring | regionalna | | poza zakresem |
 | **Fenologia regionalna** | Kiedy w danym regionie zwykle jest sezon. | Ś | daty rekordów GBIF/iNat [Z] | region | — | niska |
 
 **Źródła literaturowe:**
@@ -76,19 +102,20 @@ Legenda: WP = wartość predykcyjna (W/Ś/N), Rozdz. = rozdzielczość, Trudn. =
 - [L5] Collado et al. (2020), *Primary productivity and climate control mushroom yields in Mediterranean pine forests*, AFM; Karavani et al. (2018), AFM.
 - [L6] *Combined impact of forest management and climate change on B. edulis productivity*, Italian J. Mycology.
 
-**Zasada krytyczna:** w Polsce brakuje ilościowych studiów produkcji *B. edulis* w borach sosnowych. Wszystkie progi poniżej to **priory do kalibracji Twoimi danymi**, nie fakty.
-
 ---
 
-## 2. Źródła danych — analiza
+## 3. Źródła danych — analiza
 
-### 2.1 Lasy — Bank Danych o Lasach (zweryfikowane)
+*(Bez zmian merytorycznych względem wersji 1.0; oznaczenia [K] dodane przy tym, co faktycznie podłączone w kodzie.)*
+
+### 3.1 Lasy — Bank Danych o Lasach (zweryfikowane, [K] podłączone)
 
 **Endpointy [Z]:**
-- WFS (GeoServer): `https://wfs.bdl.lasy.gov.pl/geoserver/BDL/ows`, warstwy `BDL:RDLP_<nazwa>_wydzielenia` (17 RDLP), plus `Nadleśnictwa`, `Leśnictwa`, `RDLP`.
+- WFS (GeoServer): `https://wfs.bdl.lasy.gov.pl/geoserver/BDL/ows`, warstwy `BDL:RDLP_<nazwa>_wydzielenia` (17 RDLP), plus `Nadleśnictwa`, `Leśnictwa`, `RDLP`. **[K]** używane przez `pipeline/bdl.py`.
 - OGC API Features: `https://ogcapi.bdl.lasy.gov.pl` (te same kolekcje).
 - WMS/WMTS (tylko obraz): mapa drzewostanów, siedlisk, zbiorowisk roślinnych, **zakazów wstępu**, dojazdów pożarowych, monitoringu lasu, turystyczna.
-- WFS turystyczny i dojazdów pożarowych (ArcGIS): `.../WFS_BDL_mapa_turystyczna/MapServer/WFSServer`, `.../WFS_BDL_dojazdy_pozarowe/...`.
+- WFS turystyczny i dojazdów pożarowych (ArcGIS): `.../WFS_BDL_mapa_turystyczna/MapServer/WFSServer`, `.../WFS_BDL_dojazdy_pozarowe/...`. **Nie podłączone jeszcze** — patrz sekcja 5.5 i 13 (rozbudowa dostępności).
+- Zakazy wstępu: ArcGIS REST MapServer (nie surowe WMS GetFeatureInfo) [K], `pipeline/zakazy.py`, warstwa 0, weryfikacja punktowa dla top-N wyników.
 
 **Atrybuty wydzieleń w WFS [Z]:**
 
@@ -108,7 +135,7 @@ Legenda: WP = wartość predykcyjna (W/Ś/N), Rozdz. = rozdzielczość, Trudn. =
 | `sub_area` | powierzchnia [ha] | `2.54` |
 | `a_year` | rok danych | `2026` |
 
-Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::2180` BBOX podaje się jako `N_min,E_min,N_max,E_max`.
+Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::2180` BBOX podaje się jako `N_min,E_min,N_max,E_max`. **[K]** obsłużone w `pipeline/tiles.py::wfs_bbox_param`.
 
 **Pomiar [Z]:** BBOX 10×10 km w RDLP Piła zwrócił 1904 wydzielenia, 1,6 MB GeoJSON, w 0,48 s.
 
@@ -116,155 +143,155 @@ Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::218
 
 **Luka:** WFS obejmuje wydzielenia Lasów Państwowych. Lasy prywatne i gminne (ok. 1/5 lasów w PL) mają dane uproszczone albo brak danych. Dostają niższy confidence, a status prawny zbioru jest w nich mniej oczywisty.
 
-### 2.2 Gleba
+### 3.2 Gleba
 
 | Źródło | Ocena |
 |---|---|
-| SoilGrids 2.0 (ISRIC), 250 m, WCS | Model globalny, w lasach Polski słabo ograniczony pomiarami. **Pomijamy w MVP.** |
+| SoilGrids 2.0 (ISRIC), 250 m, WCS | Model globalny, w lasach Polski słabo ograniczony pomiarami. **Pomijamy.** |
 | LUCAS Topsoil (JRC) | Punkty głównie rolnicze, w lasach bardzo rzadkie. Pomijamy. |
 | Mapa glebowo-rolnicza (IUNG) | Tylko grunty rolne. Nieprzydatna. |
-| **Typ siedliska BDL** | Zawiera jednocześnie żyzność (B/BM/LM/L) i wilgotność (s/św/w/b). **Najlepsze proxy gleby.** |
-| Typ gleby z opisu taksacyjnego (LMN) | Faza 3, jeśli uda się pozyskać. |
+| **Typ siedliska BDL** | Zawiera jednocześnie żyzność (B/BM/LM/L) i wilgotność (s/św/w/b). **Najlepsze proxy gleby. [K] Używane.** |
+| Typ gleby z opisu taksacyjnego (LMN) | Poza obecnym zakresem, jeśli uda się pozyskać wniosek o LMN. |
 
-### 2.3 Pogoda i opady
+### 3.3 Pogoda i opady
 
 | Źródło | Rozdz. | Latencja | Historia | Uwagi |
 |---|---|---|---|---|
-| **IMGW API telemetria** `/api/data/meteo` [Z] | 788 stacji, 699 z opadem 10-min | bieżące | **brak** (tylko stan bieżący) | trzeba odpytywać co 10–60 min i archiwizować samemu |
+| **IMGW API telemetria** `/api/data/meteo` [Z] | 788 stacji, 699 z opadem 10-min | bieżące | **brak** (tylko stan bieżący) | trzeba odpytywać co 10–60 min i archiwizować samemu; **poza obecnym zakresem** (wymaga stałej infrastruktury) |
 | IMGW API synop `/api/data/synop` [Z] | ~60 stacji | godz. | brak | temperatura, wilgotność, opad |
-| **IMGW radar** `/api/data/product` [Z] | kompozyt ~1 km | 5–10 min | **tylko najnowszy plik** | `COMPO_PAC` (akumulacja), `COMPO_SRI` (natężenie), HDF5. Radar bez korekty gauge (błędy, zasłonięcia wiązki). |
+| **IMGW radar** `/api/data/product` [Z] | kompozyt ~1 km | 5–10 min | **tylko najnowszy plik** | `COMPO_PAC` (akumulacja), `COMPO_SRI` (natężenie), HDF5. **Poza obecnym zakresem** — wymaga pollera działającego bez przerwy |
 | IMGW archiwum dobowe (klimat, opad, synop) [Z] | posterunki opadowe | z opóźnieniem (miesiące) | od lat 50. | do kalibracji i klimatologii, nie do bieżących danych |
-| IMGW COSMO 2,8 km GRIB [Z] | 2,8 km | 4×/dobę | prognoza | przydatne do prognozy „co będzie za 5 dni” |
-| **Open-Meteo** [Z] | ICON-D2 ~2 km (prognoza), ERA5/ERA5-Land 9–25 km (archiwum) | godz. | 1940– | jedna biblioteka: opad, Tmin/Tmax, ET0, VPD, wilgotność gleby 0–1 m, `past_days` do 92. **Darmowe tylko niekomercyjnie**, limit <10 000 wywołań/dobę, CC BY 4.0. |
-| ERA5-Land (CDS) | 0,1° (~9 km) | ~5 dni | 1950– | klimatologia (percentyle), kalibracja |
+| IMGW COSMO 2,8 km GRIB [Z] | 2,8 km | 4×/dobę | prognoza | poza obecnym zakresem |
+| **Open-Meteo** [Z, K] | ICON-D2 ~2 km (prognoza), ERA5/ERA5-Land 9–25 km (archiwum) | godz. | 1940– | jedna biblioteka: opad, Tmin/Tmax, ET0, VPD, wilgotność gleby 0–1 m, `past_days` do 92. **Darmowe tylko niekomercyjnie**, limit <10 000 wywołań/dobę, CC BY 4.0. **Używane w kodzie** (`pipeline/weather.py`, `openmeteo-requests`). |
+| ERA5-Land (CDS) | 0,1° (~9 km) | ~5 dni | 1950– | klimatologia (percentyle); w kodzie pobierana przez Open-Meteo archive API, nie bezpośrednio z CDS |
 | E-OBS | 0,1° | miesięczna | 1950– | użyte w [L1], dobre do analiz historycznych |
 | GPM IMERG | 0,1° | 4 h – 3,5 mies. | 2000– | nad Polską gorsze od radaru + stacji. **Pomijamy.** |
-| EUMETSAT H SAF | 3–25 km | NRT | | zgrubne, zastępowalne przez CLMS / ERA5-Land. **Pomijamy.** |
+| EUMETSAT H SAF | 3–25 km | NRT | | zgrubne. **Pomijamy.** |
 
-**Decyzja dla obszaru 20–50 km:**
-- **MVP:** Open-Meteo (siatka punktów co ~5 km). Daje od razu historię, prognozę, ET0 i wilgotność gleby.
-- **Faza 3:** dodać własne archiwum IMGW (radar PAC + telemetria), bo przy burzach konwekcyjnych różnice opadu w obrębie 20 km sięgają dziesiątek mm. Model NWP tego nie odda, radar tak.
-- **Faza 5:** korekta radaru stacjami (mean-field bias) i reanaliza do kalibracji.
+**Decyzja (bez zmian):**
+- **Zaimplementowane [K]:** Open-Meteo (siatka punktów co ~5 km, forecast + archiwum + klimatologia percentyli 1991–2020, ta sama biblioteka dla obu).
+- **Poza obecnym zakresem, do rozważenia dopiero jeśli okaże się realnym problemem:** własne archiwum IMGW (radar PAC + telemetria) — przy burzach konwekcyjnych różnice opadu w obrębie 20 km sięgają dziesiątek mm, model NWP tego nie odda. Wymaga jednak stale działającego pollera, co jest sprzeczne z zasadą „analiza uruchamiana przed wyjazdem” (sekcja 0, 7) — nie wdrażać bez konkretnego dowodu, że różnica ma znaczenie dla wyników.
 
-**Zmienne pochodne liczone per komórka pogodowa:** P_1d, P_3d, P_7d, P_14d, P_21d, P_30d; dni od opadu ≥ 5 mm i ≥ 10 mm; długość bieżącego okresu suchego (dni z < 1 mm); Tmean_20d, Tmin_3d, liczba dni z przymrozkiem; ET0_26d; **CWB_26d = ΣP − ΣET0** z wagą wykładniczą; percentyle względem klimatologii 1991–2020 dla danego dnia roku.
+**Zmienne pochodne liczone per komórka pogodowa [K, `pipeline/weather.py`]:** P1, P3, P5, P7, P14, P21, P30; P26w (suma ważona wykładniczo, półtrwanie 10 dni); CWB26 = P26w − ET026w; dni od opadu ≥10 mm; długość bieżącego okresu suchego; Tmean20, Tmean5, Tmin3; percentyle CWB26 i wilgotności gleby względem klimatologii ERA5-Land 1991–2020 dla ±15 dni od bieżącego dnia roku.
 
-### 2.4 Wilgotność gleby
+### 3.4 Wilgotność gleby
 
 | Źródło | Ocena |
 |---|---|
-| CLMS Soil Water Index 1 km, dobowy, Europa [Z] (v1 2015–VII 2025, v2 od VII 2025) | Pochodzi z Sentinel-1 i ASCAT. **Pod zwartym lasem radar pasma C „widzi” głównie korony**, więc jakość w pikselach leśnych jest niska. Przydatny jako tło regionalne, nie per wydzielenie. |
-| CLMS Surface Soil Moisture 1 km | 0–5 cm, jak wyżej, mocno zaszumione pod lasem. |
-| ERA5-Land / modele NWP (przez Open-Meteo) | Model, 9 km, spójny w czasie, bez dziur. **MVP.** |
-| Sentinel-1 samodzielnie | Duży wysiłek (kalibracja, speckle, las). Niewarte tego na tym etapie. |
-| **Własny model „wiadra”** | Per komórka pogodowa × klasa wilgotności siedliska (s/św/w/b): W_t = min(Wmax, W_{t−1} + P − k·ET0). Wmax i k zależą od siedliska. Proste, fizycznie sensowne, łatwe do kalibracji. **Faza 3.** |
+| CLMS Soil Water Index 1 km, dobowy, Europa [Z] | Pod zwartym lasem radar pasma C „widzi” głównie korony — jakość w pikselach leśnych niska. **Poza zakresem.** |
+| CLMS Surface Soil Moisture 1 km | jak wyżej. **Poza zakresem.** |
+| ERA5-Land / modele NWP (przez Open-Meteo) | Model, 9 km, spójny w czasie, bez dziur. **[K] Używane.** |
+| Sentinel-1 samodzielnie | Duży wysiłek (kalibracja, speckle, las). **Poza zakresem.** |
+| **Własny model „wiadra”** | Per komórka pogodowa × klasa wilgotności siedliska: fizycznie sensowny, ale wymaga kalibracji parametrów Wmax/k, których bez danych terenowych nie da się sensownie dostroić. **Poza obecnym zakresem** — dopiero jeśli CWB26 z Open-Meteo okaże się w praktyce niewystarczające. |
 
-### 2.5 Satelita
+### 3.5 Satelita
 
 | Źródło | Użycie | Dostęp |
 |---|---|---|
-| **Sentinel-2 L2A** (10/20 m) | kompozyty sezonowe NDVI/NDMI; **detekcja zmian** (zręby, kornik) od roku `a_year` z BDL | Element84 Earth Search (STAC, COG na AWS, bez logowania); Microsoft Planetary Computer; CDSE (Sentinel Hub 10 000 PU/mies., openEO 10 000 kredytów/mies. — free tier) |
+| **Sentinel-2 L2A** (10/20 m) | kompozyty sezonowe NDVI/NDMI; **detekcja zmian** (zręby, kornik) od roku `a_year` z BDL | Element84 Earth Search (STAC, COG na AWS); Microsoft Planetary Computer; CDSE |
 | Landsat 8/9 | dłuższa historia zmian (30 m) | USGS / Planetary Computer |
-| Sentinel-1 | wilgotność: patrz wyżej. **Nie w MVP.** | CDSE |
+| Sentinel-1 | wilgotność: patrz wyżej. **Poza zakresem.** | CDSE |
 | Gotowe produkty zmian | Hansen/GFW Tree Cover Loss (30 m, roczne); europejska mapa zaburzeń (Senf & Seidl, 30 m) | darmowe; tańsza alternatywa dla własnej detekcji |
 | CLMS HRL Tree Cover Density / Dominant Leaf Type (10 m) | tylko poza lasami LP, gdzie brak BDL | CLMS |
 
-**Werdykt:** dla owocnikowania tydzień-do-tygodnia NDVI/NDMI to prawie szum (chmury jesienią, reakcja koron nie jest reakcją grzybni). Do utrzymania aktualności siedliska są za to bardzo cenne.
+**Werdykt (bez zmian):** dla owocnikowania tydzień-do-tygodnia NDVI/NDMI to prawie szum. Do utrzymania aktualności siedliska są cenne, ale **poza obecnym zakresem** — bieżąco działający pipeline (sekcja 6) nie ma jeszcze detekcji zmian S2, więc świeżość BDL jest dziś oceniana tylko po dacie `a_year`, bez potwierdzenia satelitarnego (widoczne w `confidence.py` jako stały czynnik 1,0 — patrz sekcja 11).
 
-### 2.6 Teren
+### 3.6 Teren
 
-- **GUGiK NMT** 1 m i 5 m, bezpłatny od 2020 r., WCS / pobieranie arkuszy (GeoTIFF / ASCII Grid) [Z-dostępność]; NMPT i chmury punktów LAS/LAZ.
-- Cechy: wysokość, nachylenie, ekspozycja (sin/cos), **TWI** (z NMT 5 m wygładzonego do 10–20 m, bo TWI z 1 m jest zdominowane przez rowy i koleiny), TPI (skala 100 m i 500 m), zagłębienia (fill − DEM), nasłonecznienie (potential solar radiation w okresie VIII–X).
-- **CHM = NMPT − NMT** (1 m): wysokość i zwarcie koron, luki. Uwaga: dane LiDAR mają różny wiek (ISOK 2011–2015 i nowsze kampanie). **Faza 3.**
-- **Na nizinach teren prawie nic nie wnosi** (poza TWI i zagłębieniami w latach suchych). W górach i na pogórzu to istotny modyfikator.
+- **GUGiK NMT** 1 m i 5 m, bezpłatny od 2020 r. **Poza obecnym zakresem** — pipeline dziś nie pobiera NMT ani nie liczy TWI/ekspozycji/nachylenia.
+- **Na nizinach teren prawie nic nie wnosi** (poza TWI i zagłębieniami w latach suchych). W górach i na pogórzu to istotny modyfikator — jeśli obszar poszukiwań jest górski, warto podnieść priorytet tego punktu w roadmapie (sekcja 13).
 
-### 2.7 Presja ludzi i dostępność
+### 3.7 Presja ludzi i dostępność
 
-| Źródło | Co daje |
-|---|---|
-| OpenStreetMap (Geofabrik `poland-latest.osm.pbf` / Overpass) | drogi, `highway=track`, `amenity=parking`, ścieżki, szlaki; ODbL |
-| **BDOT10k** (GUGiK, bezpłatny) | pełniejsza sieć dróg (także leśnych) niż OSM w wielu regionach |
-| BDL WFS turystyczny i dojazdy pożarowe [Z] | parkingi leśne, miejsca postoju, infrastruktura; drogi pożarowe (przejezdne) |
-| Siatka ludności 1 km (Eurostat Census 2021 / GUS NSP 2021) | „popyt”: ile osób mieszka w zasięgu dojazdu |
-| **Strava Heatmap / Global Heatmap** | **Nie używać.** Regulamin zabrania scrapowania i reużycia; Strava Metro jest tylko dla instytucji. |
-| Dane telekomunikacyjne o ruchu | Niepubliczne. |
+| Źródło | Co daje | Status |
+|---|---|---|
+| OpenStreetMap (Overpass) | drogi, parkingi, miejscowości | **[K] Używane** — `pipeline/osm.py`, tylko `amenity=parking` i drogi utwardzone (trunk…residential), miejscowości z ludnością |
+| OpenStreetMap — ścieżki, szlaki turystyczne (`highway=path/footway`, `route=hiking`) | infrastruktura turystyczna jako przesłanka popularności | **Nie podłączone** — patrz sekcja 5.5, priorytet w sekcji 13 |
+| **BDOT10k** (GUGiK, bezpłatny) | pełniejsza sieć dróg (także leśnych) niż OSM w wielu regionach | Nie podłączone |
+| BDL WFS turystyczny i dojazdy pożarowe [Z] | parkingi leśne, miejsca postoju, infrastruktura; drogi pożarowe (przejezdne) | Nie podłączone — dobry kandydat na „potwierdzone wejście” (sekcja 5.5) |
+| Siatka ludności 1 km (Eurostat/GUS) | „popyt”: ile osób mieszka w zasięgu dojazdu | **Nie podłączone** — obecny model demand używa punktów miejscowości OSM z tagiem `population`, nie siatki gridowej; działa, ale jest zgrubniejsze |
+| **Strava Heatmap / Global Heatmap** | **Nie używać.** Regulamin zabrania scrapowania i reużycia. | — |
+| Dane telekomunikacyjne o ruchu | Niepubliczne. | — |
 
-**Nie ma legalnych, publicznych danych o natężeniu ruchu grzybiarzy.** Presja to więc model grawitacyjny (populacja / czas dojazdu² × dostępność lokalna) bez walidacji. Walidacja przyjdzie z Twoich obserwacji: pola „ślady zbioru” (ucięte trzony, wydeptane ścieżki, spotkani grzybiarze).
+**Nie ma legalnych, publicznych danych o natężeniu ruchu grzybiarzy.** Presja to model grawitacyjny (populacja / czas dojazdu² × dostępność lokalna) bez walidacji — nazywany w tej wersji jawnie „szacowaną dostępnością dla odwiedzających”, nie pomiarem tłoku (sekcja 5.5).
 
-### 2.8 Historyczne występowanie
+### 3.8 Historyczne występowanie
 
-- **GBIF** [Z]: 1300 rekordów *B. edulis* w PL, z czego 1164 z koordynatami (1104 obserwacje, 60 okazów zielnikowych), w tym **1073 z iNaturalist**. Licencje per rekord: CC0 / CC BY / **CC BY-NC**.
-- Bias: rekordy koncentrują się przy drogach, miastach i szlakach. Rejestrują „gdzie chodzą ludzie z aplikacją”, a nie „gdzie rośnie borowik”.
-- **Zastosowanie:** (a) fenologia (rozkład dni roku w regionach), (b) sanity check habitatu w skali kraju (Maxent z *target-group background* = wszystkie obserwacje grzybów iNat jako tło). **Nie jako dane treningowe do lokalnego rankingu.**
-- Inne: Atlas grzybów Polski / GREJ (checklisty, głównie bez dat i dokładnych lokalizacji), fora grzybiarzy (brak licencji, skrajny bias). Pomijamy.
+- **GBIF** [Z]: 1300 rekordów *B. edulis* w PL, z czego 1164 z koordynatami, w tym **1073 z iNaturalist**. Bias drogowy.
+- **Zastosowanie: [K] tylko fenologia** (rozkład dni roku), nie dane treningowe do lokalnego rankingu.
 
 ---
 
-## 3. Jednostka analizy
+## 4. Jednostka analizy
 
-### 3.1 Porównanie
+*(Decyzja bez zmian — wydzielenie jako jednostka obliczeniowa. Nowość: sekcja 5.6 dodaje warstwę grupowania w rejony na potrzeby prezentacji wyniku, nie zmienia to, jak liczone jest H/F/R.)*
+
+### 4.1 Porównanie
 
 | Opcja | Plusy | Minusy | Werdykt |
 |---|---|---|---|
-| **A. Wydzielenie BDL** | Naturalna jednostka biologiczna: jednorodny drzewostan, siedlisko i wiek. Bezpośrednio pasuje do najmocniejszych danych. Zrozumiała w terenie (numer oddziału na słupku). 1–10 ha to skala, którą da się przeszukać w 30–90 min. | Wewnątrz duże wydzielenia (>10 ha) są niejednorodne. Brak pokrycia lasów prywatnych. | **Rdzeń** |
-| B. Siatka 10×10 m | wygląda imponująco | Żadne dane dynamiczne nie mają tej rozdzielczości (pogoda 2–9 km). Siedlisko i drzewostan są stałe w obrębie wydzielenia. Wszystkie 100 komórek w wydzieleniu miałyby prawie ten sam wynik. **Czysta fałszywa precyzja.** 1257 km² = 12,6 mln komórek. | Nie |
-| B. 20×20 m / 50×50 m | kompromis rastrowy | nadal sztuczna precyzja siedliska; komórki na granicach wydzieleń mieszają siedliska | Nie (poza TWI) |
-| B. 100 m / 250 m | zgodne z SoilGrids | rozmywa granice drzewostanów, a granica sosna/olsza to granica „jest/nie ma” | Nie |
-| **C. Hybryda: wydzielenie + mikrokomórki 25 m** | zachowuje biologię wydzielenia, dodaje lokalne „gorące strefy” w terenie urozmaiconym | złożoność; wymaga NMT | **Faza 3+, tylko teren pagórkowaty/górski** |
+| **A. Wydzielenie BDL** | Naturalna jednostka biologiczna. Bezpośrednio pasuje do najmocniejszych danych. Zrozumiała w terenie (numer oddziału na słupku). 1–10 ha to skala przeszukiwalna w 30–90 min. | Wewnątrz duże wydzielenia (>10 ha) są niejednorodne. Brak pokrycia lasów prywatnych. | **Rdzeń, [K] zaimplementowane** |
+| B. Siatka 10×10 m | wygląda imponująco | Żadne dane dynamiczne nie mają tej rozdzielczości. **Czysta fałszywa precyzja.** | Nie |
+| B. 20×20 m / 50×50 m / 100–250 m | kompromisy rastrowe | sztuczna precyzja siedliska, rozmywanie granic | Nie |
+| **C. Hybryda: wydzielenie + mikrokomórki 25 m** | lokalne „gorące strefy” w terenie urozmaiconym | złożoność; wymaga NMT | Poza obecnym zakresem, tylko teren górski jeśli to Twój region |
 
-### 3.2 Decyzja
+### 4.2 Decyzja
 
-- **Jednostka obliczeniowa i raportowa: wydzielenie** (`stand_id` = `adr_for` + `a_year`).
-- **Pogoda:** komórki siatki pogodowej (Open-Meteo ~5 km w MVP, radar 1 km w fazie 3). Wydzielenie dostaje wartości komórki, w której leży jego centroid; dla dużych wydzieleń średnią ważoną powierzchnią.
-- **Teren:** agregaty per wydzielenie (mediana TWI, udział powierzchni z TWI > p75, dominująca ekspozycja, średnie nachylenie). **Mikrokomórki 25 m** tylko jako opcjonalna warstwa „gdzie w obrębie wydzielenia” w fazie 3+.
-- **Lasy bez BDL:** fallback na raster 50 m (CLMS Dominant Leaf Type + Tree Cover Density), `confidence = niskie`.
-- **Zasada w UI:** wynik pokazujemy **na wielokącie wydzielenia**, a nie jako gładką heatmapę. Heatmapa sugeruje ciągłość i precyzję, której nie ma.
+- **Jednostka obliczeniowa i raportowa: wydzielenie** (`stand_id` = `adr_for` + `a_year`). **[K] Zaimplementowane.**
+- **Jednostka prezentacji w głównym wyniku: rejon** (grupa sąsiadujących obiecujących wydzieleń, sekcja 5.6). **Do zaimplementowania.**
+- **Pogoda:** komórki siatki pogodowej (Open-Meteo ~5 km). Wydzielenie dostaje wartości komórki najbliższej centroidowi. **[K]**
+- **Teren:** poza obecnym zakresem (sekcja 3.6).
+- **Lasy bez BDL:** fallback nieobsłużony w obecnym kodzie — poza obecnym zakresem, patrz sekcja 13.
+- **Zasada w UI:** wynik na wielokącie wydzielenia / obrysie rejonu, nie jako gładka heatmapa.
 
 ---
 
-## 4. Model scoringowy MVP (bez ML)
+## 5. Model scoringowy (bez ML)
 
-### 4.1 Struktura
-
-Zamiast `FINAL = a·H + b·F + c·P` proponuję:
+### 5.1 Struktura
 
 ```
 MASKA (0/1)      = legalne ∧ las z żywicielem EcM ∧ nie uprawa/zrąb
 HABITAT H (0–1)  = „czy tu żyje grzybnia i ma warunki do owocnikowania w dobrym roku”
-FRUITING F (0–1) = „czy warunki ostatnich ~3–4 tygodni sprzyjają owocnikowaniu” (regionalne + lokalna modulacja siedliskiem)
+FRUITING F (0–1) = „czy warunki ostatnich ~3–4 tygodni sprzyjają owocnikowaniu”
 TERAZ = H × F                 ← wynik biologiczny
-PRESJA P (0–1)   = przybliżenie konkurencji innych grzybiarzy
-DOSTĘPNOŚĆ A     = odległość od parkingu/drogi (preferencja, filtr)
+DOSTĘPNOŚĆ DLA MNIE  = wygoda dojazdu i dojścia (filtr / informacja, nie mnożnik R)
+POPULARNOŚĆ P (0–1)  = szacowana dostępność dla innych odwiedzających (presja)
 RANKING R = 100 · MASKA · H · F · (1 − α·P),   α ∈ [0; 0,6] suwak, domyślnie 0,3
 CONFIDENCE       = osobna oś, nigdy nie wchodzi do R
+REJON            = grupa sąsiadujących wydzieleń z wysokim R (warstwa prezentacji nad R)
 ```
 
-**Uzasadnienie:**
-- **Iloczyn, nie suma:** brak żywiciela albo susza powinny dawać ~0. Suma daje wysokie wyniki w miejscach bez szans.
-- **Presja oddzielona od biologii:** dla jednych bliskość parkingu to zaleta (dzieci, mało czasu), dla innych wada (konkurencja). Nie wolno tego „wypiec” w jedną liczbę.
-- **Log-addytywność:** log R = log H + log F + log(1−αP), więc wkład każdej cechy w wynik jest addytywny w skali log. Na tym opiera się proste wyjaśnianie (sekcja 9).
-- To jest też **dokładnie struktura modelu occupancy** (ψ × p) z fazy 5. MVP i ML mówią tym samym językiem.
+**Zmiana względem wersji 1.0:** rozdzielenie dawnego „P/A” (sekcja 4.5 w wersji 1.0) na dwie osobno nazwane i osobno pokazywane wielkości — **wygodę dojazdu dla mnie** (filtr, nie wpływa na R) i **szacowaną popularność rejonu** (wpływa na R przez α, tak jak dawniej). Powód: to są różne pytania („czy ja tam dojadę” vs „ile osób tam dojedzie”) i miksowanie ich w jedną liczbę myliło jedno z drugim. Szczegóły w sekcji 5.5.
 
-### 4.2 Maska twarda (0/1)
+**Uzasadnienie struktury (bez zmian):**
+- **Iloczyn, nie suma:** brak żywiciela albo susza dają ~0. Suma dałaby wysokie wyniki w miejscach bez szans.
+- **Log-addytywność:** log R = log H + log F + log(1−αP), na tym oparte jest proste wyjaśnianie (sekcja 5.8). **[K] Zaimplementowane** (`pipeline/explain.py`).
+- To jest też struktura modelu occupancy (ψ × p) — gdyby kiedyś powstały dane do ML, model MVP i ML mówią tym samym językiem. To nie znaczy, że ML jest w planach bliskiego zakresu (sekcja 16).
 
-| Warunek | Źródło | Uzasadnienie |
+### 5.2 Maska twarda (0/1)
+
+| Warunek | Źródło | Status |
 |---|---|---|
-| Rezerwat przyrody, park narodowy | GDOŚ (geoserwis, WMS/WFS) | zakaz zbioru / wstępu |
-| Uprawa < 4 m wysokości (w praktyce wiek < ~10–15 lat; w MVP `spec_age < 12` jako proxy [E]) | BDL | art. 26 ust. 2 ustawy o lasach — stały zakaz wstępu |
-| Drzewostan nasienny, powierzchnia doświadczalna, ostoja | BDL (pełny opis / WMS) [?] | art. 26 ust. 2 |
-| Okresowy zakaz wstępu | BDL WMS `zakazy_wstepu` | art. 26 ust. 3 (np. zagrożenie pożarowe) |
-| `area_type` ≠ drzewostan (zręby, halizny, drogi, łąki) | BDL | brak żywiciela |
-| Gatunek panujący bez EcM *B. edulis* (Ol, Js, Kl, Wz, Tp, Ak) i udział ≥ 8/10 | BDL | brak żywiciela |
-| Zmiana w S2 od `a_year` (spadek NBR/NDMI > próg) | Sentinel-2 | prawdopodobny zrąb (faza 3) |
+| Rezerwat przyrody, park narodowy | GDOŚ WFS | **[K] Zaimplementowane** (`pipeline/gdos.py`) |
+| Uprawa < 4 m wysokości (proxy: `spec_age < 12`) | BDL | **[K] Zaimplementowane**, ale to **proxy, nie prawne potwierdzenie** — patrz zastrzeżenie niżej |
+| Drzewostan nasienny, powierzchnia doświadczalna, ostoja | BDL (pełny opis) [?] | Nie podłączone (dane niedostępne przez WFS) |
+| Okresowy zakaz wstępu | BDL, ArcGIS REST (zakazy wstępu) | **[K] Zaimplementowane**, fail-loud na błędzie zapytania (`ZakazyQueryError`), sprawdzane dla top-N wyników przy generowaniu rejonów |
+| `area_type` ≠ drzewostan | BDL | **[K] Zaimplementowane** |
+| Gatunek panujący bez EcM *B. edulis*, udział ≥ 8/10 | BDL | **[K] Zaimplementowane** |
+| Zmiana w S2 od `a_year` (zrąb po aktualizacji BDL) | Sentinel-2 | Poza zakresem (sekcja 3.5) |
 
-### 4.3 HABITAT H
+**Zastrzeżenie (wymagane rozróżnienie potwierdzone/ostrożny filtr/brak danych, patrz sekcja 15):**
+- `spec_age < 12` jest **ostrożnym proxy**, nie prawnym potwierdzeniem, że drzewostan ma faktycznie poniżej 4 m wysokości. Wiek 12 lat nie gwarantuje konkretnej wysokości (zależy od gatunku, bonitacji, siedliska) — próg dobrany tak, by raczej nadmiarowo wykluczać niż nadmiarowo dopuszczać. Nie prezentować w UI jako „potwierdzony zakaz”, tylko jako „prawdopodobna uprawa — wykluczone ostrożnościowo”.
+- **Pusta odpowiedź serwisu zakazów wstępu nie jest traktowana jako potwierdzenie braku zakazu** — `pipeline/zakazy.py` rozróżnia „zapytanie się powiodło i nie zwróciło żadnego poligonu” (rzeczywiście brak zakazu w tym punkcie) od „zapytanie się nie powiodło” (rzuca `ZakazyQueryError`, cały bieg pipeline'u przerywa się zamiast pokazać wynik z niepewnym statusem prawnym). Weryfikacja kodu **[K] potwierdza to zachowanie jest już poprawne**. Do doprecyzowania w UI: awaria źródła zakazów dla top-N wyników powinna zatrzymać cały bieg (bo to maska obowiązkowa), a nie tylko oznaczyć dany wynik jako niepewny — patrz sekcja 8.
 
-**H = S_host^0,40 · S_site^0,35 · S_age^0,25** (średnia geometryczna ważona)
+### 5.3 HABITAT H
 
-Wagi 0,40 / 0,35 / 0,25 to **prior [E]**, oparty na tym, że żywiciel jest warunkiem koniecznym, siedlisko silnie moduluje, a wpływ wieku jest najmniej pewny (sprzeczne wyniki [L2] i [L3]). **Wymaga kalibracji.**
+**H = S_host^0,40 · S_site^0,35 · S_age^0,25** — **[K] zaimplementowane w `pipeline/habitat.py`**, wagi i tabele w `profiles/boletus_edulis.yaml`, bez zmian względem wersji 1.0.
 
 **S_host** = Σ udział_i × powinowactwo_i. W MVP znamy tylko gatunek panujący, więc reszta to „nieznana domieszka” z powinowactwem 0,5.
 
-| Kod BDL | Gatunek | Powinowactwo [E, do kalibracji] | Podstawa |
+| Kod BDL | Gatunek | Powinowactwo [E] | Podstawa |
 |---|---|---|---|
 | SO | sosna zwyczajna | 1,0 | główny żywiciel w PL (także *B. pinophilus*) |
 | ŚW | świerk | 1,0 | główny żywiciel [L3] |
@@ -273,13 +300,15 @@ Wagi 0,40 / 0,35 / 0,25 to **prior [E]**, oparty na tym, że żywiciel jest waru
 | JD | jodła | 0,8 | żywiciel [L6] |
 | BRZ | brzoza | 0,7 | żywiciel |
 | GB | grab | 0,3 | EcM, słabszy partner [E] |
-| MD | modrzew | 0,3 | głównie specjaliści (np. maślak modrzewiowy) |
+| MD | modrzew | 0,3 | głównie specjaliści |
 | DG | daglezja | 0,3 | gatunek obcy, słabo udokumentowane |
 | LP | lipa | 0,3 | EcM, słabo udokumentowane |
 | OS, TP | osika, topole | 0,2 | |
 | OL, JS, KL, WZ, AK | olsza, jesion, klon, wiąz, robinia | 0,0 | brak EcM z *B. edulis* |
 
-**S_site** — typ siedliska, z rozbiciem na żyzność i wilgotność (wilgotność używana ponownie w F, patrz 4.4):
+**Zastrzeżenie (brak danych o domieszkach, sekcja 15):** BDL WFS zwraca tylko gatunek panujący, nie pełny skład. „Nieznana domieszka” dostaje powinowactwo 0,5, czyli neutralne — celowo, żeby brak danych o drugim/trzecim gatunku w drzewostanie nie obniżał ani nie podnosił sztucznie H. To jest **łagodzenie**, nie rozwiązanie: drzewostan „SO 60% / OL 40%” i „SO 60% / ŚW 40%” dostają dziś ten sam wynik, mimo realnie różnego potencjału. W panelu szczegółów jawnie pokazywane jako „domieszki: brak danych” (już w projekcie UI wersji 1.0, sekcja 10).
+
+**S_site**, z rozbiciem na żyzność i wilgotność:
 
 | Siedlisko | S_site [E] | Klasa wilgotności `m` |
 |---|---|---|
@@ -291,481 +320,450 @@ Wagi 0,40 / 0,35 / 0,25 to **prior [E]**, oparty na tym, że żywiciel jest waru
 | LW | 0,4 | wilgotne (2) |
 | BMB, BB, LMB | 0,15 | bagienne (3) |
 | OL, OLJ, LŁ | 0,0 (maska) | — |
-| górskie: BWG, BMWYŻ, LMG, LG, LWYŻ… | 0,7–0,9 (tabela do uzupełnienia) | wg sufiksu |
-
-Uzasadnienie: kwaśne, ubogie–średnie siedliska świeże to środek tolerancji [E, L4]. Siedliska żyzne (L) mają więcej konkurencyjnych grzybów i roślin, a siedliska bagienne są za mokre. **Brak polskich danych ilościowych, więc kalibracja jest obowiązkowa.**
+| górskie: BWG, BMWYŻ, LMG, LG, LWYŻ… | 0,7–0,9 (do uzupełnienia) | wg sufiksu |
 
 **S_age** (wiek gatunku panującego, `spec_age`), funkcja odcinkowo-liniowa:
 
 ```
-wiek < 12        → maska (uprawa)
+wiek < 12        → maska (uprawa, proxy — patrz zastrzeżenie 5.2)
 12–20            → 0,3 → 0,6 (liniowo)
 20–35            → 0,6 → 1,0
 35–120           → 1,0
 >120             → 0,9
 ```
 
-Uzasadnienie: zgoda literatury co do niskiej produkcji najmłodszych drzewostanów. Sprzeczność co do wieku optymalnego (młode drzewostany w Finlandii [L3] vs 60–70 lat w Hiszpanii [L2]) oznacza **brak podstaw do penalizowania wieku 20–120**. Funkcja jest celowo płaska. Kalibracja.
+Uzasadnienie: zgoda literatury co do niskiej produkcji najmłodszych drzewostanów; sprzeczność co do wieku optymalnego (Finlandia [L3] vs Hiszpania [L2]) oznacza brak podstaw do penalizowania wieku 20–120. Funkcja celowo płaska.
 
-**Faza 3, dodatkowe czynniki H:** S_density (zwarcie z LMN/CHM; optimum pośrednie [L2]), S_micro (udział powierzchni z TWI > p75, tylko w latach suchych, patrz F), S_disturb (S2 change).
+**Poza obecnym zakresem:** S_density (zwarcie), S_micro (TWI), S_disturb (S2 change) — wymagają danych z sekcji 3.6/3.5, których pipeline dziś nie pobiera.
 
-### 4.4 FRUITING F
+### 5.4 FRUITING F
 
-Liczony **per komórka pogodowa**, potem modulowany klasą wilgotności siedliska wydzielenia.
+**F = G_season · M^0,6 · T^0,4 · K_frost**, potem modulacja lokalna klasą wilgotności siedliska. **[K] Zaimplementowane w `pipeline/scoring.py`**, parametry w profilu YAML.
 
-**F = G_season · M^0,6 · T^0,4 · K_frost**
+1. **G_season** — okno fenologiczne z rozkładu dat GBIF/iNat dla PL. *(W obecnym kodzie `run_poc` przekazuje G_season = 1,0 jako uproszczenie do czasu podłączenia rzeczywistego rozkładu GBIF — patrz sekcja 8, punkt do poprawy.)*
+2. **M — wilgoć:** `P26w`, `CWB26 = P26w − ET026w`, `SM` (wilgotność gleby 9–27 cm), każda przeliczona na percentyl względem klimatologii komórki dla ±15 dni od bieżącego dnia roku (ERA5-Land 1991–2020). `M = logistic((mean(pct_CWB26, pct_SM) − 0,35)/0,1)`.
+3. **T — temperatura:** `T = exp(−(Tmean20 − 13)²/(2·4²))`, kara ×0,3 jeśli `Tmean5 > 17,5°C` i `P5 < 5 mm`.
+4. **K_frost** = 0,2 gdy Tmin3 < −2°C; 0,6 przy −2…0°C; inaczej 1.
+5. **Modulacja lokalna wilgotnością siedliska** (interakcja H×F): w suche lata mnożnik faworyzuje siedliska wilgotniejsze, w mokre — suchsze. **Niezweryfikowana [E]**, dobry pierwszy kandydat do sprawdzenia w terenie (sekcja 15).
 
-1. **G_season** — okno fenologiczne (miękkie). Rozkład dni roku rekordów GBIF/iNat dla PL (jądrowa gęstość, znormalizowana do max = 1, z podłogą 0,1, żeby nie zerować anomalii). Region: cała PL w MVP, makroregiony w fazie 5.
-2. **M — wilgoć** (dominujący składnik czasowy):
-   - `P26w` = opad z 26 dni ważony wykładniczo (okres półtrwania 10 dni [E]) — okno z [L1 v2];
-   - `CWB26` = P26w − ET0_26w;
-   - `SM` = wilgotność gleby 9–27 cm (Open-Meteo);
-   - Każdą zmienną przeliczamy na **percentyl względem klimatologii tej komórki dla ±15 dni od bieżącego dnia roku** (ERA5-Land 1991–2020). Nie używamy progów w mm: 60 mm znaczy co innego na piaskach Borów Tucholskich i w Beskidach.
-   - `M = logistic( (mean(pct_CWB26, pct_SM) − 0,35) / 0,1 )`. Punkt przegięcia 0,35 i nachylenie to **parametry do kalibracji**. Intencja: poniżej ~25. percentyla słabo, powyżej ~50. dobrze.
-3. **T — temperatura:** `T = exp(−(Tmean20 − 13)² / (2·4²))`, optimum 13 °C z [L1]. σ = 4 °C to [E], kalibracja.
-   Dodatkowa kara: jeśli `Tmean5 > 17,5 °C` i `P5 < 5 mm`, to T × 0,3 (obserwacja z [L1 v1]).
-4. **K_frost** = 0,2 gdy Tmin < −2 °C w ostatnich 3 dniach; 0,6 przy −2…0 °C; inaczej 1 [E].
-5. **Modulacja lokalna wilgotnością siedliska** (interakcja H×F, najciekawsza część modelu):
-
-```
-jeśli pct_M < 0,3 (sucho):   F_loc = F · [0,6; 0,9; 1,2; 1,0][m]   (suche/świeże/wilgotne/bagienne)
-jeśli pct_M > 0,8 (bardzo mokro): F_loc = F · [1,15; 1,0; 0,85; 0,7][m]
-w przeciwnym razie:          F_loc = F
-(clip do [0,1])
-```
-
-Uzasadnienie: w suche lata owocniki pojawiają się głównie na siedliskach wilgotniejszych i w obniżeniach, w mokre na suchszych [E, popularna obserwacja, **niezweryfikowana**]. To jest dobry kandydat do pierwszej kalibracji, bo łatwo ją sprawdzić w terenie.
-
-**Prezentacja F:** 4 klasy, bez liczby na mapie:
+**Prezentacja F:** 4 klasy, bez liczby na mapie (`fruiting_classes` w profilu YAML, **[K] zaimplementowane**):
 
 | F | Klasa |
 |---|---|
-| < 0,2 | „Słabe warunki” |
-| 0,2–0,45 | „Umiarkowane” |
-| 0,45–0,7 | „Dobre” |
-| ≥ 0,7 | „Bardzo dobre” |
+| < 0,20 | „Słabe warunki” |
+| 0,20–0,45 | „Umiarkowane” |
+| 0,45–0,70 | „Dobre” |
+| ≥ 0,70 | „Bardzo dobre” |
 
-### 4.5 PRESJA P i DOSTĘPNOŚĆ A
+### 5.5 Dostępność — dwa osobne pytania
 
-- `d_park` = odległość do najbliższego parkingu lub publicznej drogi utwardzonej (sieć dróg, nie po prostej; w MVP po prostej × 1,3);
-- `d_town` = czas dojazdu z miejscowości > 2000 mieszk. (w MVP odległość);
-- `Demand` = Σ_miejscowości ludność / (1 + (d/10 km)²) — model grawitacyjny;
-- `P = 1 − exp(−k · Demand_norm · exp(−d_park / 800 m))`.
+Sama odległość od oznaczonego parkingu jest niewystarczającą miarą ani wygody dojazdu, ani presji innych grzybiarzy. Rozdzielamy dwa pytania, które wersja 1.0 częściowo myliła:
 
-**Wszystkie parametry (k, 800 m, 10 km) to [E] bez walidacji.** W UI podpisane „szacunek, nieskalibrowany”.
+#### 5.5.1 Wygoda mojego dotarcia (filtr, nie wchodzi do R)
 
-**A** = odległość pieszo od parkingu. Nie wchodzi do R, służy jako filtr („max 2 km od auta”).
+Dojazd do punktu startowego i dojście do rejonu poszukiwań. Pokazywana użytkownikowi osobno przy każdej propozycji rejonu (sekcja 10): odległość/czas dojazdu do parkingu, długość dojścia pieszo do granicy rejonu, status weryfikacji punktu startowego (patrz niżej). Może być użyta jako **filtr** („maks. 2 km pieszo od auta”), ale nigdy nie mnoży R — inaczej rejon niedostępny wygrywałby tylko dlatego, że jest blisko, niezależnie od jakości siedliska, albo odwrotnie: dobry rejon przepadałby tylko dlatego, że jest odrobinę dalej.
 
-### 4.6 Liczby w UI a fałszywa precyzja
+#### 5.5.2 Szacowana popularność rejonu (wchodzi do R przez P i suwak α)
 
-- Na mapie: **ranking względny** w bieżącym obszarze (top 5%, 10%, 25%) i klasy kolorów, a nie „87/100”.
-- W panelu szczegółów: liczby 0–100 są dopuszczalne z dopiskiem **„model ekspercki, nieskalibrowany”** do czasu fazy 5.
-- Po zebraniu danych (faza 5): przejście na **kalibrowane prawdopodobieństwo** („szansa znalezienia ≥1 prawdziwka w 60 min szukania”). Dopiero ta liczba ma znaczenie dla użytkownika.
+**Cel:** znajdować miejsca z możliwie małą liczbą innych grzybiarzy — ale nazywać wynik uczciwie: to jest **szacowana dostępność dla odwiedzających**, nie pomiar tłoku. Brak oznaczonego parkingu nie może automatycznie oznaczać małej liczby ludzi (może po prostu oznaczać brak danych o parkingu).
 
----
+**Czynniki do uwzględnienia (rozbudowa względem wersji 1.0, do zaimplementowania — priorytet w sekcji 13):**
+- **Różne potencjalne wejścia do kompleksu leśnego**, nie tylko oznaczone parkingi: każde przecięcie drogi publicznej/drogi leśnej z granicą lasu to *potencjalne* wejście, nie *potwierdzone*. Rozróżniać te dwa stany w danych i w UI.
+- **Zabudowa i miejscowości przy granicy lasu**, z których można wejść pieszo bez samochodu — dziś model demand liczy tylko miejscowości z tagiem `population` w OSM w promieniu, bez rozróżnienia, czy dana miejscowość faktycznie styka się z lasem.
+- **Dostęp po sieci dróg i ścieżek** — patrz niżej (routing).
+- **Oznaczone szlaki i infrastruktura turystyczna** (`highway=path`, `route=hiking`, wiaty, tablice) jako pomocnicza przesłanka popularności — dziś nie pobierane (sekcja 3.7).
+- **Bariery utrudniające dojście**, jeśli są dostępne w danych: rzeki bez mostu, ogrodzenia, tereny wojskowe. Nie ma dziś ich uwzględnienia; nawet prosta reguła „rzeka bez przecięcia z drogą w promieniu X m od wejścia = bariera” byłaby ulepszeniem, ale wymaga dodatkowego źródła (cieki wodne z OSM/BDOT10k) i nie jest wpisana w pierwszą iterację rozbudowy.
 
-## 5. Machine learning (faza 4–6)
+**Zasada dotycząca odległości:** liczyć **po dostępnej sieci dróg i ścieżek**, jeśli dane na to pozwalają, a nie w linii prostej. Obecna implementacja (`pipeline/pressure.py`) liczy odległość euklidesową do najbliższego parkingu/drogi utwardzonej i mnoży ją przez stały współczynnik 1,3 — to jest **przybliżenie zaakceptowane świadomie na czas MVP**, jawnie opisane w kodzie jako uproszczenie, nie jako rzeczywista trasa. Pełna analiza sieciowa (graf dróg + routing pieszy, np. lekki własny graf z OSM zamiast płatnego API) jest kosztowna obliczeniowo dla całego obszaru — **rozwiązanie na pierwszą wersję: liczyć routing tylko dla najlepszych kandydatów** (np. top 20–30 wydzieleń po R, przed grupowaniem w rejony), nie dla całego kafla. Jawnie opisać to uproszczenie w UI („dystans: linia prosta ×1,3” vs „dystans: po drogach”).
 
-### 5.1 Schemat zbierania danych — kluczowe decyzje
+**Nie zakładać:**
+- że droga widoczna na mapie dopuszcza ruch samochodów (drogi leśne bywają zamknięte szlabanem — dlatego `pipeline/osm.py` już dziś **[K] celowo wyklucza** `highway=track` z odległości do parkingu, zostawiając tylko drogi publiczne utwardzone);
+- że każde przecięcie drogi z granicą lasu jest potwierdzonym wejściem — rozróżniać „potwierdzone” (oznaczony parking BDL/OSM) i „potencjalne” (samo przecięcie drogi z granicą lasu) w danych i w UI;
+- że obecność jednego, oddalonego wejścia oznacza dobrą dostępność dla mnie — to inne pytanie niż popularność (5.5.1 vs 5.5.2).
 
-1. **Jednostką obserwacji jest *wizyta w wydzieleniu z wysiłkiem*, a nie znalezisko.** Każde wejście do lasu to *wyprawa* (track GPS). Wyprawę tniemy na *wizyty* = (wyprawa × wydzielenie) z czasem przebywania i długością trasy wewnątrz. Znaleziska (punkty) przypisujemy do wizyt. **Wizyta bez znalezisk to pełnoprawna obserwacja z wynikiem 0.** To rozwiązuje problem „zapisywania miejsc bez grzybów” bez żadnego dodatkowego klikania.
-2. **Zapisujemy wszystkie znalezione gatunki grzybów (choćby w liczbie), nie tylko borowiki.** Jeśli nie ma nic, sucho. Jeśli są kurki i podgrzybki, a borowików brak, to las „działa”, ale nie dla borowika. To rozdziela F od H.
-3. **Stan owocników:** młode / dojrzałe / stare / robaczywe. Młode owocniki to świeży rzut, co daje lepszy sygnał dla modelu lagu niż sama liczba.
-4. **Ślady presji:** ucięte trzony, rozkopana ściółka, spotkani grzybiarze (liczba), samochody na parkingu. To **jedyna droga do walidacji P**.
-5. **Eksploracja:** ok. 15–20% wizyt w miejscach, których model *nie* poleca (losowo z niższych klas). Bez tego model trenuje się tylko na własnych rekomendacjach (feedback loop) i nigdy nie dowie się, że się myli.
-6. **Warunki szukania:** kto szukał, jak dokładnie (skala 1–3), widoczność (mech, borówki, liście). Wpływają na *wykrywalność*, a nie na obecność.
+**Ograniczenie wpływu na ranking:** preferencja spokojniejszych miejsc (suwak α) ma pomagać **wybierać między obiecującymi rejonami**, nie sprawiać, że słabo oceniony siedliskowo lub trudno dostępny teren wygrywa wyłącznie dzięki oddaleniu od wejść. Struktura `R = 100 · MASKA · H · F · (1 − α·P)` już to zapewnia matematycznie: P wpływa tylko multiplikatywnie na wynik, który i tak jest zerowany przez maskę i skalowany przez H·F — rejon o H·F bliskim zeru zostaje nisko w rankingu niezależnie od tego, jak bardzo odludny. Do przypilnowania przy rozbudowie: żeby nowe czynniki popularności (szlaki, zabudowa) nie zamieniły P w dominujący composite, który przy α=0,6 zacznie przeważać nad H·F w praktyce — warto przy wdrożeniu sprawdzić rozkład P na realnych danych (tak jak już raz zrobiono przy wykluczeniu `track` z `d_park`, patrz komentarz w `profiles/boletus_edulis.yaml`).
 
-**Narzędzia terenowe (faza 4):** QField albo Mergin Maps (offline, formularz, zapis śladu), ewentualnie OsmAnd (track GPX) + prosty formularz PWA. Własna aplikacja mobilna dopiero w fazie 6.
+**Najprostsze rozwiązanie na pierwszą wersję (rekomendacja):** rozszerzyć dzisiejszy model o (a) punkty przecięcia dróg publicznych i ścieżek OSM z granicą lasu jako potencjalne wejścia (dane już pobierane przez Overpass, tylko nieużywane w ten sposób), (b) flagę „potwierdzone” dla wejść pokrywających się z parkingiem BDL/OSM, (c) routing tylko dla top-N kandydatów. Nie dodawać całorocznego monitoringu ruchu, scrapowania serwisów ani płatnych źródeł.
 
-### 5.2 Modele
+### 5.6 Grupowanie w rejony poszukiwań (nowość, do zaimplementowania)
 
-| Model | Kiedy | Uwagi |
-|---|---|---|
-| **GLM Poisson/NegBin z offsetem log(czas szukania)** | od ~100 wizyt | pierwsza kalibracja wag MVP; interpretowalny |
-| **Hurdle / zero-inflated NegBin** | od ~200 wizyt | dużo zer (w [L1] 85,8% dni bez owocników) |
-| **Model occupancy (dynamiczny) / N-mixture** | od ~2 sezonów z powtórnymi wizytami | **Najlepsze dopasowanie koncepcyjne:** ψ (obecność grzybni, zależna od H) × p_t (owocnikowanie i wykrycie, zależne od F i wysiłku). Pakiety: R `unmarked`, `spOccupancy`; Python PyMC. |
-| **GAM** (mgcv / pyGAM) | od ~300 wizyt | nieliniowe odpowiedzi (temperatura, wiek) z kontrolą gładkości |
-| **LightGBM / XGBoost** | od ~500–1000 wizyt, ≥2 sezony, ≥2 regiony | **monotonic constraints** (np. opad ↑ ⇒ nie mniej owocników w zakresie niskim), SHAP do wyjaśnień; pokusa przeuczenia przy małych danych |
-| Random Forest | baseline | gorsza kalibracja prawdopodobieństw |
-| Maxent / presence-only | tylko GBIF, skala kraju | *target-group background*; do sanity check, nie do rankingu |
-| Survival / time-to-event | od ~3 sezonów | „dni od zdarzenia opadowego do pierwszego świeżego rzutu” per region; Cox z kowariantami temperatury |
-| Przestrzenne (GP / INLA, efekt losowy nadleśnictwa) | faza 6 | wychwytuje nieobserwowane cechy regionu |
+Głównym wynikiem ma być **3–5 rejonów na wycieczkę**, nie ranking pojedynczych wydzieleń. Propozycja prostego algorytmu na pierwszą wersję:
 
-**Rekomendacja:** GLM → occupancy (główny model) → LightGBM jako challenger. Wybór po wynikach spatial CV, a nie po intuicji.
+1. Wybrać wydzielenia przechodzące maskę z R powyżej progu (np. top 25% w obszarze, jak dziś w UI — sekcja 5.7).
+2. Połączyć w rejony sąsiadujące/bliskie wybrane wydzielenia (np. przez `unary_union` buforowanych geometrii z niewielkim buforem, tak jak grupuje się sąsiadujące poligony — standardowa operacja w GeoPandas/Shapely, bez nowej zależności).
+3. **Nie premiować automatycznie największego lasu przez sumowanie punktów.** Wynik rejonu to **mediana lub najlepsze N wydzieleń** wewnątrz grupy (np. mediana R top-5 wydzieleń w rejonie), nie suma R po wszystkich wydzieleniach — suma faworyzowałaby rozległe kompleksy leśne niezależnie od tego, czy są jednorodnie dobre.
+4. Odrzucić rejony będące w praktyce fragmentami tego samego kompleksu co już wybrany, lepiej oceniony rejon (np. odległość środków rejonów < X km i ten sam kompleks leśny → połącz, nie duplikuj).
+5. Zwrócić top 3–5 rejonów po odległości od siebie i wyniku — nie tylko top 5 wydzieleń, które mogą być pięcioma sąsiadującymi fragmentami jednego miejsca.
 
-### 5.3 Unikanie leakage i biasu
+To wymaga kodu (poza zakresem obecnego kroku dokumentacyjnego), ale jest zapisane tu jako konkretny, wykonalny plan — patrz sekcja 13, priorytet 1.
 
-- **Leakage czasowy:** każda cecha pogodowa liczona tylko z danych do *dnia wizyty włącznie* (okna right-aligned). Żadnych „sum sezonowych” obejmujących przyszłość. Wersjonowanie danych BDL (`a_year`): do wizyty w 2027 bierzemy stan z 1 I 2027.
-- **Leakage przestrzenny:** wizyty w tym samym wydzieleniu i sąsiednich są skorelowane, więc podział na foldy **po blokach przestrzennych**, nigdy losowo po wierszach.
-- **Leakage „historią”:** cecha „ile znalazłem tu wcześniej” jest silna i zdradliwa. Dopuszczalna tylko jako cecha liczona wyłącznie z *wcześniejszych* sezonów, a w ocenie modelu trzeba ją raportować osobno.
-- **Bias obserwacyjny:** chodzisz tam, gdzie łatwo i gdzie model poleca. Środki zaradcze: eksploracja 15–20%, zapisywanie wysiłku, model detection/occupancy oddzielający „nie było” od „nie zauważyłem”.
-- **Przeuczenie do regionu:** mało cech, cechy przenośne (siedlisko, gatunek, percentyle pogodowe zamiast mm), efekt losowy regionu, test na **zupełnie innym nadleśnictwie**.
+### 5.7 Liczby w UI a fałszywa precyzja
 
-**Spatial CV:**
-1. Bloki 5×5 km (większe niż zasięg autokorelacji; sprawdzić wariogramem reszt, typowo 1–3 km dla wizyt).
-2. **Leave-one-season-out** × blokowy K-fold (K = 5), czyli walidacja przestrzenno-czasowa.
-3. Docelowo **leave-one-nadleśnictwo-out**.
-4. Metryki: Poisson deviance, AUC-PR dla „≥1 borowik”, **kalibracja** (reliability diagram), a z perspektywy użytkownika **precision@top-10 wydzieleń**.
-5. Narzędzia: `scikit-learn` GroupKFold z ID bloku, `spatialkfold` / R `blockCV`.
+- Na mapie/w liście rejonów: **ranking względny** w bieżącym obszarze (top 5%, 10%, 25%) i klasy, nie „87/100” jako jedyna informacja.
+- W panelu szczegółów: liczby 0–100 dopuszczalne z dopiskiem **„model ekspercki, nieskalibrowany”**.
+- **Zastrzeżenie „top 5% w słabym regionie” (sekcja 15):** ranking procentowy jest zawsze *względny do bieżącego obszaru i dnia*. „Top 5%” w regionie, gdzie baner regionalny (sekcja 10) pokazuje słabe ogólne warunki F, nie oznacza dobrych warunków bezwzględnie — oznacza „najlepsze z tego, co słabe”. UI musi pokazywać oba razem: ranking względny **i** baner regionalny z klasą F dla całego obszaru, nigdy tylko ranking w oderwaniu od tego, czy w ogóle warto jechać.
+- **Zastrzeżenie „nieskalibrowany wynik ≠ prawdopodobieństwo” (sekcja 15):** R i H/F nie są prawdopodobieństwem znalezienia grzyba. Nazywać je „szacowany potencjał” / „względny ranking”, nigdy „szansa X%” do czasu ewentualnej kalibracji na danych terenowych (sekcja 16), która przy 1–3 wyjazdach rocznie może nigdy nie nastąpić.
+
+### 5.8 Wyjaśnienia
+
+W modelu multiplikatywnym `log R` jest sumą wkładów. Wkład każdego czynnika liczony jako `log(czynnik) − log(mediana czynnika w obszarze)`, sortowany, generowane zdania z szablonów (2 plusy, 1–2 minusy). **[K] Zaimplementowane w `pipeline/explain.py`**, bez LLM-a, deterministycznie.
 
 ---
 
-## 6. Architektura aplikacji
+## 6. Stan implementacji (kroki 1–11) — ustalony na podstawie repozytorium
 
-### 6.1 Zasada
+Poniższa tabela to wynik przeglądu kodu (`pipeline/*.py`, `notebooks/*.py`, `profiles/boletus_edulis.yaml`) i uruchomienia pełnego zestawu testów (`144 passed`) w tej sesji — nie deklaracja z wcześniejszych commitów.
 
-Na MVP **bez serwera bazodanowego i bez backendu**. Pipeline w Pythonie generuje pliki, a frontend je wyświetla. PostGIS pojawia się dopiero z danymi terenowymi i wieloma użytkownikami.
-
-```
-MVP (faza 1–2)
-  Python pipeline ──► GeoParquet/DuckDB ──► PMTiles (geometrie wydzieleń, statyczne)
-                                         └─► scores_YYYY-MM-DD.json (id → H, F, P, R, conf, wyjaśnienie)
-  Frontend: statyczna strona (Vite + TypeScript + MapLibre GL JS)
-    - geometrie z PMTiles
-    - wyniki dnia łączone po `stand_id` przez `feature-state` (bez generowania kafli codziennie!)
-  Hosting: lokalnie albo statyczny hosting (Cloudflare Pages / GitHub Pages)
-  Odświeżanie: Windows Task Scheduler / GitHub Actions cron (1×/dzień)
-
-Docelowo (faza 4+)
-  PostgreSQL + PostGIS (obserwacje, wersjonowanie danych, zapytania przestrzenne)
-  FastAPI (obserwacje, szczegóły wydzielenia, on-demand dla nowych obszarów)
-  Prefect / Dagster (orkiestracja, jeśli źródeł > ~8)
-  PWA offline (mapa + formularz + GPS track)
-```
-
-**Dlaczego MapLibre, a nie Leaflet czy OpenLayers:** 25–150 tys. poligonów płynnie działa tylko jako kafle wektorowe (WebGL). `feature-state` pozwala codziennie zmieniać kolory bez przebudowy kafli. PMTiles to jeden plik, bez tile servera. Leaflet przy tej liczbie obiektów GeoJSON się dławi. OpenLayers jest mocny, ale cięższy w DX.
-
----
-
-## 7. Strategia danych
-
-### 7.1 Obszar: promień, bbox, kafle?
-
-Szacunek na podstawie pomiaru BDL: ~19 wydzieleń/km² w zalesionym regionie Piły, ~850 B/obiekt w GeoJSON. W regionach o średniej lesistości (~30%) będzie 2–3× mniej.
-
-| Promień | Pow. [km²] | Wydzielenia | BDL GeoJSON | NMT 5 m (float32 surowy) | NMT 1 m | S2: px/pasmo | Komórki ICON-D2 (~2 km) / ERA5-Land (9 km) | Dojazd | Ocena |
-|---|---|---|---|---|---|---|---|---|---|
-| 10 km | 314 | ~3–6 tys. | ~5 MB | ~50 MB | ~1,2 GB | 3,1 mln | ~70 / ~4 | 10–15 min | za mało: jeden kompleks leśny, łatwo przegapić lepszy obszar obok |
-| **20 km** | 1 257 | ~8–24 tys. | ~20 MB | ~200 MB | ~5 GB | 12,6 mln | ~260 / ~16 | 20–30 min | **dobry dla decyzji „gdzie dziś”** |
-| **30 km** | 2 827 | ~18–54 tys. | ~45 MB | ~450 MB | ~11 GB | 28 mln | ~590 / ~35 | 30–40 min | **dobry dla „gdzie w weekend”** |
-| 50 km | 7 854 | ~50–150 tys. | ~125 MB | ~1,3 GB | ~31 GB | 79 mln | ~1640 / ~97 | 45–70 min | ciężki on-demand; OK jako region prekomputowany |
-
-Wnioski:
-- **Czynnikiem ograniczającym nie jest BDL** (sekundy), tylko **NMT 1 m i Sentinel-2**. NMT w MVP pomijamy, a później używamy w 5 m. S2 przetwarzamy raz na sezon.
-- **Pogoda jest tania** przy każdym promieniu, jeśli pobieramy siatkę punktów co ~5 km, a nie punkt na wydzielenie.
-- **Rekomendacja:** obszar to **kafle 10×10 km w siatce PUWG 1992 (EPSG:2180)** przecinające okrąg o promieniu R. Domyślnie **R = 25 km**, suwak 10–50 km. W fazie 3 opcjonalnie izochrona dojazdu (openrouteservice / Valhalla) zamiast okręgu: 25 km w linii prostej przez rzekę bez mostu to nie 25 km. **Promień jest tylko filtrem widoku. Przetwarzanie zawsze idzie per kafel**, więc zmiana promienia albo przesunięcie punktu nie powoduje ponownego pobierania.
-- **Region domowy:** raz prekomputować ~80×80 km (64 kafle) wokół miejsca zamieszkania. Nowe obszary liczone on-demand kaflami.
-
-### 7.2 Porównanie strategii pobierania
-
-| Strategia | Plusy | Minusy | Werdykt |
+| # | Krok z planu wersji 1.0 (sekcja 9) | Stan | Dowód w kodzie |
 |---|---|---|---|
-| A. Pobieranie za każdym razem | zawsze aktualne | wolne (NMT, S2), obciąża WFS, brak odtwarzalności | nie |
-| B. Lokalny cache per zapytanie | prosty | cache „kołowy” zależy od punktu i promienia, więc słabe ponowne użycie | nie |
-| **C. Cache kaflowy (10 km)** | ponowne użycie przy każdym przesunięciu punktu, równoległość, łatwe unieważnianie per kafel i warstwa | trzeba zarządzać granicami kafli (bufor 200 m dla TWI) | **tak** |
-| D. Prefetch regionu | szybkie UI | jednorazowy koszt; region może nie wystarczyć | **tak, dla regionu domowego** |
-| **E. Hybryda C+D + dynamika w siatce** | najlepsze z obu | nieco więcej kodu | **Rekomendacja** |
+| 1 | Repo, `pyproject.toml`, struktura `pipeline/`, profil YAML | **Zrobione** | `pyproject.toml`, `profiles/boletus_edulis.yaml` |
+| 2 | `fetch_bdl(tile)`: WFS GetFeature, BBOX, stronicowanie, GeoParquet | **Zrobione** | `pipeline/bdl.py`, `tests/test_bdl.py` |
+| 3 | Parser `site_type` → żyzność/wilgotność, tabela powinowactwa | **Zrobione** | `pipeline/habitat.py`, `tests/test_habitat.py` |
+| 4 | `fetch_weather`: Open-Meteo archiwum+prognoza, siatka punktów | **Zrobione** | `pipeline/weather.py`, `tests/test_weather.py` |
+| 5 | Klimatologia ERA5-Land 1991–2020, percentyle ±15 dni | **Zrobione** | `pipeline/weather.py::climatology_window_values`, `percentile_rank` |
+| 6 | Obliczenie H, F, R; mapa poglądowa | **Zrobione** (H, F, R w `run_poc`); mapa `folium`/`lonboard` — nie znaleziono w repo, prawdopodobnie tylko notebook interaktywny | `pipeline/orchestrate.py::run_poc` |
+| 7 | Walidacja jakościowa na 10–20 znanych miejscach | **Zrobione jako mechanizm** (`pipeline/validate.py`, `notebooks/known_points.example.yaml`), **ale wymaga pliku `known_points.yaml`, którego użytkownik nie ma** — patrz sekcja 0 pkt 4 i sekcja 15 | `pipeline/validate.py`, `notebooks/02_mvp.py` (sprawdza `known_points_path.exists()`) |
+| 8 | Maska: GDOŚ, uprawy, zakazy wstępu | **Zrobione**, z fail-loud na błędzie zapytania o zakazy | `pipeline/gdos.py`, `pipeline/zakazy.py`, `pipeline/habitat.py::passes_mask` |
+| 9 | OSM: parkingi, drogi, demand z ludności | **Zrobione częściowo** — parkingi (`amenity=parking`) i drogi utwardzone tak; demand liczony z miejscowości OSM z tagiem `population`, nie z siatki gridowej Eurostat/GUS jak planowano; odległości euklidesowe ×1,3, nie po sieci dróg | `pipeline/osm.py`, `pipeline/pressure.py`, `tests/test_osm.py`, `tests/test_pressure.py` |
+| 10 | Confidence i wyjaśnienia | **Zrobione** | `pipeline/confidence.py`, `pipeline/explain.py` |
+| 11 | Eksport: `tippecanoe` → PMTiles; `scores_{date}.json` | **Częściowo zrobione.** `scores_{date}.json` — tak, w pełni działający eksport z bezpiecznym JSON (NaN→null). **PMTiles — nie.** Kod eksportuje tylko `stands_mvp.parquet` (id + geometria, GeoParquet), jawnie opisany w komentarzu jako *wejście do przyszłego kroku tippecanoe/PMTiles, poza zakresem obecnego planu*. Nie ma wywołania `tippecanoe`, nie ma pliku `.pmtiles` w repozytorium. | `pipeline/export.py` (`write_scores_json` — pełne; `export_stand_geometries` — tylko GeoParquet) |
 
-**Rekomendowana hybryda:**
-- Statyczne i półstatyczne: **cache kaflowy** (`cache/{layer}/{version}/{tile_id}.parquet|.tif`), region domowy prefetch.
-- Dynamiczne (pogoda): **jedna siatka punktów na cały aktywny obszar**, codziennie. Open-Meteo przyjmuje wiele współrzędnych w jednym zapytaniu, ale każda lokalizacja liczy się do limitu. 260 punktów × 1 zapytanie dziennie mieści się w limicie 10 000/dobę z dużym zapasem.
-- Radar IMGW (faza 3): **własne archiwum**, bo API daje tylko bieżący plik. Poller co 10 min zapisuje `COMPO_PAC` (HDF5), potem wycięcie do obszaru i agregacja dobowa (~kilka MB/dobę dla PL, po wycięciu kilkadziesiąt kB).
-- WFS BDL: zapytania **BBOX per kafel**, stronicowanie (`count` + `startIndex`), grzeczny rate (1 równoległe zapytanie). Klucz cache: `(tile_id, a_year)`.
-- Sentinel-2: STAC (Earth Search) → COG → odczyt tylko okna kafla (range requests, bez pobierania całych scen). Kompozyty sezonowe mediany.
+**Co dodatkowo istnieje, a nie było punktem 1–11:** `pipeline/mvp.py::enrich_with_mvp_layers` — spina maskę GDOŚ+zakazy, presję, confidence i wyjaśnienia w jeden krok (to jest właściwie „Faza 2” z planu wersji 1.0, sekcja 9 kroki 8–11, zaimplementowana jako jedna funkcja); `notebooks/02_mvp.py` — działający end-to-end skrypt na **jednej zahardkodowanej lokalizacji** (Kieleczka, RDLP Katowice, `LAT, LON = 50.526944, 18.605000`), bez parametrów wejściowych (lokalizacja/dzień/promień), bez schedulera, bez frontendu.
 
----
+**Czego nie ma wcale (sprawdzone: brak plików w repo):**
+- **Frontendu.** Brak `vite.config`, `package.json`, plików `.html` — sekcje 6/9 planu wersji 1.0 (Vite + TypeScript + MapLibre) nie mają żadnego kodu. Cały interfejs użytkownika istnieje dziś tylko jako `print()` w notebooku i plik JSON.
+- **PMTiles.** Patrz krok 11 wyżej.
+- **CLI / parametryzacji.** Nie da się dziś uruchomić analizy dla innej lokalizacji bez edycji kodu w `notebooks/02_mvp.py`.
+- **Harmonogramu** (Task Scheduler / GitHub Actions) — i tak niepotrzebny przy realnym wzorcu użycia (sekcja 0), ale wart odnotowania, że nie istnieje.
+- **NMT/TWI, Sentinel-2, IMGW radar/telemetria, model wiadra** — zgodnie z planem wersji 1.0 były to elementy fazy 3+, nietknięte, bez zmian w tej wersji.
 
-## 8. Aktualizacja danych
-
-| Grupa | Warstwy | Częstotliwość | Uwagi |
-|---|---|---|---|
-| **STATIC** | NMT i pochodne (TWI, TPI, ekspozycja), granice administracyjne, GDOŚ (rezerwaty, PN), siatka ludności | raz; sprawdzanie **co rok** | NMT zmienia się tylko przy nowej kampanii LiDAR |
-| **SEMI-STATIC** | BDL wydzielenia (stan na 1 I) | **raz w roku (luty)** + sprawdzenie `a_year` | inwentaryzacja nadleśnictwa co 10 lat, a aktualizacja bieżąca roczna |
-| | OSM / BDOT10k (drogi, parkingi) | co kwartał | |
-| | Sentinel-2 detekcja zmian, NDVI/NDMI sezonowe | **2×/rok** (po sezonie wegetacyjnym + wczesna jesień) | wykrywa zręby i kornik między aktualizacjami BDL |
-| | BDL zakazy wstępu (WMS) | **codziennie w sezonie** | okresowe zakazy (pożary) zmieniają się szybko |
-| | Fenologia z GBIF/iNat | raz w roku | |
-| **DYNAMIC** | Open-Meteo (archiwum + prognoza) | **1×/dobę** rano (~06:00) | + opcjonalnie 18:00 dla prognozy |
-| | IMGW telemetria (opad 10 min) | co 10–60 min (faza 3) | tylko jeśli budujemy własne archiwum |
-| | IMGW radar PAC | co 10 min (faza 3) | jw. |
-| | CLMS SWI 1 km | 1×/dobę (faza 3, tło) | |
-| **Wyniki** | H | przy zmianie SEMI-STATIC | |
-| | F, R, confidence | 1×/dobę | + „prognoza F” na +3/+5 dni z ICON/COSMO |
+**Wniosek:** backend obliczeniowy (kroki 2–10) jest solidny, przetestowany (144 testy przechodzą) i gotowy do użycia jako biblioteka. To, czego naprawdę brakuje do „pierwszej użytecznej wersji” w rozumieniu sekcji 0, to: (a) grupowanie w rejony (sekcja 5.6), (b) rozbudowa dostępności (sekcja 5.5.2), (c) parametryzowalne, jednopoleceniowe uruchomienie (sekcja 7), (d) jakikolwiek frontend/wyświetlenie wyniku na telefonie (sekcja 10), (e) realistyczna metoda weryfikacji zamiast 10–20 znanych miejscówek (sekcja 15).
 
 ---
 
-## 9. Interfejs
+## 7. Architektura aplikacji i uruchamianie
 
-**Mapa (MapLibre):**
-- lokalizacja: GPS / klik / wyszukiwarka (Nominatim); promień jako okrąg + suwak; opcjonalnie izochrona;
-- warstwa wydzieleń kolorowana rankingiem (top 5 / 10 / 25% / reszta / maska szarym kreskowaniem);
-- filtry: klasa F, min H, max odległość od parkingu, suwak α (presja), „pokaż tylko wysoką pewność”;
-- wybór profilu gatunku (MVP: prawdziwki; później kurki, podgrzybki);
-- oś czasu: dziś, ostatnie 14 dni, prognoza +5 dni (animacja F);
-- **baner regionalny u góry:** „Warunki w obszarze: DOBRE (opad 26 dni: 78. percentyl, Tśr 20 dni: 12,4 °C)”. To odpowiedź na pytanie „czy w ogóle jechać”.
+### 7.1 Zasada (bez zmian)
 
-**Panel po kliknięciu wydzielenia:**
+Bez serwera bazodanowego i bez backendu webowego. Pipeline w Pythonie generuje pliki, statyczny frontend je wyświetla. PostGIS i FastAPI pojawiają się dopiero z danymi terenowymi i wieloma użytkownikami (faza obserwacji, sekcja 16) — a przy 1–3 wyjazdach rocznie może nigdy się to nie zdarzyć, i to jest w porządku.
+
+### 7.2 Jak faktycznie uruchamiać analizę przed wyjazdem
+
+Statyczny frontend sam nie uruchomi lokalnego Pythona — to wymaga jawnej decyzji, jej brak w wersji 1.0 był realną luką.
+
+**Wybrana architektura (najprostsza pasująca do repozytorium):**
+
+1. **Jedno polecenie na komputerze przed wyjazdem:** `uv run python -m pipeline.prepare_trip --lat 50.5 --lon 18.6 --date 2026-10-05 --radius-km 25 --max-walk-km 2 --avoid-crowds medium` (nazwa i parametry orientacyjne — do ustalenia przy implementacji, ale zasada: jedno wywołanie, wartości domyślne dla wszystkiego poza lokalizacją i dniem). Ten skrypt to w praktyce to, co dziś robi `notebooks/02_mvp.py`, tylko sparametryzowane zamiast zahardkodowane, plus krok grupowania w rejony (sekcja 5.6).
+2. **Wynik: statyczne pliki** — zaktualizowany `stands.pmtiles` (przebudowywany tylko gdy zmienił się cache BDL dla danego obszaru, nie za każdym razem) + `regions_{date}.json` (rejony, każdy z listą pól z sekcji 10) + `scores_{date}.json` (szczegóły wydzieleń, widok dodatkowy).
+3. **Wyświetlenie na telefonie — bez własnego backendu:** ponieważ strona jest w pełni statyczna, najprostszym sposobem pokazania jej na telefonie jest wdrożenie tych samych plików na już wybrany darmowy hosting statyczny (Cloudflare Pages / GitHub Pages, patrz sekcja 18 — koszt 0). Krok 1 kończy się więc (opcjonalnym, ale zalecanym) automatycznym `git push` / `wrangler pages deploy` do tego samego miejsca co poprzednio, a nie ręcznym kopiowaniem plików. Otwierasz ten sam adres URL na telefonie co zawsze. Nie jest to backend „dla przycisku Analizuj” — przycisku nie ma, jest jedno polecenie terminalowe uruchamiane ręcznie, a hosting służy wyłącznie do pokazania już policzonego wyniku.
+4. **Zapis wybranego rejonu do użycia bez zasięgu:** najprostsze rozwiązanie na pierwszą wersję to (a) link „otwórz w mapach” generowany dla punktu startowego (`geo:` URI / link do Google Maps lub OsmAnd z współrzędnymi — eksport do istniejącej aplikacji mapowej, zero dodatkowego kodu offline), (b) zapisanie wybranego rejonu (nazwa, opis, współrzędne, uzasadnienie) w `localStorage` przeglądarki na telefonie, żeby tekst i współrzędne były dostępne offline po pierwszym otwarciu strony, nawet bez zasięgu — to nie wymaga backendu, bo aplikacja jest prywatna i jednoosobowa. Pełny tryb offline z buforowanymi kafelkami mapy to osobna, droższa funkcja (Workbox/PWA) — **poza obecnym zakresem**, nie zakładać jej budowy, dopóki (a)+(b) okażą się niewystarczające w praktyce.
+
+**Dlaczego nie backend on-demand:** jedyny scenariusz wymagający serwera to przycisk „Analizuj” klikany z telefonu w terenie — a to nie jest rzeczywisty scenariusz użycia (sekcja 0: analiza robiona przed wyjazdem, na komputerze, ze stabilnym łączem). Dodanie FastAPI tylko po to, żeby uniknąć jednego polecenia w terminalu, byłoby budową infrastruktury pod nieistniejącą potrzebę.
+
+**Dlaczego MapLibre, a nie Leaflet czy OpenLayers (bez zmian):** 25–150 tys. poligonów płynnie działa tylko jako kafle wektorowe (WebGL). `feature-state` pozwala zmieniać kolory bez przebudowy kafli przy każdym uruchomieniu. PMTiles to jeden plik, bez tile servera.
+
+### 7.3 Diagram
 
 ```
-PRAWDZIWKI · wydz. 108 j (Nadl. Człopa)          TOP 4% w obszarze
-Ranking: 81/100  (model ekspercki, nieskalibrowany)
-Pewność: ŚREDNIA ▸ dlaczego?
+PC, uruchamiane ręcznie przed wyjazdem (0-3x / rok, nie harmonogram)
+┌───────────────────────────────────────────────────────────────────────┐
+│ `uv run python -m pipeline.prepare_trip --lat .. --lon .. --date ..`  │
+│                                                                        │
+│   BDL WFS ─┐  GDOŚ ─┐  OSM Overpass ─┐  Open-Meteo ─┐  BDL zakazy ─┐   │
+│            ▼         ▼                ▼              ▼             ▼   │
+│      cache kaflowy (GeoParquet) ── scoring (mask→H→F→P→R) ── rejony   │
+│                                              │                        │
+│                          ┌───────────────────┴──────────────┐         │
+│                          ▼                                  ▼         │
+│              stands.pmtiles (rzadko)          regions_{date}.json,   │
+│                                                scores_{date}.json      │
+└───────────────────────────┬───────────────────────────────────────────┘
+                             ▼ (deploy tych samych plików, bez zmiany kodu)
+                 hosting statyczny (Cloudflare Pages / GitHub Pages), koszt 0
+                             ▼
+                 telefon: ta sama strona, otwarta w przeglądarce
+                 (rejon zapisany w localStorage = dostępny offline)
 
-Siedlisko (H)        0.92  ████████▊
-  Drzewostan: SO 100% (gat. panujący; domieszki: brak danych)
-  Wiek: 130 lat · Siedlisko: BMśw (bór mieszany świeży)
-Warunki teraz (F)    DOBRE (0.68)
-  Opad: 7 d 18 mm · 14 d 31 mm · 21 d 44 mm · 26 d (ważony) 49 mm → 78. percentyl
-  Bilans wodny 26 d: +12 mm · wilgotność gleby 9–27 cm: 71. percentyl
-  Tśr 20 dni: 12.4 °C (optimum ~13 °C) · Tmin 3 dni: 5.1 °C · przymrozek: brak
-  Dni od opadu ≥10 mm: 9
-Presja (P)           0.34 (szacunek) · Parking: 2.8 km · droga leśna: 430 m
-Teren (faza 3)       płasko (nachylenie 1°), TWI mediana 7.9 (p62)
+Poza obecnym zakresem: PostgreSQL + PostGIS, FastAPI, PWA offline z kafelkami,
+harmonogram — patrz sekcja 16, 17.
+```
 
-Dlaczego wysoko?
-  ▲ sosna jako gatunek panujący i bór mieszany świeży (siedlisko optymalne)
+---
+
+## 8. Strategia danych i cache
+
+*(Bez istotnych zmian względem wersji 1.0 — zasady poprawne niezależnie od częstotliwości użycia. Zaktualizowano opis realnego stanu w kodzie.)*
+
+### 8.1 Obszar
+
+Kafle 10×10 km w siatce PUWG 1992 (EPSG:2180) przecinające okrąg o promieniu R wokół punktu. Domyślnie **R = 25 km**, suwak 10–50 km. Promień jest tylko filtrem widoku, przetwarzanie zawsze idzie per kafel — zmiana promienia nie wymusza ponownego pobierania. **[K]** `pipeline/tiles.py` obsługuje tworzenie bboxów per kafel; prekomputowany region domowy i cache wielu kafli jednocześnie nie są jeszcze zaimplementowane (dziś jeden kafel na uruchomienie notebooka).
+
+### 8.2 Cache
+
+**Rekomendowana hybryda (bez zmian):**
+- Statyczne/półstatyczne: cache kaflowy `cache/{layer}/{version}/{tile_id}.parquet`. **[K] Częściowo zaimplementowane** — `pipeline/bdl.py::save_bdl_tile` zapisuje i odczytuje z cache po `tile_id`; GDOŚ, OSM i zakazy nie mają dziś własnego cache (pobierane na żywo przy każdym uruchomieniu — do rozważenia przy rozbudowie, bo GDOŚ i granice lasu zmieniają się rzadko, ale nie jest to pilne przy 1–3 uruchomieniach rocznie).
+- Pogoda: siatka ~5 km na aktywny obszar. **[K] Zaimplementowane** w `pipeline/weather.py`, choć bez trwałego cache dnia na dysku poza `requests_cache` (`.cache/open_meteo*`).
+- WFS BDL: BBOX per kafel, stronicowanie, klucz `(tile_id, a_year)`. **[K] Zaimplementowane.**
+
+### 8.3 Zasady odświeżania danych i działanie przy brakach
+
+| Grupa | Warstwy | Zasada odświeżania | Stan |
+|---|---|---|---|
+| **STATIC** | GDOŚ (rezerwaty, PN) | pobierane przy każdym uruchomieniu (rzadkie zmiany, koszt niski) | [K] |
+| **SEMI-STATIC** | BDL wydzielenia | z cache; odświeżyć po przekroczeniu ustalonego wieku (np. >12 miesięcy — do wyboru przy implementacji, dziś brak automatycznej reguły wieku, tylko obecność/brak pliku w cache) | częściowo [K] |
+| | OSM (parkingi, drogi, miejscowości) | pobierane na żywo przy każdym uruchomieniu (Overpass) — brak cache | [K], bez wieku cache |
+| | BDL zakazy wstępu | **zawsze sprawdzane przy analizie przed wyjazdem**, nigdy z cache — to jest wymóg bezpieczeństwa prawnego, nie tylko świeżości | [K] |
+| **DYNAMIC** | Open-Meteo (archiwum + prognoza) | pobierane przy każdej analizie (nie codziennie w tle) | [K] |
+| **Wyniki** | H, F, P, R, rejony | liczone przy każdym uruchomieniu `prepare_trip` | H/F/R [K], rejony do zrobienia |
+
+**Zasada przy awarii źródła (do doprecyzowania w implementacji, dziś spójne tylko dla zakazów):**
+- **Zakazy wstępu:** awaria zapytania **przerywa cały bieg** dla dotkniętych wydzieleń (fail-loud, już zaimplementowane w `pipeline/zakazy.py`). Brak odpowiedzi nie oznacza braku zakazu.
+- **GDOŚ, BDL, Open-Meteo, OSM:** dziś każdy z tych klientów rzuca wyjątek sieciowy wprost (`raise_for_status()`), co i tak zatrzymuje cały bieg — zachowanie zgrubnie bezpieczne (nie pokazuje wyniku na niepełnych danych), ale nieinformacyjne (użytkownik dostaje surowy traceback, nie komunikat w rodzaju „BDL nie odpowiada, spróbuj ponownie za chwilę”). Poprawa komunikatu błędu jest zadaniem UX, nie logiki — do sekcji 13.
+- **Zasada ogólna do zachowania przy każdej przyszłej zmianie:** brak odpowiedzi źródła nigdy nie ma cichego fallbacku na wartość neutralną w kontekście *maski prawnej*. Poza maską prawną (np. brak danych o gatunkach domieszkowych, brak dokładnej odległości drogowej) fallback na wartość neutralną z jawną adnotacją w `confidence`/`explanation` jest akceptowalny i już częściowo zaimplementowany (`unknown_host_affinity: 0.5`, `percentile_rank` → 0,5 przy pustym oknie klimatologii).
+- **Daty aktualności w UI:** panel szczegółów wersji 1.0 (sekcja 10) już projektował pokazywanie źródeł i rozdzielczości; do rozbudowy o wprost widoczną datę pobrania każdej warstwy („BDL: rok danych 2026, pobrano dziś” / „pogoda: dziś 06:12”), żeby użytkownik wiedział, czy patrzy na świeże dane bez zaglądania w kod.
+
+---
+
+## 9. Interfejs — uproszczony scenariusz
+
+### 9.1 Podstawowy scenariusz (cel: jeden prosty przepływ, bez wielu suwaków wag modelu)
+
+1. Wybierz lokalizację (GPS / klik / wyszukiwarka), dzień wyjścia i zasięg poszukiwań (suwak promienia, domyślnie 25 km).
+2. Określ, ile chcesz chodzić (np. suwak „max. dojście pieszo”, domyślnie 2 km) i jak ważne jest unikanie popularnych wejść (np. suwak trzystopniowy „nie zależy mi / trochę / bardzo” zamiast surowego α — pod spodem to nadal ten sam parametr modelu, ale nazwany po ludzku).
+3. Uruchom analizę — po stronie użytkownika to kliknięcie „Analizuj” w lokalnie uruchomionym poleceniu/skrypcie z kroku 7.2, nie wywołanie sieciowe.
+4. Wybierz jedną z 3–5 propozycji rejonów i zapisz potrzebne informacje na telefonie (sekcja 7.2 pkt 4).
+
+**Nie dodawać** osobnych suwaków dla wag H (host/site/age), parametrów logistycznej funkcji M, sigmy temperatury itd. — to są parametry modelu do kalibracji technicznej (sekcja 15), nie decyzje, które użytkownik powinien podejmować przed każdym wyjazdem. Mają rozsądne wartości domyśle w profilu YAML.
+
+### 9.2 Główny widok: lista/mapa rejonów
+
+Dla każdego z 3–5 proponowanych rejonów, karta zawierająca:
+
+```
+REJON 2 z 4 · okolice Nadl. Człopa                         Ranking: wysoki w obszarze
+Warunki: DOBRE (klasa F) · Pewność: ŚREDNIA ▸ dlaczego?
+
+[mapa: obrys rejonu na tle wydzieleń, punkt startowy]
+
+Start: parking leśny przy drodze XYZ          [potwierdzony ✓ / niepotwierdzony ⚠]
+Dojazd: 22 km, ~25 min · Dojście: 900 m pieszo (oszacowanie po drogach / w linii prostej — oznaczone)
+Szacowana popularność: NISKA/ŚREDNIA/WYSOKA (nie pomiar tłoku — przesłanki: ... )
+
+Dlaczego ten rejon:
+  ▲ sosna i bór mieszany świeży na większości wydzieleń (siedlisko dobre)
   ▲ opad z ostatnich ~4 tygodni powyżej normy dla tej pory roku
-  ▲ temperatura blisko optimum
-  ▼ brak danych o domieszkach (dane BDL tylko dla gatunku panującego)
-Źródła i rozdzielczość: BDL 2026 (wydzielenie) · Open-Meteo ICON-D2 ~2 km / ERA5-Land 9 km · OSM
-[Zapisz wizytę]  [Nawiguj]  [Pokaż opis w BDL ↗]
+  ▼ brak danych o domieszkach gatunkowych
+
+Siedlisko (H): dobre · Warunki teraz (F): dobre                [zobacz szczegóły ▸]
+Dane aktualne na: BDL 2026, pogoda dziś 06:12, zakazy sprawdzone dziś
+
+[Zapisz rejon]  [Nawiguj do startu]  [Zobacz wydzielenia w rejonie ▸]
 ```
 
-**Wyjaśnienia:** w modelu multiplikatywnym `log R` jest sumą wkładów. Liczymy wkład każdego czynnika jako `log(czynnik) − log(mediana czynnika w obszarze)`, sortujemy i generujemy zdania z szablonów (2 plusy i 1–2 minusy). Bez LLM-a: deterministycznie i tanio. Po ML to samo robią wartości SHAP.
+Pola wymagane (per instrukcja): rejon na mapie, punkt startowy ze statusem weryfikacji, orientacyjne dojście z informacją czy po drogach czy oszacowane, krótkie uzasadnienie, osobna ocena H i F, informacja o aktualności/niepewności, zapis i nawigacja. **Wszystko powyżej to specyfikacja do zaimplementowania** — dziś istnieje tylko jako dane (JSON) bez żadnej warstwy prezentacji.
+
+**Baner regionalny u góry (bez zmian z wersji 1.0):** „Warunki w obszarze: DOBRE (opad 26 dni: 78. percentyl, Tśr 20 dni: 12,4°C)” — odpowiedź na „czy w ogóle jechać”, pokazywana zawsze razem z rankingiem względnym (sekcja 5.7).
+
+### 9.3 Widok dodatkowy: wydzielenia i szczegóły modelu
+
+Zachowuje panel szczegółów z wersji 1.0 (numer wydzielenia, S_host/S_site/S_age, rozbicie F, presja, wyjaśnienia log-wkładów, źródła i rozdzielczość) — przeniesiony do widoku „Zobacz wydzielenia w rejonie”, nie na główny ekran. Osoby, które chcą zobaczyć surowy model, mogą; domyślny ekran ich tym nie obciąża.
 
 ---
 
 ## 10. Niepewność
 
-Trzy osobne wskaźniki, zawsze widoczne.
+*(Bez zmian merytorycznych — struktura trzech wskaźników jest niezależna od częstotliwości użycia.)*
 
-**1. Data quality (per wydzielenie, 0–1)** — iloczyn:
+**1. Data quality (per wydzielenie, 0–1)** — iloczyn: kompletność drzewostanu (1,0 pełny skład LMN — nieosiągalne w obecnym zakresie / **0,7 tylko gatunek panujący WFS** — dzisiejszy stan / 0,3 brak BDL); świeżość BDL (1,0 brak sygnału zmiany S2 — dziś zawsze 1,0, bo S2 nie jest podłączone, więc to pole nie odróżnia realnie świeżych i nieaktualnych danych, patrz zastrzeżenie sekcja 15); pogoda (0,8 NWP ~2 km — dzisiejszy stan przez Open-Meteo).
 
-| Czynnik | Wartość |
-|---|---|
-| kompletność drzewostanu | 1,0 pełny skład (LMN); 0,7 tylko gatunek panujący (WFS); 0,3 brak BDL (raster CLMS) |
-| świeżość BDL | 1,0 jeśli brak sygnału zmiany w S2; 0,5 jeśli S2 sygnalizuje zmianę po `a_year` |
-| pogoda | 1,0 radar + stacja < 10 km; 0,8 NWP 2 km; 0,6 ERA5-Land 9 km |
-| konwekcja | ×0,8 gdy w oknie 26 dni >30% opadu pochodziło z dni o dużej zmienności przestrzennej (rozstęp radar / model w obszarze) |
+**2. Model confidence (globalne):** **maks. „ŚREDNIA”**, bo model jest ekspercki i nieskalibrowany. **[K] Zaimplementowane jako stały pułap** w `profiles/boletus_edulis.yaml` (`model_confidence_cap: "SREDNIA"`). Pozostaje tak, dopóki nie ma kalibracji na danych terenowych (sekcja 16) — realistycznie może pozostać tak na stałe, i to jest w porządku (sekcja 15).
 
-**2. Model confidence (globalne):**
-- faza 1–4: **maks. „ŚREDNIA”**, bo model jest ekspercki i nieskalibrowany;
-- po ML: z kalibracji spatial CV (np. szerokość przedziału predykcji / wariancja zespołu modeli).
+**3. Resolution disclosure:** lista źródeł z ich rozdzielczością przy każdym wyniku.
 
-**3. Resolution disclosure (tekst):** lista źródeł z ich rozdzielczością przy każdym wyniku.
-
-**Finalny confidence** = min(klasa z data quality, klasa modelu), wyświetlany jako NISKA / ŚREDNIA / WYSOKA z listą powodów:
-
-```
-Pewność: ŚREDNIA
- · model nieskalibrowany na danych terenowych (limit do „średniej”)
- · pogoda z modelu ~2 km (brak radaru w archiwum)
- · skład gatunkowy: tylko gatunek panujący
-```
+**Finalny confidence** = min(klasa z data quality, klasa modelu), NISKA/ŚREDNIA/WYSOKA z listą powodów. **[K] Zaimplementowane** w `pipeline/confidence.py`.
 
 ---
 
-## 11. MVP
+## 11. Ograniczenia skuteczności rekomendacji
 
-**Pytanie MVP:** „Gdzie w promieniu ~20–25 km mam dziś największą szansę na dobre warunki dla prawdziwków?”
+To, co system może i czego nie może obiecać — do pokazania użytkownikowi wprost, nie tylko trzymania w dokumentacji projektowej:
 
-**Źródła MVP (6):**
-1. **BDL WFS**: wydzielenia (siedlisko, gatunek, wiek, typ powierzchni).
-2. **Open-Meteo**: archiwum (ERA5-Land) + prognoza (ICON-D2): opad, T, ET0, wilgotność gleby. Klimatologia do percentyli z tego samego źródła.
-3. **GDOŚ**: rezerwaty i parki narodowe (maska).
-4. **BDL WMS zakazy wstępu**: okresowe zakazy. W MVP jako warstwa podglądowa na mapie; odczyt GetFeatureInfo dla top wyników.
-5. **OSM (Geofabrik PBF dla województwa)**: parkingi, drogi, ścieżki, miejscowości.
-6. **GBIF**: tylko rozkład dat → G_season.
-
-Opcjonalnie 7.: **siatka ludności 1 km** (Eurostat) do modelu presji.
-
-**Czego MVP nie robi:** NMT, Sentinel, radar, SWI, ML, konta użytkowników, aplikacja mobilna.
-
-**Wynik MVP:** strona z mapą, rankingiem wydzieleń, panelem szczegółów, banerem regionalnym i F na +3 dni. Aktualizacja raz dziennie jednym skryptem.
-
-**Szacunek pracy (1 osoba, wieczory i weekendy):** faza 1: 2–3 weekendy, faza 2: 3–4 weekendy.
+1. **Wynik nie jest zweryfikowaną skutecznością.** Model jest złożeniem priorów eksperckich i ogólnej literatury mykologicznej (w większości nie z polskich borów sosnowych — patrz sekcja 2), nie modelem dopasowanym do żadnych obserwacji z Twojego regionu. Poprawność techniczna pipeline'u (dane się pobierają, ranking się liczy, testy przechodzą) **nie jest tym samym co zweryfikowana skuteczność przewidywania grzybów** — to dwa osobne twierdzenia, i dokument nie oznacza drugiego jako sprawdzone tylko dlatego, że sprawdzone jest pierwsze.
+2. **Brak realistycznej ścieżki walidacji na znanych miejscówkach** (sekcja 0, 6, 13) — użytkownik ich nie zna. Możliwa do wykonania weryfikacja bez tej wiedzy: (a) techniczna poprawność danych — czy wydzielenia, siedliska i wiek zgadzają się z tym, co widać na mapie BDL/w terenie przy pierwszym wyjeździe; (b) sensowność rankingu — czy top rejony różnią się realnie siedliskiem/pogodą od dołu rankingu, a nie tylko szumem; (c) dostępność terenowa — czy zaproponowany punkt startowy i dojście faktycznie istnieją i są przejezdne/przechodne. Żadne z tych trzech nie potwierdza, że w rekomendowanych miejscach faktycznie rosną prawdziwki częściej niż gdzie indziej — to wymagałoby obserwacji terenowych, których projekt świadomie nie zakłada jako obowiązkowych (sekcja 16).
+3. **„Top 5%” to ranking względny, nie gwarancja dobrych warunków** — patrz sekcja 5.7.
+4. **Presja/popularność to szacunek, nie pomiar** — patrz sekcja 5.5.2.
+5. **Fruiting F ma słabe podstawy naukowe nawet dla dobrze zbadanych populacji** (10 lat monitoringu w Niemczech dało tylko ogólne prawidłowości, sekcja 1 pkt 2) — dla Polski, gdzie nie ma analogicznych badań, F trzeba traktować jako grubą wskazówkę „czy w ogóle warto jechać w tym tygodniu”, nie jako precyzyjne okno.
+6. **Model prawdopodobnie nigdy nie zostanie skalibrowany danymi terenowymi** przy realnym tempie 1–3 wyjazdów rocznie — sekcje GLM/occupancy/LightGBM z wersji 1.0 (dziś sekcja 16) pozostają teoretyczną możliwością, nie planem z terminem.
 
 ---
 
-## 12. Roadmapa
+## 12. Zakres pierwszej użytecznej wersji
 
-| Faza | Cel | Zakres | Kryterium ukończenia |
+**Pytanie, na które odpowiada:** „Gdzie w promieniu ~20–25 km mam dziś największą szansę na dobre warunki dla prawdziwków, i gdzie jest z tego mało ludzi?” — z odpowiedzią w postaci 3–5 konkretnych rejonów z punktem startowym, a nie tabeli wydzieleń.
+
+**Źródła (bez zmian względem MVP wersji 1.0, wszystkie już podłączone [K]):**
+1. BDL WFS — wydzielenia.
+2. Open-Meteo — archiwum + prognoza + klimatologia.
+3. GDOŚ — rezerwaty i parki narodowe (maska).
+4. BDL ArcGIS zakazy wstępu — okresowe zakazy, sprawdzane przed każdą analizą.
+5. OSM (Overpass) — parkingi, drogi, miejscowości.
+6. GBIF — do podłączenia realnie (dziś G_season zahardkodowane na 1,0, sekcja 5.4 pkt 1) → fenologia.
+
+**Czego pierwsza użyteczna wersja NIE robi:** NMT, Sentinel, radar, SWI, ML, konta użytkowników, natywna aplikacja mobilna, pełny routing sieciowy dla wszystkich wydzieleń (tylko dla top-N kandydatów), pełny tryb offline z kafelkami mapy.
+
+**Zakres prac do „pierwszej użytecznej wersji” (uzupełnienie ponad to, co już działa — szczegóły i kolejność w sekcji 13):**
+1. Grupowanie wydzieleń w rejony (sekcja 5.6).
+2. Rozbudowa oceny dostępności/popularności o potencjalne wejścia, zabudowę przy granicy lasu, routing dla top kandydatów (sekcja 5.5.2).
+3. Parametryzowalne, jednopoleceniowe uruchomienie `prepare_trip` (sekcja 7.2).
+4. Minimalny frontend (mapa + lista rejonów + panel szczegółów wydzielenia), wdrożony na darmowy hosting statyczny.
+5. Podłączenie realnego G_season z GBIF zamiast stałej 1,0.
+6. Zapis rejonu + link nawigacji + `localStorage` na telefonie.
+
+---
+
+## 13. Dalsze kroki — priorytety i kryteria ukończenia
+
+| Priorytet | Krok | Dlaczego teraz | Kryterium ukończenia (mierzalne) |
 |---|---|---|---|
-| **1. Proof of concept** | czy dane się składają | Notebook: pobranie wydzieleń BDL dla 1 kafla i Open-Meteo dla 20 punktów; policzenie H i F; mapa w `folium` / `lonboard` | mapa z kolorowymi wydzieleniami, ręczne sprawdzenie 10 znanych Ci miejsc („czy model zna Twoje dobre miejsca?”) |
-| **2. MVP** | codzienne użycie | pipeline kaflowy, maska, P, klimatologia percentyli, PMTiles + MapLibre, panel szczegółów, confidence, baner regionalny | używasz przed każdym wyjazdem przez sezon |
-| **3. Automatyzacja i dane** | aktualność i lepsza pogoda | harmonogram, archiwum radaru IMGW + telemetrii, model wiadra, S2 change detection, NMT 5 m (TWI), wniosek o LMN z pełnym opisem | brak ręcznych kroków; radar w archiwum ≥1 sezon |
-| **4. Obserwacje terenowe** | dane do kalibracji | QField / Mergin z formularzem, import tracków → wizyty z wysiłkiem, znaleziska, ślady presji, 15–20% eksploracji, PostGIS | ≥150 wizyt w sezonie, w tym ≥60% z wynikiem 0 |
-| **5. ML** | kalibracja | GLM z offsetem → dynamiczny occupancy → LightGBM challenger; spatial-temporal CV; kalibrowane prawdopodobieństwo w UI | lepsze precision@10 niż MVP na odłożonym sezonie |
-| **6. Zaawansowane** | predykcja i skala | prognoza F na 7–10 dni (ensemble), mikrokomórki 25 m w górach, CHM z LiDAR, inne gatunki, crowdsourcing (z ochroną lokalizacji), efekty przestrzenne (INLA), depozycja N | — |
+| **1** | Grupowanie w rejony (5.6) | Bez tego główny wynik nadal jest tabelą wydzieleń, co wprost sprzeczne z celem projektu (sekcja 0) | Dla realnego kafla 10×10 km, top wydzielenia grupują się w ≤5 rejonów, żaden rejon nie jest wyłącznie fragmentem tego samego kompleksu co inny wynik top-5; test jednostkowy na syntetycznym zestawie wydzieleń z dwoma odległymi klastrami sprawdza, że każdy klaster trafia do osobnego rejonu |
+| **2** | `prepare_trip` — parametryzacja i jedno polecenie (7.2) | Bez tego nie da się użyć aplikacji dla innej lokalizacji niż zahardkodowana w `notebooks/02_mvp.py` | Jedno wywołanie CLI z `--lat/--lon/--date/--radius-km` produkuje `regions_{date}.json` i `scores_{date}.json` dla dowolnej lokalizacji w Polsce bez edycji kodu |
+| **3** | Rozbudowa dostępności/popularności (5.5.2): potencjalne wejścia z sieci dróg, flaga potwierdzone/niepotwierdzone, routing dla top-N | Bezpośrednio adresuje cel „mało ludzi”, dziś oparty tylko na odległości euklidesowej do parkingu | Dla top 20–30 wydzieleń policzona odległość po sieci dróg (nie euklidesowa); w danych i UI widoczne rozróżnienie „potwierdzone wejście” / „potencjalne wejście”; test jednostkowy pokrywa oba przypadki |
+| **4** | Minimalny frontend (mapa rejonów + panel szczegółów) | Bez tego wynik istnieje tylko jako JSON w terminalu | Strona otwarta lokalnie w przeglądarce pokazuje ≥1 rejon na mapie z polami z sekcji 9.2, zbudowana z realnych danych z kroku 1–3 |
+| **5** | Wdrożenie na hosting statyczny + telefon (7.2 pkt 3) | Domyka scenariusz „uruchamiam na komputerze, patrzę na telefonie” | Ta sama strona otwiera się na telefonie pod stałym adresem po jednym poleceniu na komputerze, bez ręcznego kopiowania plików |
+| **6** | Zapis rejonu + link nawigacji + `localStorage` (7.2 pkt 4, 9.2) | Domyka scenariusz użycia bez zasięgu w terenie | Po zapisaniu rejonu i wyłączeniu Wi-Fi/danych, nazwa, współrzędne i uzasadnienie rejonu są nadal widoczne w przeglądarce na telefonie; link nawigacji otwiera zainstalowaną aplikację mapową z poprawnymi współrzędnymi |
+| **7** | Podłączenie realnego G_season z GBIF | Dziś F liczy się bez modulacji fenologicznej (stała 1,0) — cichy błąd, nie tylko brakująca funkcja | `compute_fruiting` w realnym biegu dostaje G_season różne od 1,0 zależnie od dnia roku; test regresyjny porównuje wynik dla dnia w szczycie sezonu i poza sezonem |
+| **8** | Komunikaty błędów źródeł danych (8.3) | Dziś awaria źródła kończy się surowym tracebackiem, nie komunikatem dla użytkownika | Sztuczna awaria każdego z 5 źródeł (mock zwracający błąd HTTP) kończy bieg czytelnym komunikatem wskazującym, które źródło zawiodło i że wynik nie został pokazany |
+| — | (poza priorytetami 1–8, do rozważenia dopiero po ich ukończeniu) | | |
+| 9 | Daty aktualności widoczne w UI (8.3) | Drobne UX, niezależne od reszty | Każda warstwa w panelu szczegółów pokazuje datę/wiek danych |
+| 10 | Bariery (rzeki, ogrodzenia) w ocenie dostępności (5.5.2) | Wymaga dodatkowego źródła (cieki wodne), niepewna wartość dodana bez danych terenowych | Zdefiniowane dopiero po przetestowaniu priorytetu 3 w praktyce |
+| 11 | Cache dla GDOŚ/OSM/zakazów (8.2) | Nie pilne przy 1–3 uruchomieniach rocznie | Odłożone, chyba że czas jednego uruchomienia okaże się w praktyce niewygodnie długi |
 
 ---
 
-## 13. Koszty, limity, licencje
+## 14. Celowo pominięte w pierwszej wersji
+
+- **Siatka 10–50 m i heatmapa** (fałszywa precyzja); zamiast nich wielokąty wydzieleń i obrysy rejonów.
+- **Codzienny harmonogram** (Task Scheduler / GitHub Actions cron) — analiza uruchamiana ręcznie przed wyjazdem (sekcja 0, 7).
+- **Obowiązkowy dziennik obserwacji, protokół eksploracji terenowej, trening modeli ML** — przeniesione do sekcji 16 jako w pełni opcjonalne.
+- **PostGIS, FastAPI, konta użytkowników, crowdsourcing, aplikacja natywna** — niepotrzebne bez wielu użytkowników i regularnych obserwacji terenowych.
+- **Pełny routing sieciowy dla wszystkich wydzieleń w kaflu** — tylko dla top-N kandydatów (sekcja 5.5.2), reszta zostaje na przybliżeniu euklidesowym.
+- **Pełny tryb offline z buforowanymi kafelkami mapy (PWA/Workbox)** — na start wystarcza link do istniejącej aplikacji mapowej + zapis tekstowy w `localStorage` (sekcja 7.2).
+- **Sentinel-1 i własne przetwarzanie wilgotności z SAR, CLMS SWI, NDVI/NDMI jako predyktor owocnikowania, LST, LAI, VPD, SoilGrids pH, GPM IMERG, H SAF** — patrz sekcja 17.
+- **NMT i pochodne terenowe** — poza zakresem, chyba że obszar poszukiwań jest górski (patrz sekcja 3.6).
+- **GBIF/iNat jako dane lokalizacyjne** (tylko fenologia).
+- **Scraping czegokolwiek** (popupy BDL, Strava, fora).
+- **Sześć skorelowanych okien opadowych jako osobne cechy** (jedno okno ważone + percentyle).
+- **Pełna historia zabiegów leśnych** (brak w publicznych danych).
+
+---
+
+## 15. Poza obecnym zakresem: ciągła obserwacja i ML (w pełni opcjonalne)
+
+**Zasada:** aplikacja musi być użyteczna bez ani jednego wpisu w dzienniku. Nic poniżej nie jest wymagane do działania systemu opisanego w sekcjach 5–12.
+
+### 15.1 Opcjonalny dziennik
+
+Jeśli kiedyś zechcesz go prowadzić, ma być prosty: **data, miejsce, „nic / trochę / dużo”, notatka, ewentualnie punkt znaleziska.** To wszystko — bez formularzy badawczych, bez klasyfikacji stanu owocników, bez śladów presji, bez rejestrowania wysiłku szukania. Rozbudowane pola z wersji 1.0 (stan owocników młode/dojrzałe/stare/robaczywe, ślady presji, warunki szukania w skali 1–3) zostają opisane niżej jako **materiał referencyjny na wypadek, gdyby kiedyś powstała realna potrzeba kalibracji**, nie jako specyfikacja czegoś do zbudowania teraz.
+
+### 15.2 Materiał referencyjny z wersji 1.0 (bez zmian treści, oznaczony jako nieaktywny)
+
+Poniższe punkty opisują, jak wyglądałby pełny schemat zbierania danych do kalibracji modelu, **gdyby** kiedyś powstała ku temu potrzeba i możliwość (np. zmiana trybu użycia na częstszy). Nie jest to plan z terminem.
+
+1. Jednostką obserwacji byłaby *wizyta w wydzieleniu z wysiłkiem*, nie znalezisko — wyprawa (track GPS) cięta na wizyty (wyprawa × wydzielenie); wizyta bez znalezisk to pełnoprawna obserwacja z wynikiem 0.
+2. Zapisywane byłyby wszystkie znalezione gatunki grzybów, nie tylko borowiki, żeby rozdzielić „las nie owocnikuje” od „las owocnikuje, ale nie dla borowika”.
+3. Eksploracja: ok. 15–20% wizyt w miejscach, których model *nie* poleca, żeby uniknąć pętli sprzężenia zwrotnego. Przy 1–3 wyjazdach rocznie oznaczałoby to jeden „marnowany” wyjazd na kilka lat — świadomy koszt, nie coś do egzekwowania teraz.
+4. Modele w kolejności rosnącej złożoności: GLM Poisson/NegBin z offsetem (od ~100 wizyt) → occupancy dynamiczny (od ~2 sezonów) → GAM/LightGBM (od setek wizyt, ≥2 regiony). Przy realnym tempie zbierania danych próg 100 wizyt oznacza dziesiątki lat.
+5. Zasady unikania leakage (czasowego, przestrzennego, historią) i biasu obserwacyjnego pozostają poprawne, gdyby kiedyś dane zaczęto zbierać — nie ma potrzeby ich zmieniać, tylko nie są dziś aktualne.
+
+**Narzędzia terenowe, gdyby dziennik miał kiedyś powstać:** zwykły arkusz albo prosty plik tekstowy wystarczy na start (pole „data, miejsce, nic/trochę/dużo, notatka”); QField/Mergin Maps dopiero, gdyby prowadzenie dziennika stało się rzeczywistą, powtarzającą się praktyką.
+
+---
+
+## 16. Dalsze źródła danych poza zakresem
+
+*(Bez zmian względem wersji 1.0 poza jaśniejszym oddzieleniem od planu wdrożenia — nic poniżej nie jest krokiem w sekcji 13.)*
+
+- Całoroczne archiwizowanie radaru i telemetrii IMGW (sekcja 3.3) — wymaga stale działającej infrastruktury, sprzecznej z zasadą „uruchamiane przed wyjazdem” (sekcja 0).
+- Sentinel i automatyczne wykrywanie zmian drzewostanu (sekcja 3.5).
+- LiDAR, CHM i rozbudowane modelowanie terenu (sekcja 3.6).
+- Własny model bilansu wodnego („wiadro”) per siedlisko (sekcja 3.4) — CWB26 z Open-Meteo już działa jako prostsza wersja tego samego pomysłu.
+- Dodatkowe bazy danych i systemy orkiestracji (Prefect/Dagster) — niepotrzebne bez wielu źródeł wymagających koordynacji w czasie.
+
+**Zasada przywracania:** przywrócenie którejkolwiek z tych funkcji powinno wynikać z konkretnego problemu, którego prostsze rozwiązanie (już zaimplementowane) nie rozwiązuje — nie z tego, że dana funkcja wygląda atrakcyjnie w dokumencie.
+
+---
+
+## 17. Koszty, limity, licencje
+
+*(Bez zmian względem wersji 1.0.)*
 
 | Źródło | Koszt | Limity | Licencja / uwagi |
 |---|---|---|---|
-| BDL (WFS/WMS/OGC API) | 0 | brak publikowanych; grzecznie: 1 równoległe zapytanie, cache | dane publiczne (ustawa o otwartych danych); podawać źródło „Bank Danych o Lasach” |
+| BDL (WFS/WMS/OGC API) | 0 | brak publikowanych; grzecznie: 1 równoległe zapytanie, cache | dane publiczne; podawać źródło „Bank Danych o Lasach” |
 | GUGiK (NMT, NMPT, LiDAR, BDOT10k) | 0 (od 2020) | WCS: wycinki; masowo arkusze | podać źródło |
-| IMGW-PIB | 0 | brak historii w API (samodzielna archiwizacja) | wymagana formuła: „Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy” + informacja o przetworzeniu [?] — sprawdzić dokładne brzmienie w regulaminie |
-| **Open-Meteo** | 0 **niekomercyjnie** | <10 000 wywołań/dobę, <5 000/h, <600/min | CC BY 4.0. **Przy komercjalizacji (reklamy, subskrypcje) potrzebny plan płatny albo własna instancja** (open-source, self-hosted). |
+| IMGW-PIB | 0 | brak historii w API | wymagana formuła atrybucji — sprawdzić dokładne brzmienie w regulaminie, jeśli kiedyś podłączone |
+| **Open-Meteo** | 0 **niekomercyjnie** | <10 000 wywołań/dobę, <5 000/h, <600/min | CC BY 4.0. Przy komercjalizacji potrzebny plan płatny albo self-hosted. Nieaktualne dla aplikacji prywatnej, ale zapisane na przyszłość. |
 | Copernicus (CLMS, CDSE, ERA5) | 0 | CDSE: Sentinel Hub 10 000 PU/mies., openEO 10 000 kredytów/mies. | pełny i otwarty dostęp; atrybucja |
 | Earth Search / Planetary Computer | 0 | fair use | dane Sentinel otwarte |
-| OSM | 0 | Overpass: nie masowo, lepiej Geofabrik PBF | **ODbL: jeśli publikujesz bazę pochodną, obowiązuje share-alike** |
-| GBIF / iNaturalist | 0 | API: rozsądnie | licencje per rekord, **część CC BY-NC** (wyklucza użycie komercyjne) |
+| OSM (Overpass) | 0 | nie masowo, lepiej Geofabrik PBF przy dużej skali | **ODbL: jeśli publikujesz bazę pochodną, obowiązuje share-alike** — nieaktualne dla prywatnej aplikacji |
+| GBIF / iNaturalist | 0 | API: rozsądnie | licencje per rekord, część CC BY-NC |
 | GDOŚ | 0 | | dane publiczne |
-| Hosting | 0 (lokalnie / static hosting) → ~20–50 zł/mies. (VPS z PostGIS w fazie 4+) | | |
-| Mapa podkładowa | 0 (OSM tiles tylko do lekkiego użytku; lepiej OpenFreeMap / własne PMTiles Protomaps) | tile.openstreetmap.org ma politykę fair use | |
+| Hosting | 0 (statyczny hosting: Cloudflare Pages / GitHub Pages) | | wystarcza dla prywatnej, jednoosobowej aplikacji — patrz sekcja 7.2 |
+| Mapa podkładowa | 0 (OpenFreeMap / własne PMTiles Protomaps) | | |
 
-**Ryzyko prawne i etyczne:** publiczna strona z „najlepszymi miejscami na prawdziwki” może zwiększyć presję na konkretne wydzielenia i konflikty z lokalnymi. **Rekomendacja:** aplikacja prywatna. Jeśli kiedyś publiczna, to z generalizacją wyników (np. oddział zamiast wydzielenia), bez udostępniania obserwacji innych użytkowników i z wyraźną informacją o zasadach zbioru.
+**Ryzyko prawne i etyczne (bez zmian):** publiczna strona z „najlepszymi miejscami na prawdziwki” może zwiększyć presję na konkretne wydzielenia. **Aplikacja pozostaje prywatna.**
 
 ---
 
-# PODSUMOWANIE W WYMAGANYM FORMACIE
+## 18. Technologie
 
-## 1. Rekomendowana architektura systemu
+| Warstwa | Stan | Uwagi |
+|---|---|---|
+| Język / env | **[K]** Python 3.12, `uv` | |
+| GIS | **[K]** GeoPandas, Shapely 2, pyogrio, pyproj, scipy | Rasterio/rioxarray/xarray niepotrzebne bez NMT/S2 (sekcja 3.5–3.6) |
+| Przechowywanie | **[K]** GeoParquet (`cache/`) | DuckDB spatial nie jest dziś używane bezpośrednio mimo wzmianki w architekturze wersji 1.0 — GeoPandas wystarcza na obecną skalę (jeden kafel na uruchomienie) |
+| Pogoda | **[K]** `openmeteo-requests`, `requests-cache`, `retry-requests` | |
+| OSM | **[K]** `requests` + ręczne zapytanie Overpass (nie `pyrosm`/`osmium`) | wystarczające dla parkingów/dróg/miejscowości; routing dla top-N (priorytet 3, sekcja 13) będzie wymagał dodatkowej biblioteki grafowej lub lekkiego własnego grafu z odpowiedzi Overpass |
+| Kafle | Nie zaimplementowane | `tippecanoe` → PMTiles, priorytet dopiero po frontendzie (sekcja 12, 13) |
+| Frontend | Nie zaimplementowane | Vite + TypeScript + MapLibre GL JS + `pmtiles`, priorytet 4 (sekcja 13) |
+| Backend | Brak (zgodnie z zasadą, sekcja 7.1) | |
+| Orkiestracja | Brak (niepotrzebna, sekcja 0/7.2) | |
+| Jakość | **[K]** `pytest` (144 testy), `responses` do mockowania HTTP w testach | `pandera` wymieniane w wersji 1.0, nie znaleziono w zależnościach — do usunięcia z listy lub dodania, jeśli faktycznie potrzebne |
 
-```
-┌───────────────────────── INGEST (Python, cron 1×/dobę + 1×/rok) ─────────────────────────┐
-│ BDL WFS ─┐   GDOŚ ─┐   OSM PBF ─┐   Open-Meteo ─┐   GBIF ─┐   [F3: IMGW radar/telemetria, │
-│          ▼         ▼            ▼               ▼         ▼        S2 STAC, NMT WCS]        │
-│    cache kaflowy EPSG:2180 10×10 km: GeoParquet (wektory), COG (rastry), Parquet (pogoda)   │
-└──────────────────────────────────────────┬───────────────────────────────────────────────┘
-                                           ▼
-┌──────────────────── FEATURES (DuckDB spatial + GeoPandas/Rasterio) ──────────────────────┐
-│ stand_static (H-cechy) · weather_cell_daily (okna, percentyle) · access (P, A)           │
-└──────────────────────────────────────────┬───────────────────────────────────────────────┘
-                                           ▼
-┌──────────────────── SCORING (profil gatunku YAML) ───────────────────────────────────────┐
-│ maska → H → F (+modulacja wilgotnością) → P → R · confidence · wyjaśnienia               │
-└──────────────┬─────────────────────────────────────────────┬─────────────────────────────┘
-               ▼                                             ▼
-  stands.pmtiles (geometrie, rzadko)            scores/2026-09-23.json (codziennie)
-               └──────────────► Frontend: Vite + TS + MapLibre GL (feature-state) ◄───────┘
-Faza 4+: PostGIS (obserwacje) + FastAPI + PWA/QField  ·  Faza 5: model ML zastępuje blok SCORING
-```
+---
 
-## 2. Tabela źródeł danych
+## 19. Schemat bazy danych (opcjonalny, dopiero jeśli powstanie warstwa obserwacji)
 
-| # | Źródło | Dane | Rozdz. przestrz. | Rozdz. czas. | Dostęp | Faza | Wartość |
-|---|---|---|---|---|---|---|---|
-| 1 | **BDL WFS / OGC API** | wydzielenia: siedlisko, gat. panujący, udział, wiek, typ pow. | wydzielenie | roczna | WFS GeoServer, BBOX, GeoJSON [Z] | MVP | ★★★★★ |
-| 2 | BDL LMN / pełny opis taksacyjny | skład gatunkowy, zwarcie, bonitacja, gleba, piętra | wydzielenie | roczna | wniosek | 3 | ★★★★ |
-| 3 | BDL WMS zakazy wstępu | okresowe zakazy | poligon | dzienna | WMS [Z] | MVP | ★★★★ (maska) |
-| 4 | BDL WFS turystyczny / dojazdy pożarowe | parkingi leśne, drogi pożarowe | punkt/linia | roczna | WFS [Z] | 2 | ★★★ |
-| 5 | GDOŚ | rezerwaty, parki narodowe, N2000 | poligon | rzadko | WMS/WFS | MVP | ★★★★ (maska) |
-| 6 | **Open-Meteo** | opad, T, Tmin, ET0, VPD, wilgotność gleby, prognoza | 2–9 km | godz. | REST [Z] | MVP | ★★★★★ |
-| 7 | IMGW telemetria API | opad 10-min (699 stacji), T | punkt | 10 min, tylko bieżące | REST [Z] | 3 | ★★★★ |
-| 8 | IMGW radar COMPO_PAC/SRI | opad | ~1 km | 5–10 min, tylko bieżące | HDF5 [Z] | 3 | ★★★★ (burze) |
-| 9 | IMGW archiwum dobowe | opad/klimat/synop | punkt | dobowa, z opóźnieniem | CSV [Z] | 5 | ★★★ (kalibracja) |
-| 10 | IMGW COSMO 2,8 km | prognoza | 2,8 km | 6 h | GRIB [Z] | 6 | ★★ |
-| 11 | ERA5-Land (CDS / Open-Meteo) | klimatologia percentyli | 9 km | godz. | API | MVP (via 6) | ★★★ |
-| 12 | CLMS SWI / SSM 1 km | wilgotność gleby | 1 km | dobowa | CLMS/CDSE [Z] | 3 | ★★ (słaby pod lasem) |
-| 13 | Sentinel-2 L2A | NDVI/NDMI, detekcja zmian | 10–20 m | 5 dni (chmury) | STAC Earth Search / CDSE | 3 | ★★★ (maska zmian) |
-| 14 | Hansen GFW / EU disturbance map | zaburzenia lasu | 30 m | roczna | pobranie | 3 (alternatywa dla 13) | ★★ |
-| 15 | GUGiK NMT | wysokość, TWI, TPI, ekspozycja | 1/5 m | statyczne | WCS / arkusze | 3 | ★★ (niziny) / ★★★ (góry) |
-| 16 | GUGiK NMPT / LiDAR | CHM, zwarcie | 1 m | kampanie | arkusze LAZ | 6 | ★★ |
-| 17 | **OSM (Geofabrik)** | drogi, parkingi, ścieżki, miejscowości | wektor | ciągła | PBF | MVP | ★★★ |
-| 18 | BDOT10k | pełna sieć dróg | wektor | roczna | GUGiK | 3 | ★★ |
-| 19 | Siatka ludności 1 km | popyt (presja) | 1 km | 10 lat | Eurostat/GUS | MVP (opc.) | ★★ |
-| 20 | **GBIF / iNat** | fenologia | region | — | API [Z] | MVP (tylko daty) | ★★ |
-| 21 | SoilGrids | pH, piasek, C | 250 m | stat. | WCS | **pomijamy** | ★ |
-| 22 | GPM IMERG, H SAF, LST | | 5–25 km | | | **pomijamy** | ★ |
-| 23 | Strava heatmap | ruch ludzi | | | **zakazane regulaminem** | **nie** | — |
-
-## 3. Rekomendowane zmienne modelu
-
-**MVP (11):** `species_cd`, `part_cd`, `site_type` → (żyzność, wilgotność `m`), `spec_age`, `area_type` · `P26w_pct`, `CWB26_pct`, `SM_9_27_pct`, `Tmean20`, `Tmean5`+`P5` (kara upałowa), `Tmin3` (przymrozek) · `doy` (G_season) · `d_parking`, `Demand` · maska prawna.
-
-**Faza 3 (+):** pełny skład gatunkowy, zwarcie, bonitacja, typ gleby, TWI (mediana, udział > p75), TPI, ekspozycja (tylko teren urozmaicony), S2 change flag, bucket-model soil water, opad radarowy 1 km, dni od opadu ≥10 mm, długość okresu suchego.
-
-**Faza 5 (ML, kandydaci, wybór przez CV):** powyższe + interakcje (m × pct_M), wysiłek (offset), warunki szukania (detekcja), inne gatunki grzybów znalezione tego dnia (wskaźnik „las owocnikuje”), fenologia regionalna.
-
-**Świadomie odrzucone:** LST, LAI, NDVI tygodniowe, SoilGrids pH, VPD (poza ewentualną detekcją), wiele skorelowanych okien opadowych naraz (jedno okno ważone zamiast 6 sum).
-
-## 4. Scoring MVP (skrót)
-
-```
-MASK = legal ∧ area_type=='D-STAN' ∧ host_ok ∧ age≥12
-H    = S_host^0.40 · S_site^0.35 · S_age^0.25
-F    = G_season · M^0.6 · T^0.4 · K_frost,  następnie F_loc = F · mod(m, pct_M)
-       M = logistic((mean(pct_CWB26, pct_SM) − 0.35)/0.10)
-       T = exp(−(Tmean20 − 13)²/32) · (0.3 jeśli Tmean5>17.5 ∧ P5<5 mm)
-P    = 1 − exp(−k · Demand_norm · exp(−d_parking/800 m))
-R    = 100 · MASK · H · F_loc · (1 − α·P),  α=0.3 (suwak)
-```
-
-Wszystkie liczby oznaczone jako [E] to priory. Kalibrować w kolejności: M (punkt przegięcia), modulacja `m`, S_site, S_age.
-
-## 5. Diagram przepływu danych
-
-```mermaid
-flowchart LR
-  subgraph Yearly[Rocznie / kwartalnie]
-    BDL[BDL WFS<br/>wydzielenia] --> TC[(Cache kaflowy<br/>GeoParquet/COG)]
-    GDOS[GDOŚ<br/>rezerwaty, PN] --> TC
-    OSM[OSM PBF / BDOT10k] --> TC
-    POP[Siatka ludności] --> TC
-    GBIF[GBIF daty] --> PHEN[Fenologia G_season]
-    NMT[NMT 5 m - F3] --> TC
-    S2[Sentinel-2 STAC - F3] --> CHG[Detekcja zmian]
-  end
-  subgraph Daily[Codziennie]
-    OM[Open-Meteo<br/>archiwum + prognoza] --> WX[(weather_cell_daily)]
-    CLIM[ERA5-Land klimatologia] --> PCT[Percentyle]
-    WX --> PCT
-    ZAK[BDL zakazy wstępu WMS] --> MASK
-    RAD[IMGW radar/telemetria - F3<br/>poller 10 min] --> WX
-  end
-  TC --> STAT[stand_static<br/>H-cechy, P, A]
-  CHG --> STAT
-  STAT --> MASK[Maska]
-  STAT --> H[Habitat H]
-  PCT --> F[Fruiting F]
-  PHEN --> F
-  STAT -->|klasa wilgotności m| F
-  MASK --> R[Ranking R + confidence + wyjaśnienia]
-  H --> R
-  F --> R
-  STAT --> R
-  R --> JSON[scores_DATA.json]
-  STAT --> PMT[stands.pmtiles]
-  JSON --> UI[MapLibre UI]
-  PMT --> UI
-  UI -->|F4: wizyty, znaleziska, zera| OBS[(PostGIS obserwacje)]
-  OBS -->|F5| ML[Occupancy / GLM / LightGBM<br/>spatial-temporal CV]
-  ML --> R
-```
-
-## 6. Schemat bazy danych (PostGIS; w MVP te same tabele jako GeoParquet/DuckDB)
+Poniższy schemat SQL jest materiałem referencyjnym z wersji 1.0 na wypadek, gdyby kiedyś powstała potrzeba PostGIS (sekcja 15/16) — **w obecnym zakresie dane żyją jako GeoParquet + JSON w `cache/` i `notebooks/output/`, bez bazy danych.**
 
 ```sql
 -- ===== referencyjne / wersjonowanie =====
 CREATE TABLE data_source (
-  source_id     text PRIMARY KEY,         -- 'bdl_wfs', 'open_meteo', ...
-  version       text NOT NULL,            -- np. '2026' albo data pobrania
+  source_id     text PRIMARY KEY,
+  version       text NOT NULL,
   fetched_at    timestamptz NOT NULL,
-  spatial_res_m int,                      -- do disclosure w UI
+  spatial_res_m int,
   licence       text,
   attribution   text
 );
 
 CREATE TABLE tile (
-  tile_id  text PRIMARY KEY,              -- 'E300N580' (lewy dolny róg w km, EPSG:2180)
+  tile_id  text PRIMARY KEY,
   geom     geometry(Polygon, 2180) NOT NULL
 );
 
 -- ===== las =====
 CREATE TABLE stand (
-  stand_id     text PRIMARY KEY,          -- adr_for + '@' + a_year
+  stand_id     text PRIMARY KEY,
   adr_for      text NOT NULL,
   a_year       int  NOT NULL,
   nadl_name    text,
   area_type    text,
   site_type    text,
-  fertility    text,                      -- B/BM/LM/L/OL (parsowane)
-  moisture_cls smallint,                  -- 0 suche,1 świeże,2 wilgotne,3 bagienne
+  fertility    text,
+  moisture_cls smallint,
   species_cd   text,
-  part_cd      smallint,                  -- udział gat. panującego (dziesiąte)
+  part_cd      smallint,
   spec_age     int,
   stand_stru   text,
   prot_categ   text,
@@ -775,7 +773,7 @@ CREATE TABLE stand (
 );
 CREATE INDEX ON stand USING gist (geom);
 
-CREATE TABLE stand_species (               -- faza 3 (LMN); w MVP puste
+CREATE TABLE stand_species (
   stand_id text REFERENCES stand, storey text, species_cd text,
   share_tenths smallint, age int, height_m numeric,
   PRIMARY KEY (stand_id, storey, species_cd)
@@ -786,11 +784,21 @@ CREATE TABLE stand_static_features (
   s_host numeric, s_site numeric, s_age numeric, h_score numeric,
   legal_mask      boolean, mask_reason text,
   d_parking_m     int, d_road_m int, demand_idx numeric, p_score numeric,
-  twi_median numeric, twi_p75_share numeric, slope_deg numeric, aspect_deg numeric, -- F3
-  s2_change_flag  boolean, s2_change_year int,                                        -- F3
+  region_id       text,                                                     -- nowość: przynależność do rejonu
+  entrance_status text,                                                     -- nowość: 'confirmed' / 'potential'
+  twi_median numeric, twi_p75_share numeric, slope_deg numeric, aspect_deg numeric,
+  s2_change_flag  boolean, s2_change_year int,
   weather_cell_id text,
   data_quality    numeric,
   computed_at     timestamptz
+);
+
+CREATE TABLE region (                                                        -- nowość, sekcja 5.6
+  region_id text PRIMARY KEY, day date, profile text,
+  geom geometry(MultiPolygon, 2180) NOT NULL,
+  rank_score numeric,                                                        -- mediana top-N wydzieleń, nie suma
+  start_point geometry(Point, 4326), start_point_status text,               -- 'confirmed' / 'estimated'
+  access_note text, confidence text
 );
 
 -- ===== pogoda =====
@@ -805,7 +813,7 @@ CREATE TABLE weather_daily (
   is_forecast boolean, source text,
   PRIMARY KEY (cell_id, day, source)
 );
-CREATE TABLE weather_features (            -- okna right-aligned, liczone „na dzień”
+CREATE TABLE weather_features (
   cell_id text, day date,
   p1 numeric, p3 numeric, p7 numeric, p14 numeric, p21 numeric, p30 numeric,
   p26w numeric, cwb26 numeric, tmean5 numeric, tmean20 numeric, tmin3 numeric,
@@ -816,143 +824,45 @@ CREATE TABLE weather_features (            -- okna right-aligned, liczone „na 
 
 -- ===== wyniki =====
 CREATE TABLE score_daily (
-  stand_id text, day date, profile text,   -- 'boletus_edulis_grp'
+  stand_id text, day date, profile text,
   h numeric, f numeric, f_loc numeric, p numeric, r numeric,
   f_class smallint, rank_pct numeric,
   confidence text, confidence_reasons jsonb,
-  explanation jsonb,                       -- [{factor, contribution, text}]
+  explanation jsonb,
   model_version text,
   PRIMARY KEY (stand_id, day, profile)
 );
 
--- ===== obserwacje terenowe (faza 4) =====
+-- ===== obserwacje terenowe (opcjonalne, sekcja 15) =====
 CREATE TABLE trip (
   trip_id uuid PRIMARY KEY, observer text, start_ts timestamptz, end_ts timestamptz,
   track geometry(LineStringZ, 4326),
-  searchers int, search_intensity smallint,  -- 1..3
-  is_exploration boolean,                    -- wizyta „losowa” spoza rekomendacji
   notes text
 );
-CREATE TABLE visit (                         -- trip × wydzielenie (wyliczane z tracku)
+CREATE TABLE visit (
   visit_id uuid PRIMARY KEY, trip_id uuid REFERENCES trip, stand_id text,
-  minutes_inside numeric, track_len_m numeric,
-  ground_visibility smallint,                -- mech/borówka/liście 1..3
-  pressure_signs smallint, people_met int,   -- walidacja P
-  other_fungi_present boolean,
-  -- snapshot predykcji w chwili wizyty (do oceny modelu, NIE jako cecha):
-  pred_r numeric, pred_model_version text
-);
-CREATE TABLE find (
-  find_id uuid PRIMARY KEY, visit_id uuid REFERENCES visit,
-  ts timestamptz, geom geometry(Point, 4326), gps_acc_m numeric,
-  species text, count int, stage text,       -- 'young','mature','old','wormy'
-  photo_uri text
+  result text,                                                              -- 'nic' / 'trochę' / 'dużo' (sekcja 15.1)
+  notes text,
+  find_point geometry(Point, 4326)
 );
 ```
 
-## 7. Strategia cache
+---
 
-- **Klucz:** `(layer, version, tile_id)`; kafle 10×10 km EPSG:2180 z buforem 200 m dla pochodnych NMT.
-- **Warstwy statyczne i półstatyczne:** pliki w `cache/`, unieważniane przez zmianę `version` (np. `a_year` BDL, data kampanii NMT). Region domowy (~64 kafle) prefetch.
-- **Pogoda:** siatka ~5 km na cały aktywny obszar, jeden plik Parquet na dzień, archiwum rośnie o kilka kB na dzień. Klimatologia percentyli liczona raz i trzymana per komórka × dzień roku.
-- **Radar IMGW (F3):** poller → surowe HDF5 kasowane po agregacji dobowej wyciętej do obszaru.
-- **Frontend:** `stands.pmtiles` (przebudowa tylko przy nowym BDL) + dzienne `scores_*.json` (~1–3 MB dla 25 tys. wydzieleń, gzip ~300 kB). Kolory przez `feature-state`.
-- **Wyniki:** `score_daily` trzymane wszystkie, bo to materiał do oceny modelu wstecz.
+## 20. Największe ryzyka
 
-## 8. Optymalny promień / definicja obszaru
-
-**Obszar = zbiór kafli 10×10 km (EPSG:2180) przecinających okrąg o promieniu R wokół punktu. Domyślnie R = 25 km, suwak 10–50 km. Region domowy ~80×80 km prekomputowany.** Promień to filtr widoku, a nie jednostka przetwarzania. W fazie 3 opcjonalna izochrona dojazdu 30/45 min zamiast okręgu. Przy przesuwaniu mapy poza region: dociąganie kafli on-demand, na kilka sekund na kafel, bo BDL i pogoda są lekkie.
-
-## 9. Plan implementacji krok po kroku
-
-**Faza 1 (PoC)**
-1. Repo w `Grzyby/`: `pyproject.toml` (uv), struktura `pipeline/`, `profiles/boletus_edulis.yaml`, `notebooks/`.
-2. `fetch_bdl(tile)`: WFS GetFeature z BBOX (uwaga na kolejność osi), stronicowanie, zapis GeoParquet. Test na 1 kaflu.
-3. Parser `site_type` → (żyzność, wilgotność). Tabele powinowactwa z YAML.
-4. `fetch_weather(points, days=92)`: Open-Meteo (`past_days`, daily + hourly soil moisture). Siatka co ~5 km.
-5. Klimatologia: Open-Meteo archive (ERA5-Land) 1991–2020 dla tych samych punktów, percentyle per dzień roku ±15 dni.
-6. Obliczenie H, F, R; mapa w `lonboard` / `folium`.
-7. **Walidacja jakościowa:** zaznacz 10–20 miejsc, gdzie wiesz, że rosną prawdziwki, i 10 miejsc, gdzie wiesz, że nie. Sprawdź ich pozycję w rankingu. Jeśli znane dobre miejsca nie są w górnych 30%, popraw S_site/S_host, zanim pójdziesz dalej.
-
-**Faza 2 (MVP)**
-8. Maska: GDOŚ (rezerwaty, PN), uprawy (wiek < 12), zakazy wstępu (WMS: GetFeatureInfo dla top-N).
-9. OSM: parkingi i drogi (pyrosm / osmium), odległości (w MVP euklidesowe), Demand z siatki ludności.
-10. Confidence i wyjaśnienia (log-wkłady + szablony).
-11. Eksport: `tippecanoe` → `stands.pmtiles`; `scores_{date}.json`.
-12. Frontend: Vite + TS + MapLibre + pmtiles; panel, filtry, suwak α, baner regionalny, oś czasu (−14 d … +3 d).
-13. Harmonogram: Windows Task Scheduler (lub GitHub Actions) o 06:00.
-14. Używać przez sezon i notować ręcznie wizyty (nawet w arkuszu), bo to początek danych.
-
-**Faza 3 (automatyzacja + lepsze dane)**
-15. Poller IMGW (radar PAC + telemetria) → archiwum.
-16. Model wiadra per komórka × klasa `m`.
-17. Sentinel-2: kompozyty NBR/NDMI VI–VIII per rok, różnica rok do roku → flaga zmiany.
-18. NMT 5 m → TWI, TPI, ekspozycja; agregaty per wydzielenie.
-19. Wniosek o LMN z pełnymi opisami taksacyjnymi → `stand_species`.
-
-**Faza 4 (obserwacje)**
-20. PostGIS + schemat `trip/visit/find`; projekt QField/Mergin z formularzem.
-21. Skrypt: track GPX → wizyty (przecięcie z wydzieleniami, czas wewnątrz).
-22. Protokół eksploracji (15–20% wizyt w losowych wydzieleniach z niższych klas).
-
-**Faza 5 (ML)**
-23. GLM NegBin z offsetem → kalibracja wag MVP.
-24. Dynamiczny model occupancy (H → ψ, F → p) → porównanie w spatial-temporal CV.
-25. LightGBM z monotonic constraints jako challenger; SHAP → wyjaśnienia.
-26. W UI: kalibrowane prawdopodobieństwo i confidence z CV.
-
-**Faza 6:** prognoza ensemble na 7–10 dni, inne gatunki, mikrokomórki w górach, CHM.
-
-## 10. Konkretne technologie
-
-| Warstwa | MVP | Później |
-|---|---|---|
-| Język / env | Python 3.12, `uv` | — |
-| GIS | GeoPandas, Shapely 2, pyogrio, Rasterio, `rioxarray`, `xarray` | WhiteboxTools / `pysheds` (TWI), `richdem` |
-| Przechowywanie | **GeoParquet + DuckDB (spatial)** | PostgreSQL 16 + PostGIS 3 |
-| Pogoda | `openmeteo-requests` (+ `requests-cache`) | `h5py` (radar IMGW), `cdsapi` |
-| Satelita | — | `pystac-client`, `odc-stac` / `stackstac` |
-| OSM | `pyrosm` lub `osmium` | Valhalla / openrouteservice (izochrony) |
-| Kafle | `tippecanoe` → **PMTiles** | — |
-| Frontend | **Vite + TypeScript + MapLibre GL JS + `pmtiles`** | PWA (Workbox), offline |
-| Backend | brak (pliki statyczne) | FastAPI |
-| Orkiestracja | Task Scheduler / GitHub Actions cron | Prefect |
-| Teren (zbiór danych) | arkusz + GPX | QField / Mergin Maps |
-| ML | — | `statsmodels`, `pyGAM`, `LightGBM`, `shap`, `PyMC` lub R `unmarked`/`spOccupancy`, `scikit-learn` (GroupKFold) |
-| Jakość | `pytest`, `pandera` (walidacja schematów danych) | Great Expectations (jeśli potrzebne) |
-
-## 11. Największe ryzyka
-
-1. **Model fruiting po prostu się myli.** Wiedza o krótkoterminowych wyzwalaczach *B. edulis* jest słaba [L1]. *Mitygacja:* klasy zamiast liczb, baner regionalny, szybka kalibracja na własnych danych, jawne „nieskalibrowany”.
-2. **Priory siedliskowe nie pasują do Twojego regionu** (np. w Twojej okolicy najlepsze są młode świerczyny, a nie stare bory). *Mitygacja:* walidacja na znanych miejscach w fazie 1, zanim zbudujesz resztę.
-3. **Bias własnych danych** (chodzisz tam, gdzie poleca model). *Mitygacja:* eksploracja 15–20%, rejestr wysiłku, modele detection/occupancy.
-4. **Za mało danych do ML** (jedna osoba zbiera ok. 50–150 wizyt na sezon). *Mitygacja:* proste modele (GLM, occupancy) zamiast boosting; 2–3 sezony, zanim LightGBM ma sens.
-5. **Opad konwekcyjny poza modelem 2–9 km.** *Mitygacja:* radar IMGW z własnym archiwum (faza 3), confidence obniżony przy dużej zmienności.
-6. **Zmiany drzewostanu od ostatniej aktualizacji BDL** (zręby, kornik). *Mitygacja:* detekcja S2 (faza 3), a do tego czasu flaga w UI.
-7. **Zmiana API** (BDL, IMGW i Open-Meteo zmieniają endpointy). *Mitygacja:* warstwa adapterów, testy kontraktowe, cache pozwalający działać offline na starych danych.
-8. **Prawo i etyka:** polecanie terenów objętych zakazem; publikacja miejsc. *Mitygacja:* maska obowiązkowa, aplikacja prywatna.
-9. **Licencje przy komercjalizacji:** Open-Meteo (tylko niekomercyjnie), iNat CC BY-NC, OSM ODbL share-alike.
-10. **Scope creep:** 23 źródła kuszą. *Mitygacja:* MVP = 6 źródeł, żadnej nowej warstwy bez dowodu (CV albo walidacja terenowa), że poprawia ranking.
-
-## 12. Celowo pominięte w pierwszej wersji
-
-- **Siatka 10–50 m i heatmapa** (fałszywa precyzja); zamiast nich wielokąty wydzieleń.
-- **Sentinel-1 i własne przetwarzanie wilgotności z SAR** (słabe pod lasem, duży koszt).
-- **CLMS SWI** (MVP bierze wilgotność z modelu; SWI jako tło w fazie 3).
-- **NDVI/NDMI jako predyktor owocnikowania** (użyte tylko do detekcji zmian, w fazie 3).
-- **LST, LAI, VPD, SoilGrids pH / tekstura, GPM IMERG, H SAF.**
-- **NMT i pochodne terenowe** na nizinach (faza 3, a w górach wcześniej, jeśli to Twój region).
-- **Machine learning** do czasu ≥1–2 sezonów własnych danych.
-- **GBIF/iNat jako dane lokalizacyjne** (tylko fenologia).
-- **Scraping czegokolwiek** (popupy BDL, Strava, fora).
-- **Konta użytkowników, crowdsourcing, aplikacja natywna.**
-- **Sześć skorelowanych okien opadowych jako osobne cechy** (jedno okno ważone + percentyle; reszta tylko do wyświetlania).
-- **Izochrony dojazdu i routing pieszy** (w MVP odległości euklidesowe ×1,3).
-- **Pełna historia zabiegów leśnych** (brak w publicznych danych; S2 change ją przybliża).
+1. **Model fruiting po prostu się myli.** Wiedza o krótkoterminowych wyzwalaczach *B. edulis* jest słaba [L1]. *Mitygacja:* klasy zamiast liczb, baner regionalny, jawne „nieskalibrowany” (sekcja 11).
+2. **Priory siedliskowe nie pasują do Twojego regionu.** *Mitygacja:* techniczna weryfikacja poprawności danych i rankingu przy pierwszych wyjazdach (sekcja 11 pkt 2), bez złudzeń, że to potwierdza skuteczność.
+3. **Za mało danych, żeby kiedykolwiek skalibrować model.** *Mitygacja:* zaakceptowane wprost jako trwały stan rzeczy (sekcja 15), nie problem do rozwiązania.
+4. **Zmiany drzewostanu od ostatniej aktualizacji BDL** (zręby, kornik) niewykrywane bez S2 (poza zakresem). *Mitygacja:* jawna informacja o roku danych BDL w UI (sekcja 8.3 priorytet 9).
+5. **Zmiana API** (BDL, IMGW, Open-Meteo, Overpass zmieniają endpointy). *Mitygacja:* warstwa adapterów już istnieje (`pipeline/*.py` z `call_api` jako punkt wstrzyknięcia), testy z mockami HTTP.
+6. **Prawo i etyka:** polecanie terenów objętych zakazem. *Mitygacja:* maska obowiązkowa z fail-loud (sekcja 5.2), aplikacja prywatna.
+7. **Scope creep:** wiele źródeł kusi. *Mitygacja:* sekcja 13 ma priorytety 1–8 i jawnie odkłada resztę (sekcja 14, 16, 17); żadna nowa warstwa bez konkretnego problemu, którego istniejące rozwiązanie nie rozwiązuje.
+8. **Nowość — presja jako dominujący czynnik rankingu**, jeśli rozbudowa dostępności (priorytet 3) źle dobierze wagi. *Mitygacja:* sprawdzenie rozkładu P na realnych danych przed wdrożeniem, tak jak już raz zrobiono przy `track` w `pipeline/osm.py` (sekcja 5.5.2).
 
 ---
 
-## Źródła (zweryfikowane w tej sesji)
+## Źródła (zweryfikowane w poprzednich sesjach)
 
 - BDL — usługi OGC: https://www.bdl.lasy.gov.pl/portal/uslugi-ogc · WFS: https://wfs.bdl.lasy.gov.pl/geoserver/BDL/ows · OGC API: https://ogcapi.bdl.lasy.gov.pl
 - IMGW-PIB dane publiczne: https://danepubliczne.imgw.pl/ (API `/api/data/synop`, `/api/data/meteo`, `/api/data/product`), regulamin: https://danepubliczne.imgw.pl/regulations
