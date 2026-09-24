@@ -4,7 +4,10 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
 
-from pipeline.export import build_score_record, write_scores_json, export_stand_geometries
+from pipeline.export import (
+    build_score_record, write_scores_json, export_stand_geometries,
+    build_region_record, write_regions_json,
+)
 
 
 def _enriched_stands():
@@ -71,3 +74,40 @@ def test_export_stand_geometries_round_trips(tmp_path):
     assert len(reloaded) == 2
     assert "stand_id" in reloaded.columns
     assert "geometry" in reloaded.columns
+
+
+def _regions():
+    return gpd.GeoDataFrame({
+        "region_id": ["region_1"],
+        "rank_score": [42.5],
+        "stand_count": [3],
+        "stand_ids": [["A", "B", "C"]],
+    }, geometry=[box(380000, 486000, 380300, 486100)], crs="EPSG:2180")
+
+
+def test_build_region_record_shape():
+    row = _regions().iloc[0]
+    record = build_region_record(row, day="2026-09-24")
+    assert record == {
+        "region_id": "region_1", "rank_score": 42.5, "stand_count": 3,
+        "stand_ids": ["A", "B", "C"], "day": "2026-09-24",
+    }
+
+
+def test_write_regions_json_writes_one_record_per_region(tmp_path):
+    out_path = write_regions_json(_regions(), day="2026-09-24", out_path=tmp_path / "regions_2026-09-24.json")
+    assert out_path.exists()
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    assert data == [{
+        "region_id": "region_1", "rank_score": 42.5, "stand_count": 3,
+        "stand_ids": ["A", "B", "C"], "day": "2026-09-24",
+    }]
+
+
+def test_write_regions_json_handles_empty_regions(tmp_path):
+    empty = gpd.GeoDataFrame(
+        {"region_id": [], "rank_score": [], "stand_count": [], "stand_ids": []},
+        geometry=[], crs="EPSG:2180",
+    )
+    out_path = write_regions_json(empty, day="2026-09-24", out_path=tmp_path / "regions.json")
+    assert json.loads(out_path.read_text(encoding="utf-8")) == []

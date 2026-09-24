@@ -47,3 +47,27 @@ def export_stand_geometries(stands: gpd.GeoDataFrame, out_path) -> pathlib.Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     stands[["stand_id", "geometry"]].to_parquet(out_path)
     return out_path
+
+
+REGION_FIELDS = ["region_id", "rank_score", "stand_count", "stand_ids"]
+
+
+def build_region_record(row, day: str) -> dict:
+    """Matches spec §7.2's regions_{date}.json: the rejony list that becomes
+    the application's main output, alongside the existing scores_{date}.json
+    detail view."""
+    record = {field: _json_safe(row[field]) for field in REGION_FIELDS}
+    record["region_id"] = str(record["region_id"])
+    record["rank_score"] = _json_safe(float(row["rank_score"]))
+    record["stand_count"] = int(row["stand_count"])
+    record["stand_ids"] = list(row["stand_ids"])
+    record["day"] = day
+    return record
+
+
+def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    records = [build_region_record(row, day) for _, row in regions.iterrows()]
+    out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return out_path
