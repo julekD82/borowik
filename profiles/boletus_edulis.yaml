@@ -95,9 +95,13 @@ osm:
   # Lasy Panstwowe forests) is deliberately excluded: including it made
   # d_park (and so P's accessibility term) nearly constant across a tile,
   # found reviewing a real Faza 2 run (median P ~0.73 across 721 stands).
-  # [E] way distance is still approximated by Overpass "out center" (a way's
-  # bounding-box centroid, not the point nearest the stand) rather than true
-  # point-to-line distance -- accepted simplification, not fixed here.
+  # Accessibility plan Task 1 changed the Overpass fetch from `out center`
+  # (a way's bounding-box centroid) to full LineString geometry, so this
+  # euclidean d_park estimate is now true point-to-line distance, not the
+  # centroid approximation this comment used to describe -- final review
+  # noted the resulting baseline shift (median euclidean d_park on a real
+  # tile: ~610m -> ~483m) is a real accuracy improvement, not a scope
+  # change: still paved-only, still the same euclid_factor correction.
   road_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential"]
   # "path"/"footway"/"bridleway" deliberately excluded: verified live
   # 2026-09-24 that adding "path" alone made the Overpass query for a real

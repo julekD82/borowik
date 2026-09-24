@@ -2,14 +2,27 @@ import geopandas as gpd
 from shapely.ops import unary_union
 
 
-def compute_forest_boundary(stands: gpd.GeoDataFrame):
+def compute_forest_boundary(stands: gpd.GeoDataFrame, closing_m: float = 40.0):
     """Union of every D-STAN (actual forest stand) geometry in the tile --
     not just mask_full-passing ones, so a young plantation or a reserve
-    doesn't fabricate a fake entrance at its own inner edge (spec §5.5.2)."""
+    doesn't fabricate a fake entrance at its own inner edge (spec §5.5.2).
+
+    Applies a morphological closing (buffer out, then back in by the same
+    distance) before returning: D-STAN stands are commonly fragmented
+    *inside* a single real forest by narrow non-forest strips (power-line
+    corridors, clear-cuts, forest-road strips) that BDL classifies with a
+    different area_type. Without closing, a track crossing one of these
+    internal gaps registers as a fake "entrance" deep inside the forest --
+    final review finding on real data: 45% of detected entrances were such
+    interior crossings, not real edges. Closing fills gaps narrower than
+    2*closing_m while leaving genuinely separate forest complexes (a real
+    field or town between them) intact -- 40 m is an [E] plan decision
+    covering typical corridor/clear-cut widths, not a measured value."""
     forest_stands = stands[stands["area_type"] == "D-STAN"]
     if len(forest_stands) == 0:
         return None
-    return unary_union(list(forest_stands.geometry))
+    boundary = unary_union(list(forest_stands.geometry))
+    return boundary.buffer(closing_m).buffer(-closing_m)
 
 
 def _extract_points(geom) -> list:
@@ -33,7 +46,7 @@ def _extract_points(geom) -> list:
 
 
 def find_entrance_points(forest_boundary, roads_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Points where a road/track/path LineString crosses the forest
+    """Points where a road/track LineString crosses the forest
     boundary -- candidate entrances to the forest complex (spec §5.5.2).
     Near-duplicate entrances from multiple ways crossing at almost the same
     spot are not merged (accepted simplification, see plan Global

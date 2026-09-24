@@ -16,12 +16,46 @@ def test_compute_forest_boundary_unions_d_stan_stands_only():
         _stand_row("C", 390000, "LAKA"),      # non-forest, excluded
     ], crs="EPSG:2180")
     boundary = compute_forest_boundary(stands)
-    assert boundary.area == pytest.approx(2 * 1000 * 1000)  # A+B only, merged
+    # Morphological closing (see below) leaves a touching pair's area
+    # essentially unchanged but not bit-exact (buffer uses a polygonal
+    # circle approximation) -- rel tolerance accounts for that noise.
+    assert boundary.area == pytest.approx(2 * 1000 * 1000, rel=1e-3)
 
 
 def test_compute_forest_boundary_returns_none_when_no_forest_stands():
     stands = gpd.GeoDataFrame([_stand_row("C", 390000, "LAKA")], crs="EPSG:2180")
     assert compute_forest_boundary(stands) is None
+
+
+def test_compute_forest_boundary_closes_narrow_internal_gaps():
+    # Final review finding: D-STAN stands are fragmented inside a real
+    # forest by non-forest strips (power line corridors, clear-cuts,
+    # forest-road strips) narrower than a real forest edge -- without
+    # closing, a track crossing one of these registers as a fake interior
+    # "entrance" (45% of detected entrances on a real tile). Two D-STAN
+    # stands 20 m apart (e.g. a power line corridor) must become one
+    # connected area, not two separate parts with a gap between them.
+    stands = gpd.GeoDataFrame([
+        _stand_row("A", 380000, "D-STAN"),  # box(380000,486000,381000,487000)
+        {"stand_id": "B", "area_type": "D-STAN",
+         "geometry": box(381020, 486000, 382020, 487000)},  # 20 m gap from A's east edge
+    ], crs="EPSG:2180")
+    boundary = compute_forest_boundary(stands)
+    gap_point = Point(381010, 486500)  # middle of the 20 m gap
+    assert boundary.contains(gap_point)
+
+
+def test_compute_forest_boundary_does_not_bridge_wide_gaps():
+    # A genuinely separate forest complex (a real field/town between them,
+    # far wider than an internal corridor) must stay separate.
+    stands = gpd.GeoDataFrame([
+        _stand_row("A", 380000, "D-STAN"),
+        {"stand_id": "B", "area_type": "D-STAN",
+         "geometry": box(381500, 486000, 382500, 487000)},  # 500 m gap
+    ], crs="EPSG:2180")
+    boundary = compute_forest_boundary(stands)
+    gap_point = Point(381250, 486500)
+    assert not boundary.contains(gap_point)
 
 
 def test_find_entrance_points_detects_crossing_road():

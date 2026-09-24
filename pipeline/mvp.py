@@ -33,7 +33,8 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
     roads = osm_features.get("roads")
     if roads is not None and "highway" in roads.columns:
         # osm_features["roads"] now carries the full routing network
-        # (paved + track/path, profile["osm"]["routing_highway_types"],
+        # (paved + track, profile["osm"]["routing_highway_types"] -- "path"/
+        # "footway"/"bridleway" were dropped, see that key's own comment,
         # accessibility plan Task 1) -- the euclidean d_park estimate below
         # keeps its original, deliberately paved-only scope (see
         # profiles/boletus_edulis.yaml's own comment on why "track" was

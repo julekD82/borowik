@@ -4,7 +4,7 @@ from shapely.geometry import Point
 
 
 def build_road_graph(roads_gdf) -> nx.Graph:
-    """Nodes = every distinct vertex coordinate across all road/track/path
+    """Nodes = every distinct vertex coordinate across all road/track
     LineStrings (rounded to 3 decimals -- millimetre precision in EPSG:2180
     metres -- so ways sharing an OSM node produce the same graph-node key);
     edges = consecutive vertex pairs within a LineString, weighted by
