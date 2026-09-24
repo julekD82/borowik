@@ -16,6 +16,10 @@ from pipeline.bdl import normalize_code
 # needs no renormalization -- MJS/PJD rows correctly contribute nothing.
 _NUMERIC_PART_CD = re.compile(r"^\d+$")
 
+# Numeric shares are tenths of the storey, so a real composition sums to at
+# most 1.0; the tolerance only absorbs float rounding of the /10.
+_MAX_SHARE_SUM = 1.0 + 1e-9
+
 
 @dataclass(frozen=True)
 class PackageComposition:
@@ -48,6 +52,11 @@ def _load_one_package(package_dir: Path) -> dict[str, PackageComposition]:
     g_subarea = gpd.read_file(package_dir / "G_SUBAREA.shp")[["a_i_num", "adr_for"]]
     g_subarea["a_i_num"] = g_subarea["a_i_num"].astype(str)
     g_subarea["adr_for"] = g_subarea["adr_for"].astype(str)
+    # One wydzielenie can be stored as several G_SUBAREA rows (separate
+    # polygons, same a_i_num/adr_for -- 262 such rows in the real Strzyzow
+    # 2026 package). Joining species onto every row multiplied each share,
+    # giving S_host and H above 1; only the id mapping matters here.
+    g_subarea = g_subarea.drop_duplicates(["a_i_num", "adr_for"])
 
     species = pd.read_csv(package_dir / "f_storey_species.txt", sep="\t", dtype=str, encoding="utf-8")
     species["storey_cd"] = species["storey_cd"].str.strip()
@@ -67,11 +76,23 @@ def _load_one_package(package_dir: Path) -> dict[str, PackageComposition]:
         package_date = _parse_metadane(metadane_path).get("Data wytworzenia danych")
 
     result = {}
+    rejected = []
     for adr_for, group in joined.groupby("adr_for"):
+        if group["share"].sum() > _MAX_SHARE_SUM:
+            # Not a possible composition -- leave the stand out so it falls
+            # back to the WFS dominant species instead of pushing H above 1.
+            rejected.append(adr_for)
+            continue
         result[adr_for] = PackageComposition(
             species=list(zip(group["species_cd"], group["share"])),
             source_name=package_dir.name,
             package_date=package_date,
+        )
+    if rejected:
+        print(
+            f"UWAGA: paczka {package_dir.name}: {len(rejected)} wydzielen z suma udzialow > 10/10 "
+            f"pominieto (S_host z WFS), np. {rejected[:3]}",
+            flush=True,
         )
     return result
 

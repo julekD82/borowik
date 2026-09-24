@@ -87,6 +87,39 @@ def test_load_packages_sums_repeated_species_across_age_cohorts(tmp_path):
     assert sum(share for _sp, share in species if _sp == "DB") == 1.0
 
 
+def test_load_packages_ignores_repeated_subarea_geometry_rows(tmp_path):
+    # Real Strzyzow package: one wydzielenie stored as several G_SUBAREA
+    # rows (same a_i_num/adr_for, separate polygons). Joining species onto
+    # those rows multiplied every share (shares summing to 2-5, H up to 1.5).
+    _write_package(
+        tmp_path / "PKG_MULTIPART",
+        [{"a_i_num": "5005", "adr_for": "DD-44"}] * 3,
+        _SPECIES_HEADER +
+        "5005\t2026\tDRZEW\t1\tBK\t76\t5\tI\t28\t37\t139.0\n"
+        "5005\t2026\tDRZEW\t2\tDB\t76\t5\tI\t27\t46\t63.0\n",
+    )
+    comp = load_packages(tmp_path)["DD-44"]
+    assert sorted(comp.species) == [("BK", 0.5), ("DB", 0.5)]
+
+
+def test_load_packages_skips_stand_whose_shares_exceed_whole(tmp_path, capsys):
+    # Guard against any other join/data problem: numeric shares above 10/10
+    # cannot be a real composition, so the stand falls back to WFS (absent
+    # from the index) loudly instead of feeding S_host > 1 into H.
+    _write_package(
+        tmp_path / "PKG_BAD",
+        [{"a_i_num": "6006", "adr_for": "EE-55"}, {"a_i_num": "6007", "adr_for": "EE-56"}],
+        _SPECIES_HEADER +
+        "6006\t2026\tDRZEW\t1\tSO\t60\t8\tI\t20\t30\t10.0\n"
+        "6006\t2026\tDRZEW\t2\tBK\t60\t5\tI\t18\t25\t5.0\n"
+        "6007\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n",
+    )
+    index = load_packages(tmp_path)
+    assert "EE-55" not in index
+    assert index["EE-56"].species == [("SO", 1.0)]
+    assert "EE-55" in capsys.readouterr().out
+
+
 def test_load_packages_normalizes_diacritic_species_codes(tmp_path):
     _write_package(
         tmp_path / "PKG_FOUR",

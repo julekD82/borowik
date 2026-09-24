@@ -1,5 +1,13 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-25 — aktualne (20): naprawa B2 — powielone wiersze G_SUBAREA dawały H > 1
+
+Pierwszy pełny przebieg Będziemyśl 20 km (z 5 paczkami BDL) dał H do 1,499 i R do 100,2 dla 26 wydzieleń w promieniu (137 w paczkach). Przyczyna: paczka Strzyżów 2026 ma 262 powielone wiersze w `G_SUBAREA.shp` (to samo `a_i_num`/`adr_for`, osobne poligony); `pipeline/bdl_packages.py` łączył skład gatunkowy z każdym wierszem, więc udziały sumowały się do 2–10. Pozostałe 4 paczki bez duplikatów; mapowanie `a_i_num`↔`adr_for` wszędzie 1:1.
+
+Naprawa: `drop_duplicates(["a_i_num", "adr_for"])` przed joinem + zabezpieczenie — wydzielenie z sumą udziałów > 10/10 jest pomijane (fallback na WFS) z głośnym `UWAGA` w konsoli. Testy: powielona geometria, suma > 10/10 (312 passed). Na realnych paczkach: 13 574 wydzieleń, maks. suma udziałów 1,0, maks. S_host 1,0, nic nie odrzucone.
+
+Przebieg po naprawie (z cache, tylko zakazy na żywo): 3 656 w masce, R ≥ 90: 76, R ≥ 85: 249, H maks. 1,0. Rejony 1–3 bez zmian, 4–5 lekko przesunięte (zawyżone wydzielenia Strzyżowa podnosiły próg top 5%). Wszystkie rejony: sosna na BMŚW, Nadl. Głogów (4 rejony) i Tuszyma. Siedlisko `LWYZS` (pogórze, buk/jodła) ma medianę R 53 vs 79,5 dla BMŚW — obserwacja z sekcji 0.2 planu potwierdzona, wartość S_site bez zmian do czasu weryfikacji terenowej. Frontend zsynchronizowany.
+
 ## 2026-09-25 — aktualne (19): B2 — pełny skład gatunkowy z paczek BDL do S_host
 
 Zrealizowany krok B2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, §5.3 "Różnicowanie H" pkt 1), na podstawie rozpoznania B1. Przed planem implementacji pokazane i przeanalizowane liczby z realnej paczki Kędzierzyn (patrz `docs/bdl-paczki-rozpoznanie.md`, sekcja "B2 — wdrożenie"); plan skorygowany przez użytkownika trzy razy (kody gatunków, dodatkowa weryfikacja płaskowyżu, zmiana obszaru testowego na Będziemyśl) przed akceptacją.
