@@ -1,5 +1,9 @@
 # Borowik GIS — projekt systemu typowania miejsc owocnikowania *Boletus edulis*
 
+> **Decyzja użytkownika (2026-09-24, ponownie potwierdzona): grupowanie w rejony znów aktywne.** Backend liczy i eksportuje `regions_{day}.json`; frontend ma przełącznik „Rejony” / „Wydzielenia” (domyślnie Rejony, gdy są dostępne). Krótki epizod „grupowanie wyłączone" tego samego dnia jest historyczny — nie kieruj się nim. Szczegóły: `docs/CODEX-HANDOFF.md` w katalogu projektu.
+
+> **Aktualizacja implementacji Codex, 2026-09-24:** frontend lokalny jest gotowy, a `--radius-km` rzeczywiście analizuje promień 10–50 km (domyślnie 25), pobierając wiele kafli i wszystkie przecinane RDLP. Starsze opisy ograniczenia do jednego kafla oraz braku frontendu poniżej są historyczne. Szczegóły, testy, decyzje i pozostałe ograniczenia: [CODEX-HANDOFF.md](CODEX-HANDOFF.md). Przynależność wydzielenia do obszaru wyznacza centroid pełnego poligonu w EPSG:2180.
+
 > Wersja 2.0 · 2026-09-24 · dokument projektowy, zaktualizowany pod rzeczywisty sposób użycia (1–3 wyjazdy rocznie)
 >
 > Konwencja: **[Z]** = zweryfikowane (zapytanie do API / lektura źródła), **[L]** = literatura naukowa, **[E]** = wiedza ekspercka / prior do kalibracji, **[?]** = do sprawdzenia przy implementacji, **[K]** = zweryfikowane w tej sesji przez przegląd kodu repozytorium.

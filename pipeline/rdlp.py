@@ -39,7 +39,7 @@ def resolve_rdlp_layer(lat: float, lon: float, rdlp_gdf: gpd.GeoDataFrame) -> st
     no data to query there, and callers must treat that as a hard stop,
     not a silent fallback to some layer."""
     point = gpd.GeoSeries([Point(lon, lat)], crs="EPSG:4326").to_crs(rdlp_gdf.crs).iloc[0]
-    hits = rdlp_gdf[rdlp_gdf.geometry.contains(point)]
+    hits = rdlp_gdf[rdlp_gdf.geometry.covers(point)]
     if len(hits) == 0:
         return None
     return layer_name_for_region(hits.iloc[0]["region_name"])
@@ -69,5 +69,6 @@ def regions_intersecting_bbox(bbox_2180: tuple, rdlp_gdf: gpd.GeoDataFrame) -> l
     (final review finding, prepare_trip CLI plan)."""
     n_min, e_min, n_max, e_max = bbox_2180
     tile_box = shapely_box(e_min, n_min, e_max, n_max)
-    hits = rdlp_gdf[rdlp_gdf.geometry.intersects(tile_box)]
+    metric = rdlp_gdf.to_crs("EPSG:2180")
+    hits = metric[metric.geometry.intersects(tile_box)]
     return hits["region_name"].tolist()

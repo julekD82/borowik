@@ -21,6 +21,7 @@ def _enriched_stands():
         "explanation": [[{"factor": "host", "contribution": 0.1, "text": "..."}], []],
         "distance_method": ["network", "euclidean"],
         "entrance_status": ["confirmed", "not_evaluated"],
+        "d_park_m": [1234.5, float("nan")],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
 
 

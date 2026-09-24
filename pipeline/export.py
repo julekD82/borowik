@@ -6,7 +6,7 @@ import geopandas as gpd
 
 SCORE_FIELDS = [
     "stand_id", "H", "F", "F_loc", "P", "confidence", "confidence_reasons", "explanation",
-    "distance_method", "entrance_status",
+    "distance_method", "entrance_status", "d_park_m",
 ]
 
 
@@ -49,6 +49,17 @@ def export_stand_geometries(stands: gpd.GeoDataFrame, out_path) -> pathlib.Path:
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     stands[["stand_id", "geometry"]].to_parquet(out_path)
+    return out_path
+
+
+def export_stand_geometries_geojson(stands: gpd.GeoDataFrame, out_path) -> pathlib.Path:
+    """Export minimal stand polygons in WGS84 for the static MapLibre UI."""
+    if stands.crs is None:
+        raise ValueError("Stand geometries require a source CRS")
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    geographic = stands[["stand_id", "geometry"]].to_crs("EPSG:4326")
+    out_path.write_text(geographic.to_json(drop_id=True, na="null"), encoding="utf-8")
     return out_path
 
 
