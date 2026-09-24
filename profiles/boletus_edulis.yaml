@@ -99,7 +99,16 @@ osm:
   # bounding-box centroid, not the point nearest the stand) rather than true
   # point-to-line distance -- accepted simplification, not fixed here.
   road_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential"]
-  routing_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "track", "path", "footway", "bridleway"]
+  # "path"/"footway"/"bridleway" deliberately excluded: verified live
+  # 2026-09-24 that adding "path" alone made the Overpass query for a real
+  # 10x10 km forest tile (Pila) return a 504 in ~9s (a result-size/query-
+  # complexity rejection, not a slow timeout -- the same query with
+  # [timeout:120] failed identically) where paved-only and paved+track both
+  # succeeded in ~2s. "track" is the dominant, already-verified-working
+  # unpaved category and the primary real access mode for Lasy Panstwowe
+  # forest roads; a real-world-discovered scope narrowing, not a
+  # correctness compromise.
+  routing_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "track"]
   place_types: ["city", "town", "village", "hamlet"]
 
 confidence:
@@ -128,3 +137,7 @@ regions:
   buffer_m: 250.0            # merge candidate stands separated by up to this many metres into one region, spec §5.6 step 2 -- [E], plan decision
   top_n_per_region: 5        # region score = median of the top N candidate R_final values in it, spec §5.6 step 3 -- [E], plan decision
   max_regions: 5             # spec §0/§12 "3-5 rejonów na wycieczkę" -- [E], plan decision
+
+entrances:
+  confirmed_tolerance_m: 50.0    # spec §5.5.2 -- [E] plan decision: entrance within this distance of a known OSM parking point counts as 'confirmed'
+  top_n_for_routing: 25          # spec §13 priority 3 "top 20-30 wydzielen" -- [E] plan decision

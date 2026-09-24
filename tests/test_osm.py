@@ -24,9 +24,12 @@ def test_build_overpass_query_includes_unpaved_tracks_for_routing():
     # pipeline.mvp.enrich_with_mvp_layers's paved-only subset (Task 5), not
     # by leaving tracks out of the Overpass query entirely -- routing a
     # walking path from an entrance into forest interior needs them.
+    # "path" is deliberately NOT included -- verified live it makes a real
+    # 10x10 km forest tile's query too large for the public Overpass
+    # instance (see profiles/boletus_edulis.yaml's comment).
     q = build_overpass_query(BBOX_4326, PROFILE)
     assert "track" in q
-    assert "path" in q
+    assert "path" not in q
 
 
 ELEMENTS = [
