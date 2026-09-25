@@ -1,5 +1,33 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-25 — aktualne (22): fenologia (G_season), kalibracja wilgotności, tie-break pokrycia/zadrzewienia
+
+Zrealizowany plan `docs/superpowers/plans/2026-09-25-borowik-fenologia-wilgotnosc-tiebreak.md` (przegląd użytkownika 2026-09-25, wykonanie inline, TDD krok po kroku, 10 zadań implementacyjnych + to podsumowanie). Trzy niezależne zmiany, każda addytywna względem H/R_final:
+
+**1. G_season (fenologia z GBIF).** Nowy moduł `pipeline/phenology.py::compute_g_season(target_doy, profile)` — statyczna krzywa sezonowości Boletus edulis dla Polski (GBIF, zapytanie na żywo 2026-09-25: `api.gbif.org/v1/occurrence/search?country=PL&scientificName=Boletus%20edulis&limit=0&facet=month&facetLimit=12`, n=1270 rekordów z miesiącem — liczby zweryfikowane, dokładnie zgodne z liczbami podanymi w przeglądzie użytkownika), zapisana statycznie w `profiles/boletus_edulis.yaml` (`phenology.gbif_monthly_counts`), interpolowana liniowo między środkami miesięcy (dzień 15), bez dodatkowego wygładzania (krzywa surowa jest już jednomodalna, dodatkowe wygładzanie zmiękczyłoby realny, ostry spadek po wrześniu — uzasadnienie w docstringu). Dolny limit 0,05. Wpięty w `pipeline/orchestrate.py::run_poc` (zastępuje sztywne `g_season=1.0` w wywołaniu `compute_fruiting`), eksportowany per wydzielenie (`G_season` w `scores_{day}.json`), z notatką w wyjaśnieniach („poza szczytem sezonu (G_season=X,XX)") gdy < 0,5 (`pipeline/explain.py::g_season_note`, `pipeline/mvp.py`).
+
+**2. Kalibracja wilgotności.** `profiles/boletus_edulis.yaml`: `fruiting.moisture_midpoint` 0,35 → 0,50 (`moisture_slope` bez zmian, zgodnie z instrukcją). Tabela scenariuszy (T=1, G_season=1) przed/po:
+
+```
+                    przed (0,35)              po (0,50)
+percentyl 0,15      M=0,119 F=0,279 Umiark.   M=0,029 F=0,120 Słabe
+percentyl 0,35      M=0,500 F=0,660 Dobre     M=0,182 F=0,360 Umiark.
+percentyl 0,50      M=0,818 F=0,886 B.dobre   M=0,500 F=0,660 Dobre
+percentyl 0,70      M=0,971 F=0,982 B.dobre   M=0,881 F=0,927 B.dobre
+percentyl 0,90      M=0,996 F=0,998 B.dobre   M=0,982 F=0,989 B.dobre
+```
+
+**3. Tie-break (pokrycie gleby + zadrzewienie).** Nowy moduł `pipeline/tie_break.py` (wzorem `pipeline/bdl_package_details.py` z B3) — **nigdy nie importowany przez `pipeline/orchestrate.py`, `pipeline/habitat.py`, `pipeline/scoring.py`, `pipeline/mvp.py`** (strukturalna, nie tylko testowana, gwarancja zerowego wpływu na H/R_final). `compute_tie_break(veg_cover_cd, standdensity_index) -> float` 0–1: preferencja pokrycia gleby (MSZC/MSZ/ŚCIO > ZAD/ZIEL > SZAD/SZCH/NAGA — znaczenia zweryfikowane przez dwa niezależne wyszukiwania web, zgodne z „Wykazem skrótów i symboli stosowanych w opisach taksacyjnych" Instrukcji Urządzania Lasu; w paczce BDL brak własnego słownika dla `veg_cover_cd`, potwierdzone nieobecne we wszystkich 5 paczkach) uśredniona z preferencją pośredniego zadrzewienia (plateau [0,7; 1,0] = 1,0, liniowy spadek do 0 poza tym zakresem — realne dane Będziemyśla: mediana 0,9, IQR 0,7–1,0, 92,9% ≤ 1,5). Używany **wyłącznie** jako drugi klucz sortowania: R_final zaokrąglony do 2 miejsc po przecinku (precyzja dobrana na realnym eksporcie — 2 miejsca grupuje tylko bliskie remisy, maks. grupa 4/500 w czołówce, vs. zaokrąglenie do pełnego punktu dające grupy po 67 — zbyt grube, przytłoczyłoby własny sygnał R), potem `tie_break` malejąco — w `pipeline/regions.py::_summarize_cluster` (kolejność `stand_ids` rejonu) i w `frontend/src/model.ts::joinData` (lista „Wydzielenia"). Wpięty w `pipeline/prepare_trip.py` **przed** `group_into_regions` (wymóg kolejności). Karta (`details_{day}.json`): nowe pola `veg_cover` (forma słowna) i `standdensity_index` obok istniejącego `density`/„Zwarcie" (`frontend/src/main.ts::packageSection`).
+
+**Weryfikacja na realnych danych** (bez sieci, Będziemyśl 20 km, target_date 2026-09-25, cache/weather_points + cache/climatology_points + cache/bdl_tiles_v2 + cache/bdl_packages — 144/144 punktów pogody i 16/16 klimatologii z cache, zero zapytań sieciowych):
+- Rozkład klas F: **przed** (moisture_midpoint=0,35, G_season na sztywno 1,0 — odtworzone przez tymczasowe monkeypatch `pipeline.orchestrate.compute_g_season` na potrzeby porównania) **100% „Bardzo dobre" (3656/3656)** — dokładnie odtwarza zgłoszony problem. **Po** wszystkich trzech zmianach: Bardzo dobre 1811 (49,5%), Dobre 1534 (42,0%), Umiarkowane 311 (8,5%) — realna, sensowna dyferencjacja zamiast jednej klasy. `fruiting_classes` **nie zmienione** — rozkład po zmianie wygląda dobrze, korekta nie była potrzebna.
+- Top-20 (po R_final): 18/20 wydzielen wspólnych z „przed" — ranking w większości zachowany (te same warunki pogodowe/G_season działają w przybliżeniu jednolicie na cały obszar), z niewielkimi przetasowaniami.
+- Kolejność członków rejonu z tie_break widoczna na żywo: rejon 2 (13 członków) — pierwsze 5: R=87,59/tb=1,00, R=87,59/tb=1,00, R=87,59/tb=0,80, R=87,59/tb=0,80, R=87,59/tb=0,73 — wydzielenia związane remisem przy R (zaokrąglonym) uporządkowane realnie przez tie_break, nie przez arbitralną kolejność indeksu przestrzennego jak wcześniej.
+
+Testy: 372 Python (352 przed tym planem → 372, +20: nowe `test_phenology.py` (5), `test_tie_break.py` (13), rozszerzenia `test_orchestrate.py`/`test_explain.py`/`test_mvp.py`/`test_export.py`/`test_regions.py`/`test_prepare_trip.py`/`test_scoring.py`), wszystkie bez sieci. Frontend: 49 (44 → 49, +5 w `model.test.ts`), `tsc --noEmit` czysto, `vite build` OK.
+
+**Nie ruszono:** `pipeline/habitat.py` (H, score_host/score_site/score_age/passes_mask) — zero zmian; `fruiting_classes` — bez zmian (rozkład po kalibracji wilgotności wygląda dobrze); `moisture_slope` — bez zmian zgodnie z jawną instrukcją użytkownika.
+
 ## 2026-09-25 — aktualne (21): B3 — karta wydzielenia: skład, sąsiedztwo, budowa/ochronność
 
 Zrealizowany krok B3 z planu 2.1 (`docs/projekt-borowik.md` §5.3 "Różnicowanie H" pkt 3) — **wyłącznie prezentacja na karcie**, zero wpływu na H/F/R. Po B2 (notatki (19)/(20)) było to jedyne, co zostało z "Różnicowania H"; decyzja z (20) — dalszego różnicowania nie robimy bez danych terenowych, C4 (domieszka z sąsiedztwa jako tie-breaker w H) skreślone w §13.1.
