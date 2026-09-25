@@ -108,7 +108,14 @@ age_breakpoints:
   above_120: 0.9
 
 fruiting:
-  moisture_midpoint: 0.35
+  # Plan 2.1 "Zmiana 2" (user review 2026-09-25): 0.35 meant the AVERAGE
+  # moisture percentile (0.5) already scored M=0.82 -> F="Bardzo dobre" --
+  # confirmed on the real Bedziemysl 2026-09-25 export, where ALL 3656
+  # mask-passing stands classified "Bardzo dobre" (zero differentiation
+  # from F). 0.50 makes percentile 0.5 -> "Dobre" instead, matching the
+  # intended reading of "average conditions". moisture_slope unchanged
+  # per explicit user instruction -- do not change it without asking.
+  moisture_midpoint: 0.50
   moisture_slope: 0.10
   temp_optimum_c: 13.0
   temp_sigma_c: 4.0

@@ -11,11 +11,18 @@ PROFILE = load_profile("profiles/boletus_edulis.yaml")
 
 
 def test_score_moisture_at_midpoint_is_half():
-    assert score_moisture(0.35, 0.35, PROFILE) == pytest.approx(0.5)
+    # Plan 2.1 "Zmiana 2": profiles/boletus_edulis.yaml's real
+    # moisture_midpoint changed 0.35 -> 0.50 -- this test always asserts
+    # the logistic is 0.5 AT whatever the profile's own midpoint is, so it
+    # reads that value from PROFILE rather than hard-coding it again.
+    midpoint = PROFILE["fruiting"]["moisture_midpoint"]
+    assert score_moisture(midpoint, midpoint, PROFILE) == pytest.approx(0.5)
 
 
 def test_score_moisture_above_midpoint_is_higher():
-    assert score_moisture(0.6, 0.6, PROFILE) == pytest.approx(1 / (1 + math.exp(-2.5)))
+    # 0.6 is 0.10 (one moisture_slope) above the new 0.50 midpoint ->
+    # exponent 1.0, same derivation as before, updated for the new midpoint.
+    assert score_moisture(0.6, 0.6, PROFILE) == pytest.approx(1 / (1 + math.exp(-1.0)))
 
 
 def test_score_temperature_at_optimum_no_penalty():
