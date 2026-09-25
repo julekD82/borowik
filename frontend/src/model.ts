@@ -29,6 +29,10 @@ export type Score = {
   // Plan 2.1 step A4: optional so older exports (before this field existed)
   // still load -- see isStandaloneTarget below.
   area_ha?: number | null;
+  // Plan 2.1 "Zmiana 1": seasonal fruiting-frequency multiplier, same
+  // shape as area_ha above -- optional so older exports (before this
+  // field existed) still load.
+  G_season?: number | null;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -325,6 +329,7 @@ export function parseData(
         typeof s.entrance_status === "string" &&
         (s.d_park_m === undefined || numeric(s.d_park_m)) &&
         (s.area_ha === undefined || numeric(s.area_ha)) &&
+        (s.G_season === undefined || numeric(s.G_season)) &&
         Array.isArray(s.explanation) &&
         s.explanation.every(
           (e) =>

@@ -26,6 +26,7 @@ def _enriched_stands():
         "entrance_status": ["confirmed", "not_evaluated"],
         "d_park_m": [1234.5, float("nan")],
         "forecast_days": [1, 1],
+        "G_season": [0.91, 1.0],
         "s_host_source": ["paczka", "wfs"],
         "s_host_package_date": ["2026-06-23", None],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
@@ -53,6 +54,12 @@ def test_build_score_record_shape_matches_architecture_schema():
     assert record["forecast_days"] == 1
     assert record["s_host_source"] == "paczka"
     assert record["s_host_package_date"] == "2026-06-23"
+
+
+def test_build_score_record_includes_g_season():
+    row = _enriched_stands().iloc[0]
+    record = build_score_record(row, day="2026-09-23")
+    assert record["G_season"] == pytest.approx(0.91)
 
 
 def test_build_score_record_s_host_package_date_is_null_for_wfs_source():

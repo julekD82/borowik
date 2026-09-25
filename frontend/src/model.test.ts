@@ -111,6 +111,22 @@ describe("data and classification", () => {
       ),
     ).toEqual(["B"]);
   });
+  it("accepts an optional G_season field and still loads without it", () => {
+    const scores = [
+      { ...score("A", 40), G_season: 0.42 },
+      score("B", 30), // no G_season -- older export
+    ];
+    const result = parseData(scores, stands);
+    expect(result.scores.map((s) => s.G_season)).toEqual([0.42, undefined]);
+  });
+  it("rejects a malformed G_season instead of silently accepting it", () => {
+    expect(() =>
+      parseData(
+        [{ ...score("A", 40), G_season: "not-a-number" }, score("B", 30)],
+        stands,
+      ),
+    ).toThrow();
+  });
   it("rejects mixed dates and malformed data", () => {
     expect(() =>
       parseData(

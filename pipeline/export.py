@@ -11,6 +11,10 @@ SCORE_FIELDS = [
     # observed) rather than history -- plan 2.1 step A3. Same value for
     # every stand in a run (pipeline.orchestrate.run_poc's forecast_days).
     "forecast_days",
+    # Plan 2.1 "Zmiana 1": seasonal fruiting-frequency multiplier for this
+    # run's target_date (pipeline.phenology.compute_g_season) -- same value
+    # for every stand in one export.
+    "G_season",
     # plan 2.1 step B2: whether this stand's S_host came from a real BDL
     # package's full species composition ("paczka") or the WFS
     # panujący+part_cd fallback ("wfs"), plus that package's own
