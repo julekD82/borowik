@@ -8,7 +8,9 @@ from shapely.geometry import box
 from pipeline.export import (
     build_score_record, write_scores_json, export_stand_geometries,
     build_region_record, write_regions_json,
+    build_details_record, write_details_json,
 )
+from pipeline.bdl_package_details import PackageStandDetails
 
 
 def _enriched_stands():
@@ -160,3 +162,112 @@ def test_write_regions_json_handles_empty_regions(tmp_path):
     )
     out_path = write_regions_json(empty, day="2026-09-24", out_path=tmp_path / "regions.json")
     assert json.loads(out_path.read_text(encoding="utf-8")) == []
+
+
+_DICTIONARIES = {
+    "tree_species": {"SO": "sosna zwyczajna", "BK": "buk pospolity"},
+    "density": {"0.7": "0.7"},
+    "soil_subtype": {"Bw": "brunatna wyługowana"},
+    "part": {"7": "udział 70 %", "3": "udział 30 %", "MJS": "poniżej 5 % - miejscami"},
+    "prot_categ": {"OCH USZK": "trw. uszk na sk. dział.przem"},
+}
+
+
+def test_build_details_record_full_shape_with_package():
+    details_index = {
+        "AA-1": PackageStandDetails(
+            drzew_species=[("SO", "7"), ("BK", "3")],
+            density_cd="0.7",
+            podszyt_species=[("BK", "MJS")],
+            soil_subtype_cd="Bw",
+            source_name="PKG_ONE",
+            package_date="2026-06-23",
+        ),
+    }
+    neighbors = {"AA-1": ["drzewostan buk pospolity", "zrąb"]}
+    record = build_details_record(
+        "AA-1@2026", "AA-1", "DRZEW", "OCH USZK", "2026-09-25",
+        details_index, neighbors, _DICTIONARIES,
+    )
+    assert record["stand_id"] == "AA-1@2026"
+    assert record["day"] == "2026-09-25"
+    assert record["drzew_species"] == [
+        {"species_cd": "SO", "name": "sosna zwyczajna", "share": "udział 70 %"},
+        {"species_cd": "BK", "name": "buk pospolity", "share": "udział 30 %"},
+    ]
+    assert record["density"] == "0.7"
+    assert record["podszyt_species"] == [
+        {"species_cd": "BK", "name": "buk pospolity", "share": "poniżej 5 % - miejscami"},
+    ]
+    assert record["soil_type"] == "brunatna wyługowana"
+    assert record["package_date"] == "2026-06-23"
+    assert record["neighbors"] == ["drzewostan buk pospolity", "zrąb"]
+    assert record["stand_stru"] == "DRZEW"
+    assert record["prot_categ"] == "trw. uszk na sk. dział.przem"
+
+
+def test_build_details_record_empty_package_fields_when_no_package():
+    record = build_details_record(
+        "BB-2@2026", "BB-2", None, None, "2026-09-25",
+        {}, {}, _DICTIONARIES,
+    )
+    assert record["drzew_species"] == []
+    assert record["density"] is None
+    assert record["podszyt_species"] == []
+    assert record["soil_type"] is None
+    assert record["package_date"] is None
+    assert record["neighbors"] == []
+    assert record["stand_stru"] is None
+    assert record["prot_categ"] is None
+
+
+def test_build_details_record_neighbors_and_stand_stru_present_without_package():
+    # spec: neighbours/stand_stru/prot_categ come from WFS and must work
+    # even for a wydzielenie with no BDL package coverage.
+    neighbors = {"CC-3": ["łąka"]}
+    record = build_details_record(
+        "CC-3@2026", "CC-3", "KO", "OCH USZK", "2026-09-25",
+        {}, neighbors, _DICTIONARIES,
+    )
+    assert record["neighbors"] == ["łąka"]
+    assert record["stand_stru"] == "KO"
+    assert record["prot_categ"] == "trw. uszk na sk. dział.przem"
+    assert record["drzew_species"] == []  # still no package data
+
+
+def test_build_details_record_falls_back_to_raw_code_without_dictionary_entry():
+    details_index = {
+        "DD-4": PackageStandDetails(
+            drzew_species=[("XX", "10")], density_cd="ZZZ", podszyt_species=[],
+            soil_subtype_cd="YYY", source_name="PKG", package_date=None,
+        ),
+    }
+    record = build_details_record("DD-4@2026", "DD-4", None, "UNKNOWN_CATEG", "2026-09-25", details_index, {}, {})
+    assert record["drzew_species"] == [{"species_cd": "XX", "name": "XX", "share": "10"}]
+    assert record["density"] == "ZZZ"
+    assert record["soil_type"] == "YYY"
+    assert record["prot_categ"] == "UNKNOWN_CATEG"
+
+
+def test_write_details_json_one_record_per_stand(tmp_path):
+    stands = gpd.GeoDataFrame({
+        "stand_id": ["AA-1@2026", "BB-2@2026"],
+        "adr_for": ["AA-1", "BB-2"],
+        "stand_stru": ["DRZEW", None],
+        "prot_categ": ["OCH USZK", None],
+    }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
+    details_index = {
+        "AA-1": PackageStandDetails(
+            drzew_species=[("SO", "10")], density_cd=None, podszyt_species=[],
+            soil_subtype_cd=None, source_name="PKG", package_date=None,
+        ),
+    }
+    out_path = write_details_json(stands, details_index, {}, _DICTIONARIES, day="2026-09-25", out_path=tmp_path / "details.json")
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    assert len(data) == 2
+    assert {r["stand_id"] for r in data} == {"AA-1@2026", "BB-2@2026"}
+    with_package = next(r for r in data if r["stand_id"] == "AA-1@2026")
+    without_package = next(r for r in data if r["stand_id"] == "BB-2@2026")
+    assert with_package["drzew_species"]
+    assert without_package["drzew_species"] == []
+    assert without_package["stand_stru"] is None

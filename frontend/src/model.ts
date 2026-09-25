@@ -190,6 +190,30 @@ export function joinData(scores: Score[], stands: Stands): StandView[] {
     });
 }
 
+// Plan 2.1 step B3 (spec §5.3 pkt 3): card-detail data only -- never fed
+// into H/F/R (see pipeline.bdl_package_details' module docstring and
+// tests/test_prepare_trip.py's explicit regression check on the Python
+// side). drzew_species/density/podszyt_species/soil_type/package_date come
+// from a BDL package and are empty/null when the wydzielenie has none;
+// neighbors/stand_stru/prot_categ come from WFS and are present regardless.
+export type SpeciesShare = {
+  species_cd: string;
+  name: string;
+  share: string;
+};
+export type StandDetail = {
+  stand_id: string;
+  day: string;
+  drzew_species: SpeciesShare[];
+  density: string | null;
+  podszyt_species: SpeciesShare[];
+  soil_type: string | null;
+  package_date: string | null;
+  neighbors: string[];
+  stand_stru: string | null;
+  prot_categ: string | null;
+};
+
 export type Region = {
   region_id: string;
   rank_score: number;
@@ -238,15 +262,23 @@ const strings = (x: unknown): x is string[] =>
 const numeric = (x: unknown) => x === null || finite(x);
 const date = (x: unknown) =>
   typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x);
+const nullableString = (x: unknown) => x === null || typeof x === "string";
+const speciesShare = (x: unknown): x is SpeciesShare =>
+  object(x) &&
+  typeof x.species_cd === "string" &&
+  typeof x.name === "string" &&
+  typeof x.share === "string";
 export function parseData(
   rawScores: unknown,
   rawStands: unknown,
   rawRegions?: unknown,
+  rawDetails?: unknown,
 ): {
   entries: StandView[];
   scores: Score[];
   stands: Stands;
   regions: Region[];
+  details: StandDetail[];
 } {
   if (
     !Array.isArray(rawScores) ||
@@ -353,7 +385,45 @@ export function parseData(
         "Rejon odwołuje się do wydzielenia spoza zsynchronizowanego zestawu.",
       );
   }
-  return { entries: joinData(scores, stands), scores, stands, regions };
+  // Details are optional, same pattern as regions above: absent means no
+  // B3 section on a stand's card, not an error. When present, one entry per
+  // wydzielenie is expected but not required -- a stand missing from
+  // `details` just has no B3 section either.
+  let details: StandDetail[] = [];
+  if (rawDetails !== undefined) {
+    const knownStandIds = new Set(standIds);
+    if (
+      !Array.isArray(rawDetails) ||
+      !rawDetails.every(
+        (d) =>
+          object(d) &&
+          typeof d.stand_id === "string" &&
+          date(d.day) &&
+          Array.isArray(d.drzew_species) &&
+          d.drzew_species.every(speciesShare) &&
+          nullableString(d.density) &&
+          Array.isArray(d.podszyt_species) &&
+          d.podszyt_species.every(speciesShare) &&
+          nullableString(d.soil_type) &&
+          nullableString(d.package_date) &&
+          strings(d.neighbors) &&
+          nullableString(d.stand_stru) &&
+          nullableString(d.prot_categ),
+      )
+    )
+      throw new Error("Niepoprawny plik szczegółów wydzieleń.");
+    details = rawDetails as StandDetail[];
+    if (details.some((d) => d.day !== scores[0]?.day))
+      throw new Error(
+        "Plik szczegółów pochodzi z innej daty. Zsynchronizuj dane ponownie.",
+      );
+    if (details.some((d) => !knownStandIds.has(d.stand_id)))
+      throw new Error(
+        "Szczegóły odwołują się do wydzielenia spoza zsynchronizowanego zestawu.",
+      );
+  }
+
+  return { entries: joinData(scores, stands), scores, stands, regions, details };
 }
 export async function loadData() {
   const [scoresRaw, standsRaw] = await Promise.all(
@@ -394,5 +464,21 @@ export async function loadData() {
       );
     }
   }
-  return parseData(scoresRaw, standsRaw, regionsRaw);
+  // details.json is optional too, same reasoning as regions.json above --
+  // plan 2.1 step B3.
+  let detailsRaw: unknown = undefined;
+  const detailsResponse = await fetch(
+    `${import.meta.env.BASE_URL}data/details.json`,
+    { cache: "no-cache", signal: AbortSignal.timeout(20000) },
+  ).catch(() => undefined);
+  if (detailsResponse?.ok) {
+    try {
+      detailsRaw = await detailsResponse.json();
+    } catch {
+      throw new Error(
+        "Plik details.json jest niedostępny lub niepoprawny. Uruchom synchronizację danych.",
+      );
+    }
+  }
+  return parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
 }

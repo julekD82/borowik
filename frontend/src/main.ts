@@ -14,7 +14,14 @@ import {
   finite,
   isStandaloneTarget,
 } from "./model";
-import type { StandView, Score, Region, RegionView } from "./model";
+import type {
+  StandView,
+  Score,
+  Region,
+  RegionView,
+  StandDetail,
+  SpeciesShare,
+} from "./model";
 import { ForestMap } from "./map";
 import { readSaved, saveRegion, removeSaved, savedKey } from "./storage";
 import type { SavedRegion } from "./storage";
@@ -57,6 +64,7 @@ const coordinates = ([lon, lat]: [number, number]) =>
 let entries: StandView[] = [];
 let allScores: Score[] = [];
 let allRegions: Region[] = [];
+let allDetails: StandDetail[] = [];
 let regionViews: RegionView[] = [];
 let selected = "";
 let detail = false;
@@ -150,6 +158,36 @@ function assessment(score?: Score) {
 }
 function access(score?: Score) {
   return `<div class="access"><div>${icon("location")}<span>Orientacyjne dojście <strong>${distanceLabel(score?.d_park_m)}</strong></span></div><small>${distanceMethod(score?.distance_method)}</small><p>${entranceLabel(score?.entrance_status)} · brak współrzędnych wejścia w danych.</p></div>`;
+}
+// Plan 2.1 step B3 (spec §5.3 pkt 3): species composition, density, podszyt,
+// soil type -- from a BDL package, empty/null when the wydzielenie has no
+// package coverage. Presentation only, no effect on R/H/F -- see
+// pipeline.bdl_package_details' module docstring and the regression test in
+// tests/test_prepare_trip.py on the Python side.
+function speciesList(items: SpeciesShare[]) {
+  // Real-data finding (Będziemyśl verification): podszyt (understory) rows
+  // commonly have no recorded share at all -- an empty parenthetical would
+  // be confusing, so it's only shown when there is one.
+  return items.length
+    ? `<ul class="species-list">${items.map((s) => `<li>${escape(s.name)}${s.share ? ` <span class="muted">(${escape(s.share)})</span>` : ""}</li>`).join("")}</ul>`
+    : '<p class="muted">Brak danych.</p>';
+}
+function packageSection(detail?: StandDetail) {
+  if (!detail || !detail.drzew_species.length)
+    return '<p class="muted">Skład gatunkowy, zwarcie, podszyt i typ gleby: brak paczki BDL dla tego wydzielenia.</p>';
+  return `<div class="package-detail"><p><strong>Skład gatunkowy (warstwa drzew)</strong></p>${speciesList(detail.drzew_species)}<p><strong>Zwarcie</strong> ${detail.density ? escape(detail.density) : "brak danych"}</p><p><strong>Podszyt</strong></p>${speciesList(detail.podszyt_species)}<p><strong>Typ gleby</strong> ${detail.soil_type ? escape(detail.soil_type) : "brak danych"}</p>${detail.package_date ? `<p class="muted">Dane paczki BDL z dnia ${escape(detail.package_date)}.</p>` : ""}</div>`;
+}
+function neighborsSection(detail?: StandDetail) {
+  if (!detail || !detail.neighbors.length)
+    return '<p class="muted">Graniczy z: brak danych o sąsiedztwie.</p>';
+  return `<p><strong>Graniczy z</strong></p><ul class="neighbors-list">${detail.neighbors.map((n) => `<li>${escape(n)}</li>`).join("")}</ul>`;
+}
+function structureSection(detail?: StandDetail) {
+  if (!detail || (!detail.stand_stru && !detail.prot_categ)) return "";
+  return `<dl class="metrics">${detail.stand_stru ? `<div><dt>Budowa drzewostanu</dt><dd>${escape(detail.stand_stru)}</dd></div>` : ""}${detail.prot_categ ? `<div><dt>Kategoria ochronności</dt><dd>${escape(detail.prot_categ)}</dd></div>` : ""}</dl>`;
+}
+function detailFor(standId: string): StandDetail | undefined {
+  return allDetails.find((d) => d.stand_id === standId);
 }
 function card(entry: StandView, index: number) {
   const isSelected = selected === entry.score.stand_id;
@@ -263,10 +301,11 @@ function renderDetail() {
   const entry = entries.find((r) => r.score.stand_id === selected);
   if (!entry) return;
   const score = entry.score;
+  const detail = detailFor(score.stand_id);
   $("#panel-heading").innerHTML =
     '<button class="back-button" id="back">← Wróć do listy wydzieleń</button>';
   $("#cards").innerHTML =
-    `<div class="stand-panel">${score ? `<p class="eyebrow detail-eyebrow">SZCZEGÓŁY WYDZIELENIA</p><h3 class="stand-id">${escape(score.stand_id)}</h3><div class="badge-row"><span class="badge">${fruitingClass(score.F)}</span>${confidence(score)}</div>${assessment(score)}<dl class="metrics"><div><dt>Ranking R</dt><dd>${finite(score.R) ? score.R.toFixed(1) : "—"}</dd></div><div><dt>Siedlisko H</dt><dd>${finite(score.H) ? score.H.toFixed(2) : "—"}</dd></div><div><dt>Warunki regionalne F</dt><dd>${fruitingClass(score.F)}</dd></div><div><dt>Warunki lokalne F</dt><dd>${fruitingClass(score.F_loc)}</dd></div><div><dt>Dostępność dla odwiedzających P</dt><dd>${finite(score.P) ? score.P.toFixed(2) : "—"}</dd></div></dl><p class="muted">Model ekspercki, nieskalibrowany. P jest szacunkiem dostępności, nie pomiarem tłoku.</p><h3>Co wpływa na wynik?</h3>${explanations(score, true)}${access(score)}<div class="data-note"><strong>Zakres danych</strong><p>${score.mask ? "Wydzielenie przeszło filtry modelu. Nie jest to potwierdzenie pełnej dostępności prawnej." : "Wydzielenie wykluczone przez filtr modelu."}</p><p>Domieszki gatunkowe: brak danych. Osobne składowe siedliska i szczegółowa pogoda nie są dostępne w eksporcie.</p><p>Analiza: ${formatDate(score.day)}.<br>Daty pobrania poszczególnych źródeł: brak danych.</p></div>` : "<p>Brak szczegółów.</p>"}</div>`;
+    `<div class="stand-panel">${score ? `<p class="eyebrow detail-eyebrow">SZCZEGÓŁY WYDZIELENIA</p><h3 class="stand-id">${escape(score.stand_id)}</h3><div class="badge-row"><span class="badge">${fruitingClass(score.F)}</span>${confidence(score)}</div>${assessment(score)}<dl class="metrics"><div><dt>Ranking R</dt><dd>${finite(score.R) ? score.R.toFixed(1) : "—"}</dd></div><div><dt>Siedlisko H</dt><dd>${finite(score.H) ? score.H.toFixed(2) : "—"}</dd></div><div><dt>Warunki regionalne F</dt><dd>${fruitingClass(score.F)}</dd></div><div><dt>Warunki lokalne F</dt><dd>${fruitingClass(score.F_loc)}</dd></div><div><dt>Dostępność dla odwiedzających P</dt><dd>${finite(score.P) ? score.P.toFixed(2) : "—"}</dd></div></dl><p class="muted">Model ekspercki, nieskalibrowany. P jest szacunkiem dostępności, nie pomiarem tłoku.</p><h3>Co wpływa na wynik?</h3>${explanations(score, true)}${access(score)}<h3>Drzewostan i otoczenie</h3>${packageSection(detail)}${structureSection(detail)}${neighborsSection(detail)}<div class="data-note"><strong>Zakres danych</strong><p>${score.mask ? "Wydzielenie przeszło filtry modelu. Nie jest to potwierdzenie pełnej dostępności prawnej." : "Wydzielenie wykluczone przez filtr modelu."}</p><p>Analiza: ${formatDate(score.day)}.<br>Daty pobrania poszczególnych źródeł: brak danych.</p></div>` : "<p>Brak szczegółów.</p>"}</div>`;
   $("#map-title").textContent = `Wydzielenie ${entry.score.stand_id}`;
   $("#legend-content").innerHTML =
     '<span class="gradient-legend"></span> Niższy → wyższy ranking względny';
@@ -513,6 +552,7 @@ async function initialize() {
     entries = data.entries;
     allScores = data.scores;
     allRegions = data.regions;
+    allDetails = data.details;
     regionViews = joinRegions(allRegions, entries);
     loaded = true;
     page = 0;

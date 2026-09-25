@@ -11,15 +11,18 @@ import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 
 from pipeline.bdl import fetch_bdl
+from pipeline.bdl_dictionaries import load_dictionaries
+from pipeline.bdl_package_details import load_package_details
 from pipeline.bdl_packages import load_packages
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
-    write_regions_json,
+    write_regions_json, write_details_json,
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
+from pipeline.neighbors import find_neighbor_labels
 from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M
 from pipeline.osm import fetch_osm_features, _default_overpass_call
 from pipeline.rdlp import (
@@ -318,11 +321,30 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     print("Grouping into search regions...")
     regions = group_into_regions(enriched, profile)
 
+    # plan 2.1 step B3: card-detail data only (species composition, density,
+    # podszyt, soil type from a BDL package; neighbours + stand_stru/
+    # prot_categ from WFS) -- reads already-scored `enriched`/`context_stands`
+    # and never feeds back into them, so this cannot change H/F/R (see
+    # pipeline.bdl_package_details' module docstring for the structural
+    # guarantee, and tests/test_prepare_trip.py for the explicit regression
+    # check).
+    print("Building wydzielenie detail cards (paczka BDL + sasiedztwo)...")
+    dictionaries = load_dictionaries(cache_dir / "bdl_packages")
+    package_details_index = load_package_details(cache_dir / "bdl_packages")
+    neighbors_by_stand = {
+        row["adr_for"]: find_neighbor_labels(row, context_stands, dictionaries)
+        for _, row in enriched.iterrows()
+    }
+
     out_dir = pathlib.Path(out_dir)
     scores_path = write_scores_json(enriched, day=day, out_path=out_dir / f"scores_{day}.json")
     stands_path = export_stand_geometries(enriched, out_dir / "stands_mvp.parquet")
     geojson_path = export_stand_geometries_geojson(enriched, out_dir / "stands.geojson")
     regions_path = write_regions_json(regions, day=day, out_path=out_dir / f"regions_{day}.json")
+    details_path = write_details_json(
+        enriched, package_details_index, neighbors_by_stand, dictionaries,
+        day=day, out_path=out_dir / f"details_{day}.json",
+    )
     print(f"  {len(regions)} region(s)")
 
     return {
@@ -332,6 +354,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "region_count": len(regions),
         "scores_path": scores_path, "stands_path": stands_path,
         "geojson_path": geojson_path, "regions_path": regions_path,
+        "details_path": details_path,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
         "forecast_days": scored.attrs["diagnostics"]["forecast_days"],
@@ -362,7 +385,7 @@ def main(argv=None) -> int:
     )
     print(
         f"Wyniki: {summary['scores_path']}, {summary['stands_path']}, "
-        f"{summary['geojson_path']}, {summary['regions_path']}"
+        f"{summary['geojson_path']}, {summary['regions_path']}, {summary['details_path']}"
     )
     if summary["gdos_failed_tile_count"] or summary["osm_failed_tile_count"]:
         print(

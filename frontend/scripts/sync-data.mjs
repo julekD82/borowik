@@ -88,12 +88,47 @@ export async function syncData(source, target) {
     }
   }
 
+  // Detail export is optional too, same reasoning as regions above (plan
+  // 2.1 step B3) -- but a detail entry references only its OWN stand_id,
+  // not a list of others, so the check is simpler than regions'.
+  let detailsRaw = null;
+  try {
+    detailsRaw = await readFile(
+      path.join(source, `details_${day}.json`),
+      "utf8",
+    );
+  } catch {
+    detailsRaw = null;
+  }
+  let details = null;
+  if (detailsRaw !== null) {
+    try {
+      details = JSON.parse(detailsRaw);
+    } catch {
+      throw new Error(`Plik details_${day}.json jest uszkodzony.`);
+    }
+    if (!Array.isArray(details))
+      throw new Error(`Niepoprawny format details_${day}.json.`);
+    for (const item of details) {
+      if (item.day !== day)
+        throw new Error("Niezgodna data wewnątrz pliku szczegółów.");
+      if (!geometryIds.has(item.stand_id))
+        throw new Error(
+          "Szczegóły odwołują się do wydzielenia spoza zsynchronizowanego zestawu.",
+        );
+    }
+  }
+
   await mkdir(target, { recursive: true });
   const targets = ["scores.json", "stands.geojson"];
   const allContents = [...contents];
   if (regions !== null) {
     targets.push("regions.json");
     allContents.push(regionsRaw);
+  }
+  if (details !== null) {
+    targets.push("details.json");
+    allContents.push(detailsRaw);
   }
   // Validate the entire bundle before replacing any existing public file.
   for (let i = 0; i < targets.length; i++)
@@ -109,7 +144,14 @@ export async function syncData(source, target) {
     // previous sync, so the toggle doesn't show a different day's regions
     // next to fresh per-stand data.
     await rm(path.join(target, "regions.json"), { force: true });
-  return { day, stands: scores.length, regions: regions?.length ?? 0 };
+  if (details === null)
+    await rm(path.join(target, "details.json"), { force: true });
+  return {
+    day,
+    stands: scores.length,
+    regions: regions?.length ?? 0,
+    details: details?.length ?? 0,
+  };
 }
 
 if (

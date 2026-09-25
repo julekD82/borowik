@@ -1,14 +1,20 @@
 from datetime import date, timedelta
 
 import geopandas as gpd
+import pandas as pd
 import pytest
 import requests
+from shapely.geometry import box
 
 from pipeline.prepare_trip import (
     parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM,
     _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable, _is_transient_network_error,
     _radius_scaled_spacing, REFERENCE_RADIUS_KM,
 )
+from pipeline.bdl_dictionaries import load_dictionaries
+from pipeline.bdl_package_details import load_package_details
+from pipeline.neighbors import find_neighbor_labels
+from pipeline.export import write_details_json
 
 
 def _http_error(status_code):
@@ -198,3 +204,48 @@ def test_main_returns_1_and_prints_clean_error_outside_poland(monkeypatch, tmp_p
     captured = capsys.readouterr()
     assert "Blad" in captured.out
     assert "Traceback" not in captured.out
+
+
+def _enriched_for_b3_regression():
+    # Mimics the shape of `enriched` at the point run_trip_preparation runs
+    # the plan 2.1 step B3 block (after enrich_with_mvp_layers) -- R_final/H
+    # already final, plus the WFS columns B3 reads (adr_for, area_type,
+    # species_cd, spec_age, stand_stru, prot_categ).
+    return gpd.GeoDataFrame({
+        "stand_id": ["A@2026", "B@2026"],
+        "adr_for": ["A", "B"],
+        "area_type": ["D-STAN", "D-STAN"],
+        "species_cd": ["SO", "SW"],
+        "spec_age": [60, 45],
+        "stand_stru": ["DRZEW", None],
+        "prot_categ": ["OCH USZK", None],
+        "R_final": [48.6, 16.0],
+        "H": [0.9, 0.5],
+    }, geometry=[box(0, 0, 100, 100), box(100, 0, 200, 100)], crs="EPSG:2180")
+
+
+def test_b3_detail_card_step_does_not_change_r_or_h(tmp_path):
+    # Plan 2.1 step B3 requirement (spec 5.3 pkt 3): the detail-card step
+    # (dictionaries + package details + neighbours + details.json) must have
+    # zero effect on scoring. Runs the exact sequence prepare_trip.py's B3
+    # block runs (see pipeline/prepare_trip.py's run_trip_preparation,
+    # after group_into_regions) against a synthetic `enriched` and asserts
+    # R_final/H are byte-identical before and after.
+    enriched = _enriched_for_b3_regression()
+    r_before = enriched["R_final"].copy()
+    h_before = enriched["H"].copy()
+
+    empty_packages_dir = tmp_path / "bdl_packages"  # no packages cached -- the common case
+    dictionaries = load_dictionaries(empty_packages_dir)
+    package_details_index = load_package_details(empty_packages_dir)
+    neighbors_by_stand = {
+        row["adr_for"]: find_neighbor_labels(row, enriched, dictionaries)
+        for _, row in enriched.iterrows()
+    }
+    write_details_json(
+        enriched, package_details_index, neighbors_by_stand, dictionaries,
+        day="2026-09-25", out_path=tmp_path / "details_2026-09-25.json",
+    )
+
+    pd.testing.assert_series_equal(enriched["R_final"], r_before)
+    pd.testing.assert_series_equal(enriched["H"], h_before)

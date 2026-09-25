@@ -94,6 +94,81 @@ def build_region_record(row, day: str) -> dict:
     return record
 
 
+def _share_label(part_cd: str, dictionaries: dict) -> str:
+    return dictionaries.get("part", {}).get(part_cd, part_cd)
+
+
+def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list[dict]:
+    tree_names = dictionaries.get("tree_species", {})
+    return [
+        {
+            "species_cd": species_cd,
+            "name": tree_names.get(species_cd, species_cd),
+            "share": _share_label(part_cd, dictionaries),
+        }
+        for species_cd, part_cd in species
+    ]
+
+
+def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
+                           package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict) -> dict:
+    """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
+    species composition, density, understory, soil type -- from a BDL
+    package when `adr_for` is covered by one (fields null/empty
+    otherwise) -- plus neighbours and stand_stru/prot_categ, which come
+    from WFS and are present regardless of package coverage. Purely
+    additive: never touches H/F/R (see pipeline.bdl_package_details'
+    module docstring for why that's structurally guaranteed, not just
+    tested)."""
+    details = package_details_index.get(adr_for)
+    prot_categ_name = None
+    if prot_categ is not None and not (isinstance(prot_categ, float) and math.isnan(prot_categ)):
+        prot_categ_name = dictionaries.get("prot_categ", {}).get(prot_categ, prot_categ)
+    return {
+        "stand_id": stand_id,
+        "day": day,
+        "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
+        "density": (
+            dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
+            if details and details.density_cd else None
+        ),
+        "podszyt_species": _species_entries(details.podszyt_species, dictionaries) if details else [],
+        "soil_type": (
+            dictionaries.get("soil_subtype", {}).get(details.soil_subtype_cd, details.soil_subtype_cd)
+            if details and details.soil_subtype_cd else None
+        ),
+        "package_date": details.package_date if details else None,
+        "neighbors": neighbors_by_stand.get(adr_for, []),
+        "stand_stru": _json_safe(stand_stru),  # no BDL dictionary exists for this field (verified B3 research)
+        "prot_categ": prot_categ_name,
+    }
+
+
+def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, neighbors_by_stand: dict,
+                         dictionaries: dict, day: str, out_path) -> pathlib.Path:
+    """Plan 2.1 step B3: card-detail data (species composition, density,
+    understory, soil type, neighbours, stand_stru/prot_categ) for every
+    wydzielenie in `stands`, kept in its own file rather than
+    scores_{day}.json -- adding this per stand there would have grown a
+    real Będziemyśl export (6.6MB/4703 records) by an estimated 35-55%,
+    even though a card's detail is opened for a handful of wydzielenia,
+    while the "Wydzielenia" list (scores.json) is read on every load.
+    Optional on the frontend, same pattern as regions_{day}.json: a
+    missing details file just means no B3 section on the card, not an
+    error."""
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    records = [
+        build_details_record(
+            row["stand_id"], row["adr_for"], row.get("stand_stru"), row.get("prot_categ"),
+            day, package_details_index, neighbors_by_stand, dictionaries,
+        )
+        for _, row in stands.iterrows()
+    ]
+    out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return out_path
+
+
 def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

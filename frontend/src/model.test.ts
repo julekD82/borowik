@@ -11,7 +11,7 @@ import {
   MIN_STANDALONE_AREA_HA,
 } from "./model";
 import { readSaved, saveRegion } from "./storage";
-import type { Score, Stands, Region } from "./model";
+import type { Score, Stands, Region, StandDetail } from "./model";
 
 const score = (id: string, r: number, mask = true): Score => ({
   stand_id: id,
@@ -197,6 +197,70 @@ describe("data and classification", () => {
       }),
     ).toBe(true); // boundary is inclusive
     expect(isStandaloneTarget({ ...score("A", 40), area_ha: 5 })).toBe(true);
+  });
+  const detail = (
+    standId: string,
+    overrides: Partial<StandDetail> = {},
+  ): StandDetail => ({
+    stand_id: standId,
+    day: "2026-09-24",
+    drzew_species: [{ species_cd: "SO", name: "sosna zwyczajna", share: "udział 70 %" }],
+    density: "0.7",
+    podszyt_species: [],
+    soil_type: "brunatna wyługowana",
+    package_date: "2026-06-23",
+    neighbors: ["zrąb"],
+    stand_stru: "DRZEW",
+    prot_categ: null,
+    ...overrides,
+  });
+  it("parseData accepts a missing details argument and an empty details array (plan 2.1 step B3)", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    expect(parseData(scores, stands).details).toEqual([]);
+    expect(parseData(scores, stands, undefined, []).details).toEqual([]);
+  });
+  it("parseData validates a provided details array against the same day and known stand_ids", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    const result = parseData(scores, stands, undefined, [detail("A")]);
+    expect(result.details).toHaveLength(1);
+    expect(() =>
+      parseData(scores, stands, undefined, [
+        { ...detail("A"), day: "2026-09-23" },
+      ]),
+    ).toThrow(/dat/);
+    expect(() =>
+      parseData(scores, stands, undefined, [detail("GHOST")]),
+    ).toThrow();
+    expect(() =>
+      parseData(scores, stands, undefined, "not an array"),
+    ).toThrow();
+  });
+  it("parseData accepts a stand's details with empty package fields but real neighbours/stand_stru (no package coverage)", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    const noPackage = detail("B", {
+      drzew_species: [],
+      density: null,
+      podszyt_species: [],
+      soil_type: null,
+      package_date: null,
+      stand_stru: null,
+    });
+    const result = parseData(scores, stands, undefined, [noPackage]);
+    expect(result.details[0].drzew_species).toEqual([]);
+    expect(result.details[0].neighbors).toEqual(["zrąb"]);
+  });
+  it("parseData rejects a malformed details entry", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    expect(() =>
+      parseData(scores, stands, undefined, [
+        { ...detail("A"), drzew_species: [{ species_cd: "SO" }] },
+      ]),
+    ).toThrow();
+    expect(() =>
+      parseData(scores, stands, undefined, [
+        { ...detail("A"), neighbors: "zrąb" },
+      ]),
+    ).toThrow();
   });
   it("parseData accepts scores without area_ha (older exports) and validates it when present", () => {
     const scores = [score("A", 40), score("B", 30)];
