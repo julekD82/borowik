@@ -11,6 +11,7 @@ from pipeline.export import (
     build_details_record, write_details_json,
 )
 from pipeline.bdl_package_details import PackageStandDetails
+from pipeline.tie_break import TieBreakRaw
 
 
 def _enriched_stands():
@@ -27,6 +28,7 @@ def _enriched_stands():
         "d_park_m": [1234.5, float("nan")],
         "forecast_days": [1, 1],
         "G_season": [0.91, 1.0],
+        "tie_break": [0.75, 0.5],
         "s_host_source": ["paczka", "wfs"],
         "s_host_package_date": ["2026-06-23", None],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
@@ -60,6 +62,12 @@ def test_build_score_record_includes_g_season():
     row = _enriched_stands().iloc[0]
     record = build_score_record(row, day="2026-09-23")
     assert record["G_season"] == pytest.approx(0.91)
+
+
+def test_build_score_record_includes_tie_break():
+    row = _enriched_stands().iloc[0]
+    record = build_score_record(row, day="2026-09-23")
+    assert record["tie_break"] == pytest.approx(0.75)
 
 
 def test_build_score_record_s_host_package_date_is_null_for_wfs_source():
@@ -194,7 +202,7 @@ def test_build_details_record_full_shape_with_package():
     neighbors = {"AA-1": ["drzewostan buk pospolity", "zrąb"]}
     record = build_details_record(
         "AA-1@2026", "AA-1", "DRZEW", "OCH USZK", "2026-09-25",
-        details_index, neighbors, _DICTIONARIES,
+        details_index, neighbors, _DICTIONARIES, {},
     )
     assert record["stand_id"] == "AA-1@2026"
     assert record["day"] == "2026-09-25"
@@ -213,10 +221,29 @@ def test_build_details_record_full_shape_with_package():
     assert record["prot_categ"] == "trw. uszk na sk. dział.przem"
 
 
+def test_build_details_record_includes_veg_cover_and_density_index_with_package():
+    tie_break_index = {"AA-1": TieBreakRaw(veg_cover_cd="MSZC", standdensity_index=0.9)}
+    record = build_details_record(
+        "AA-1@2026", "AA-1", "DRZEW", None, "2026-09-25",
+        {}, {}, {}, tie_break_index,
+    )
+    assert record["veg_cover"] == "mszysto-czernicowa"
+    assert record["standdensity_index"] == pytest.approx(0.9)
+
+
+def test_build_details_record_veg_cover_and_density_index_null_without_coverage():
+    record = build_details_record(
+        "AA-1@2026", "AA-1", "DRZEW", None, "2026-09-25",
+        {}, {}, {}, {},
+    )
+    assert record["veg_cover"] is None
+    assert record["standdensity_index"] is None
+
+
 def test_build_details_record_empty_package_fields_when_no_package():
     record = build_details_record(
         "BB-2@2026", "BB-2", None, None, "2026-09-25",
-        {}, {}, _DICTIONARIES,
+        {}, {}, _DICTIONARIES, {},
     )
     assert record["drzew_species"] == []
     assert record["density"] is None
@@ -234,7 +261,7 @@ def test_build_details_record_neighbors_and_stand_stru_present_without_package()
     neighbors = {"CC-3": ["łąka"]}
     record = build_details_record(
         "CC-3@2026", "CC-3", "KO", "OCH USZK", "2026-09-25",
-        {}, neighbors, _DICTIONARIES,
+        {}, neighbors, _DICTIONARIES, {},
     )
     assert record["neighbors"] == ["łąka"]
     assert record["stand_stru"] == "KO"
@@ -249,7 +276,7 @@ def test_build_details_record_falls_back_to_raw_code_without_dictionary_entry():
             soil_subtype_cd="YYY", source_name="PKG", package_date=None,
         ),
     }
-    record = build_details_record("DD-4@2026", "DD-4", None, "UNKNOWN_CATEG", "2026-09-25", details_index, {}, {})
+    record = build_details_record("DD-4@2026", "DD-4", None, "UNKNOWN_CATEG", "2026-09-25", details_index, {}, {}, {})
     assert record["drzew_species"] == [{"species_cd": "XX", "name": "XX", "share": "10"}]
     assert record["density"] == "ZZZ"
     assert record["soil_type"] == "YYY"
@@ -269,7 +296,10 @@ def test_write_details_json_one_record_per_stand(tmp_path):
             soil_subtype_cd=None, source_name="PKG", package_date=None,
         ),
     }
-    out_path = write_details_json(stands, details_index, {}, _DICTIONARIES, day="2026-09-25", out_path=tmp_path / "details.json")
+    out_path = write_details_json(
+        stands, details_index, {}, _DICTIONARIES, day="2026-09-25", out_path=tmp_path / "details.json",
+        tie_break_index={},
+    )
     data = json.loads(out_path.read_text(encoding="utf-8"))
     assert len(data) == 2
     assert {r["stand_id"] for r in data} == {"AA-1@2026", "BB-2@2026"}

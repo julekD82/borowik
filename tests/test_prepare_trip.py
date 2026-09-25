@@ -246,6 +246,7 @@ def test_b3_detail_card_step_does_not_change_r_or_h(tmp_path):
     write_details_json(
         enriched, package_details_index, neighbors_by_stand, dictionaries,
         day="2026-09-25", out_path=tmp_path / "details_2026-09-25.json",
+        tie_break_index={},
     )
 
     pd.testing.assert_series_equal(enriched["R_final"], r_before)

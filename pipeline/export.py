@@ -4,6 +4,8 @@ import pathlib
 
 import geopandas as gpd
 
+from pipeline.tie_break import veg_cover_label
+
 SCORE_FIELDS = [
     "stand_id", "H", "F", "F_loc", "P", "confidence", "confidence_reasons", "explanation",
     "distance_method", "entrance_status", "d_park_m",
@@ -20,6 +22,9 @@ SCORE_FIELDS = [
     # panujący+part_cd fallback ("wfs"), plus that package's own
     # generation date (metadane.txt) when applicable -- null for "wfs".
     "s_host_source", "s_host_package_date",
+    # Plan 2.1 "Zmiana 4": ground-cover/density ordinal secondary sort key
+    # (pipeline.tie_break) -- presentation-only, see that module's docstring.
+    "tie_break",
 ]
 
 
@@ -115,7 +120,8 @@ def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list
 
 
 def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
-                           package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict) -> dict:
+                           package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
+                           tie_break_index: dict) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -123,11 +129,18 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
     from WFS and are present regardless of package coverage. Purely
     additive: never touches H/F/R (see pipeline.bdl_package_details'
     module docstring for why that's structurally guaranteed, not just
-    tested)."""
+    tested).
+
+    Since plan 2.1 "Zmiana 4": also ground cover (word form) and the
+    stand density index -- from pipeline.tie_break, empty/null when
+    `adr_for` isn't covered by any package. Purely additive presentation
+    fields: never touches H/F/R (see pipeline.tie_break's own module
+    docstring)."""
     details = package_details_index.get(adr_for)
     prot_categ_name = None
     if prot_categ is not None and not (isinstance(prot_categ, float) and math.isnan(prot_categ)):
         prot_categ_name = dictionaries.get("prot_categ", {}).get(prot_categ, prot_categ)
+    tie_break_raw = tie_break_index.get(adr_for)
     return {
         "stand_id": stand_id,
         "day": day,
@@ -145,11 +158,13 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         "neighbors": neighbors_by_stand.get(adr_for, []),
         "stand_stru": _json_safe(stand_stru),  # no BDL dictionary exists for this field (verified B3 research)
         "prot_categ": prot_categ_name,
+        "veg_cover": veg_cover_label(tie_break_raw.veg_cover_cd) if tie_break_raw else None,
+        "standdensity_index": _json_safe(tie_break_raw.standdensity_index) if tie_break_raw else None,
     }
 
 
 def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, neighbors_by_stand: dict,
-                         dictionaries: dict, day: str, out_path) -> pathlib.Path:
+                         dictionaries: dict, day: str, out_path, tie_break_index: dict) -> pathlib.Path:
     """Plan 2.1 step B3: card-detail data (species composition, density,
     understory, soil type, neighbours, stand_stru/prot_categ) for every
     wydzielenie in `stands`, kept in its own file rather than
@@ -159,13 +174,19 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
     while the "Wydzielenia" list (scores.json) is read on every load.
     Optional on the frontend, same pattern as regions_{day}.json: a
     missing details file just means no B3 section on the card, not an
-    error."""
+    error.
+
+    `tie_break_index` (plan 2.1 "Zmiana 4"):
+    pipeline.tie_break.load_tie_break_raw's adr_for -> raw output, used
+    only to render veg_cover/standdensity_index on the card
+    (build_details_record) -- the numeric tie_break sort value itself
+    lives in scores_{day}.json, not here."""
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     records = [
         build_details_record(
             row["stand_id"], row["adr_for"], row.get("stand_stru"), row.get("prot_categ"),
-            day, package_details_index, neighbors_by_stand, dictionaries,
+            day, package_details_index, neighbors_by_stand, dictionaries, tie_break_index,
         )
         for _, row in stands.iterrows()
     ]

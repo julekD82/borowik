@@ -356,6 +356,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     details_path = write_details_json(
         enriched, package_details_index, neighbors_by_stand, dictionaries,
         day=day, out_path=out_dir / f"details_{day}.json",
+        tie_break_index=tie_break_raw_index,
     )
     print(f"  {len(regions)} region(s)")
 
