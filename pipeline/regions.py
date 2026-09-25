@@ -71,12 +71,18 @@ def _summarize_cluster(members: gpd.GeoDataFrame, top_n: int) -> dict:
     override R's own ranking signal). A "tie_break" column absent (older
     caller/test fixture) falls back to a neutral constant for every row,
     which combined with `kind="stable"` reproduces the exact pre-this-step
-    order."""
+    order. `stand_id` (ascending) is the final tiebreaker -- on real data
+    most stands share no BDL package coverage and so share the exact same
+    neutral 0.5 tie_break, and a full tie on both keys is common, not an
+    edge case (final review finding); without this third key those
+    stands would still order by arbitrary spatial-index iteration order."""
     top = members.sort_values("R_final", ascending=False).head(top_n)
     ordered = members.assign(
         _r_round=members["R_final"].round(2),
         _tie_break=members.get("tie_break", 0.5),
-    ).sort_values(["_r_round", "_tie_break"], ascending=[False, False], kind="stable")
+    ).sort_values(
+        ["_r_round", "_tie_break", "stand_id"], ascending=[False, False, True], kind="stable",
+    )
     return {
         "rank_score": float(top["R_final"].median()),
         "stand_count": int(len(members)),

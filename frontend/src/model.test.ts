@@ -321,6 +321,15 @@ describe("data and classification", () => {
     expect(result.details[0].drzew_species).toEqual([]);
     expect(result.details[0].neighbors).toEqual(["zrąb"]);
   });
+  it("parseData accepts a details entry from an older export missing veg_cover/standdensity_index", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    const older = detail("A") as Partial<StandDetail>;
+    delete older.veg_cover;
+    delete older.standdensity_index;
+    const result = parseData(scores, stands, undefined, [older]);
+    expect(result.details[0].veg_cover).toBeUndefined();
+    expect(result.details[0].standdensity_index).toBeUndefined();
+  });
   it("parseData rejects a malformed details entry", () => {
     const scores = [score("A", 40), score("B", 30)];
     expect(() =>

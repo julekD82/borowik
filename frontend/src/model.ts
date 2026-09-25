@@ -266,9 +266,12 @@ export type StandDetail = {
   // Plan 2.1 "Zmiana 4": word-form ground cover + numeric stand density
   // index, next to the existing `density` (zwarcie) field -- null when
   // adr_for isn't covered by any package, same as the other package-only
-  // fields above.
-  veg_cover: string | null;
-  standdensity_index: number | null;
+  // fields above. Optional (unlike this type's other fields): a
+  // details_{day}.json written before this field existed has no key for
+  // it at all, not even null -- final review finding, real synced
+  // frontend/public/data/details.json failed to load without this.
+  veg_cover?: string | null;
+  standdensity_index?: number | null;
 };
 
 export type Region = {
@@ -468,8 +471,8 @@ export function parseData(
           strings(d.neighbors) &&
           nullableString(d.stand_stru) &&
           nullableString(d.prot_categ) &&
-          nullableString(d.veg_cover) &&
-          (d.standdensity_index === null || finite(d.standdensity_index)),
+          (d.veg_cover === undefined || nullableString(d.veg_cover)) &&
+          (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)),
       )
     )
       throw new Error("Niepoprawny plik szczegółów wydzieleń.");

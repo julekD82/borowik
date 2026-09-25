@@ -161,6 +161,23 @@ def test_summarize_cluster_stand_ids_ordered_by_r_final_then_tie_break():
     assert summary["stand_ids"] == ["high_tb", "low_tb", "third"]
 
 
+def test_summarize_cluster_stand_ids_breaks_a_full_tie_by_stand_id():
+    # Final-review finding: two members tied on BOTH rounded R_final and
+    # tie_break (a common case on real data -- most stands without a BDL
+    # package share the same neutral 0.5 tie_break) must still get a
+    # deterministic order, not whatever the spatial index happened to
+    # return them in. Arrives in descending id order to prove the sort
+    # key actually does the work, not incidental input order.
+    members = gpd.GeoDataFrame({
+        "stand_id": ["Z", "Y", "X"],
+        "R_final": [50.0, 50.0, 50.0],
+        "tie_break": [0.5, 0.5, 0.5],
+        "geometry": [box(0, 0, 10, 10), box(10, 10, 20, 20), box(20, 20, 30, 30)],
+    }, crs="EPSG:2180")
+    summary = _summarize_cluster(members, top_n=3)
+    assert summary["stand_ids"] == ["X", "Y", "Z"]
+
+
 def test_summarize_cluster_falls_back_to_neutral_tie_break_when_column_absent():
     # Existing callers/fixtures that don't set a "tie_break" column (most
     # of this file) must keep their current ordering, not crash.
