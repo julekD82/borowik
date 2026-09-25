@@ -2,7 +2,7 @@ import math
 import pytest
 
 from pipeline.habitat import load_profile
-from pipeline.explain import compute_log_contributions, generate_explanation, FACTOR_WEIGHTS
+from pipeline.explain import compute_log_contributions, generate_explanation, FACTOR_WEIGHTS, g_season_note
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
 
@@ -126,3 +126,16 @@ def test_generate_explanation_host_down_uses_poor_species_wording_when_affinity_
     text = entries[0]["text"]
     assert "słabo pasuje" in text
     assert "/10" not in text
+
+
+def test_g_season_note_none_when_at_or_above_threshold():
+    assert g_season_note(0.5, PROFILE) is None
+    assert g_season_note(1.0, PROFILE) is None
+
+
+def test_g_season_note_present_and_worded_when_below_threshold():
+    note = g_season_note(0.3, PROFILE)
+    assert note is not None
+    assert note["factor"] == "g_season"
+    assert note["text"] == "poza szczytem sezonu (G_season=0.30)"
+    assert note["contribution"] == pytest.approx(0.3 - 1.0)

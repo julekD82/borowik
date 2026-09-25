@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.confidence import compute_confidence
-from pipeline.explain import compute_log_contributions, generate_explanation
+from pipeline.explain import compute_log_contributions, generate_explanation, g_season_note
 from pipeline.gdos import mark_gdos_blocked
 from pipeline.habitat import host_affinity
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
@@ -138,7 +138,14 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                  # by a low part_cd share (pipeline.explain._host_down_is_low_share).
                  "part_cd": row.get("part_cd"),
                  "host_affinity": host_affinity(row.get("species_cd"), profile)}
-        explanations.append(generate_explanation(contributions, values, meta, profile))
+        explanation = generate_explanation(contributions, values, meta, profile)
+        # Plan 2.1 "Zmiana 1": G_season absent (older/synthetic caller,
+        # e.g. most of tests/test_mvp.py) defaults to 1.0 -- no note, exact
+        # pre-this-step behaviour.
+        note = g_season_note(row.get("G_season", 1.0), profile)
+        if note is not None:
+            explanation.append(note)
+        explanations.append(explanation)
     stands["explanation"] = explanations
 
     return stands

@@ -52,6 +52,23 @@ TEMPLATES = {
 }
 
 
+def g_season_note(g_season: float, profile: dict) -> dict | None:
+    """Plan 2.1 "Zmiana 1": a flat, threshold-based note (NOT part of the
+    ranked contributions/generate_explanation pool above) -- G_season is
+    the same value for every stand in a run, so a log-contribution against
+    an area median (like host/site/age/moisture/...) would always be 0 and
+    never surface it. Returns None when g_season is at or above
+    profile["phenology"]["g_season_note_threshold"] (no note needed)."""
+    threshold = profile["phenology"]["g_season_note_threshold"]
+    if g_season >= threshold:
+        return None
+    return {
+        "factor": "g_season",
+        "contribution": g_season - 1.0,
+        "text": f"poza szczytem sezonu (G_season={g_season:.2f})",
+    }
+
+
 def compute_log_contributions(values: dict, area_medians: dict) -> dict:
     contributions = {}
     for factor, weight in FACTOR_WEIGHTS.items():

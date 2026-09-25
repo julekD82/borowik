@@ -193,3 +193,28 @@ def test_enrich_explanation_is_a_list_of_dicts_with_expected_keys():
     assert isinstance(explanation, list)
     for entry in explanation:
         assert set(entry) == {"factor", "contribution", "text"}
+
+
+def test_enrich_adds_g_season_explanation_note_when_below_threshold():
+    stands = _scored_stands()
+    stands["G_season"] = [0.2, 1.0]  # A: deep off-season, B: peak season
+    result = enrich_with_mvp_layers(
+        stands, PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
+    )
+    exp_a = result[result["stand_id"] == "A"].iloc[0]["explanation"]
+    exp_b = result[result["stand_id"] == "B"].iloc[0]["explanation"]
+    assert any(e["factor"] == "g_season" for e in exp_a)
+    assert not any(e["factor"] == "g_season" for e in exp_b)
+
+
+def test_enrich_defaults_g_season_to_one_when_column_absent():
+    # Older/synthetic callers that don't set G_season (e.g. _scored_stands
+    # itself, most other tests in this file) must not crash or spuriously
+    # add the note.
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
+    )
+    for exp in result["explanation"]:
+        assert not any(e["factor"] == "g_season" for e in exp)
