@@ -150,6 +150,62 @@ def test_summarize_cluster_stand_ids_and_count():
     assert sorted(summary["stand_ids"]) == ["A", "B"]
 
 
+def test_summarize_cluster_stand_ids_ordered_by_r_final_then_tie_break():
+    members = gpd.GeoDataFrame({
+        "stand_id": ["low_tb", "high_tb", "third"],
+        "R_final": [50.001, 50.004, 40.0],  # first two round to 50.00 at 2 decimals -- tied
+        "tie_break": [0.2, 0.9, 0.5],
+        "geometry": [box(0, 0, 10, 10), box(10, 10, 20, 20), box(20, 20, 30, 30)],
+    }, crs="EPSG:2180")
+    summary = _summarize_cluster(members, top_n=3)
+    assert summary["stand_ids"] == ["high_tb", "low_tb", "third"]
+
+
+def test_summarize_cluster_falls_back_to_neutral_tie_break_when_column_absent():
+    # Existing callers/fixtures that don't set a "tie_break" column (most
+    # of this file) must keep their current ordering, not crash.
+    members = gpd.GeoDataFrame({
+        "stand_id": ["A", "B"],
+        "R_final": [50.0, 40.0],
+        "geometry": [box(0, 0, 10, 10), box(10, 10, 20, 20)],
+    }, crs="EPSG:2180")
+    summary = _summarize_cluster(members, top_n=2)
+    assert summary["stand_ids"] == ["A", "B"]
+
+
+def test_group_into_regions_on_a_uniform_r_cluster_orders_members_by_tie_break():
+    # Same dense, uniformly-excellent grid as
+    # test_group_into_regions_on_a_synthetic_continuous_forest_does_not_produce_one_giant_region
+    # below (all R_final tied at 90.0, so no member ordering signal comes
+    # from R at all) -- with a distinct tie_break per stand added, member
+    # order within the accepted region must follow it, not spatial-index
+    # iteration order.
+    grid_n = 31
+    spacing = 200.0
+    rows = []
+    counter = 0
+    for i in range(grid_n):
+        for j in range(grid_n):
+            x = 380000 + i * spacing
+            y = 486000 + j * spacing
+            rows.append({
+                "stand_id": f"G{i}_{j}", "R_final": 90.0, "mask_full": True,
+                "tie_break": (counter % 100) / 100.0,
+                "geometry": box(x, y, x + 100.0, y + 100.0),
+            })
+            counter += 1
+    stands = gpd.GeoDataFrame(rows, crs="EPSG:2180")
+
+    profile = _regions_profile(top_pct=1.0, radius_m=800.0, min_area_ha=5.0, min_separation_m=3000.0, max_regions=5)
+    result = group_into_regions(stands, profile)
+
+    assert len(result) >= 1
+    tie_break_by_id = dict(zip(stands["stand_id"], stands["tie_break"]))
+    for _, region in result.iterrows():
+        member_tie_breaks = [tie_break_by_id[sid] for sid in region["stand_ids"]]
+        assert member_tie_breaks == sorted(member_tie_breaks, reverse=True)
+
+
 def test_group_into_regions_empty_when_nothing_passes_mask():
     stands = gpd.GeoDataFrame(
         [{"stand_id": "A", "R_final": 99.0, "mask_full": False,

@@ -59,12 +59,28 @@ def _summarize_cluster(members: gpd.GeoDataFrame, top_n: int) -> dict:
     forest complex full of just-above-threshold stands does not
     automatically outrank a small complex of a few excellent stands. If the
     cluster has fewer than `top_n` members, `.head(top_n)` on a short frame
-    just returns what's there -- no special-casing needed."""
+    just returns what's there -- no special-casing needed.
+
+    `stand_ids`' own ORDER (plan 2.1 "Zmiana 4"): R_final rounded to 2
+    decimal places, then pipeline.tie_break's ground-cover/density
+    preference as a secondary key among stands tied at that precision --
+    same 2-decimal precision as frontend/src/model.ts's joinData sort,
+    chosen against a real Będziemyśl export (top-500 R_final: 2 decimals
+    groups only near-exact ties, max group size 4, vs. whole-point
+    rounding's max group size 67 -- too coarse, would let tie_break
+    override R's own ranking signal). A "tie_break" column absent (older
+    caller/test fixture) falls back to a neutral constant for every row,
+    which combined with `kind="stable"` reproduces the exact pre-this-step
+    order."""
     top = members.sort_values("R_final", ascending=False).head(top_n)
+    ordered = members.assign(
+        _r_round=members["R_final"].round(2),
+        _tie_break=members.get("tie_break", 0.5),
+    ).sort_values(["_r_round", "_tie_break"], ascending=[False, False], kind="stable")
     return {
         "rank_score": float(top["R_final"].median()),
         "stand_count": int(len(members)),
-        "stand_ids": members["stand_id"].tolist(),
+        "stand_ids": ordered["stand_id"].tolist(),
         "geometry": unary_union(list(members.geometry)),
     }
 
