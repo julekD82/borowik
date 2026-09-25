@@ -14,6 +14,7 @@ from pipeline.scoring import (
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
 )
+from pipeline.phenology import compute_g_season
 
 # Default weather grid spacing, and the climatology grid's own (see run_poc /
 # _nearest_climatology_cell for why climatology is coarser). Both are defined
@@ -129,6 +130,11 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # otherwise a forecast fetched for next week would still be compared
     # against this week's climatology window (plan 2.1 step A3).
     target_doy = target_date.timetuple().tm_yday
+    # Plan 2.1 "Zmiana 1": one G_season value per run (it depends only on
+    # target_date, not on any per-stand attribute), reused for every stand
+    # below -- same "compute once, same value for every stand" shape as
+    # forecast_days.
+    g_season = compute_g_season(target_doy, profile)
     # Many stands share a weather cell, and many weather cells share a
     # (coarser) climatology cell. Avoid rescanning the whole 30-year archive
     # for every stand when the search spans dozens of tiles.
@@ -201,7 +207,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         # heat_penalty_p5_mm means a 5-day precipitation sum (spec §4.3), not p1.
         t = score_temperature(wrow["tmean20"], wrow["tmean5"], wrow["p5"], profile)
         k_frost = score_frost(wrow["tmin3"], profile)
-        f = compute_fruiting(m, t, k_frost, g_season=1.0)
+        f = compute_fruiting(m, t, k_frost, g_season=g_season)
         pct_m = (pct_cwb26 + pct_sm) / 2.0
         f_loc = apply_moisture_modulation(f, moisture_cls, pct_m, profile)
         r = compute_ranking(mask, h, f_loc)
@@ -238,6 +244,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # ile dni okna pochodzi z prognozy"), matching how every other weather-
     # derived column already flows through to scores_{day}.json.
     stands["forecast_days"] = forecast_days
+    stands["G_season"] = g_season
     stands.attrs["diagnostics"] = {
         "stand_count": len(stands),
         "mask_passing_count": int(sum(mask_values)),
@@ -248,5 +255,6 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "forecast_days": forecast_days,
         "package_stand_count": package_stand_count,
         "package_unknown_species_count": package_unknown_species_count,
+        "g_season": g_season,
     }
     return stands

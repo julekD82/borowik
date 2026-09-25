@@ -332,3 +332,42 @@ def test_run_poc_counts_unknown_species_from_package_composition():
         package_index=package_index,
     )
     assert result.attrs["diagnostics"]["package_unknown_species_count"] == 1
+
+
+def test_run_poc_exposes_g_season_per_stand_and_in_diagnostics():
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0,
+        past_days=30,
+        target_date=date(2026, 9, 15),  # GBIF monthly maximum, G_season == 1.0
+    )
+    assert result["G_season"].tolist() == pytest.approx([1.0, 1.0])
+    assert result.attrs["diagnostics"]["g_season"] == pytest.approx(1.0)
+
+
+def test_run_poc_g_season_reduces_f_relative_to_hardcoded_one(monkeypatch):
+    import pipeline.orchestrate as orchestrate_mod
+
+    monkeypatch.setattr(orchestrate_mod, "date", _FrozenDate)
+    monkeypatch.setattr(_FrozenDate, "_today", date(2026, 1, 1))
+
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0,
+        past_days=30,
+        target_date=date(2026, 1, 1),  # deep winter -- G_season floors near 0.05
+    )
+    assert result["G_season"].iloc[0] == pytest.approx(PROFILE["phenology"]["g_season_floor"], abs=0.01)
+    # F = G_season * M^0.6 * T^0.4 * K_frost, so a floored G_season pulls F
+    # down close to that same floor (M/T/K_frost each <= 1.0 by construction).
+    assert result["F"].iloc[0] < 0.1
