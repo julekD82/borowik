@@ -130,6 +130,28 @@ fruiting_classes:
   - {max: 0.70, label: "Dobre"}
   - {max: 1.01, label: "Bardzo dobre"}
 
+phenology:
+  # Plan 2.1 "Zmiana 1" (user review 2026-09-25): static Boletus edulis
+  # fruiting-season curve for Poland, from GBIF occurrence records --
+  # queried live 2026-09-25 via
+  # api.gbif.org/v1/occurrence/search?country=PL&scientificName=Boletus%20edulis&limit=0&facet=month&facetLimit=12,
+  # n=1270 records with a recorded month (of ~1300 total occurrences).
+  # Known bias: GBIF counts likely overrepresent Aug-Oct relative to true
+  # fruiting frequency (more people are out foraging/reporting sightings
+  # in peak season) -- still the only free PL-specific season curve
+  # available, per user decision 2026-09-25. Stored statically (not
+  # fetched per run) -- re-query and update this comment's date if this
+  # curve is ever refreshed.
+  gbif_monthly_counts: [1, 0, 0, 0, 2, 25, 118, 243, 471, 350, 58, 2]  # Jan..Dec
+  # Floor for pipeline.phenology.compute_g_season's interpolated curve --
+  # a genuinely fruitless month still isn't provably impossible with a
+  # small, observation-biased sample, so G_season never reaches exactly 0.
+  g_season_floor: 0.05
+  # Explanation-note threshold (pipeline.explain.g_season_note): below this,
+  # F's card/list explanation gets an extra "poza szczytem sezonu" note --
+  # [E] plan decision, roughly "below half the GBIF peak month".
+  g_season_note_threshold: 0.5
+
 legal_mask:
   gdos_layers: ["GDOS:Rezerwaty", "GDOS:ParkiNarodowe"]   # spec §4.2, §9 step 8
 
