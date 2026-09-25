@@ -15,6 +15,7 @@ from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_package_details import load_package_details
 from pipeline.neighbors import find_neighbor_labels
 from pipeline.export import write_details_json
+from pipeline.tie_break import load_tie_break_raw, tie_break_for_stand
 
 
 def _http_error(status_code):
@@ -249,3 +250,24 @@ def test_b3_detail_card_step_does_not_change_r_or_h(tmp_path):
 
     pd.testing.assert_series_equal(enriched["R_final"], r_before)
     pd.testing.assert_series_equal(enriched["H"], h_before)
+
+
+def test_tie_break_step_does_not_change_r_or_h(tmp_path):
+    # Plan 2.1 "Zmiana 4": computing tie_break (before group_into_regions)
+    # must have zero effect on R_final/H -- pipeline.tie_break is never
+    # imported by pipeline.orchestrate/habitat/scoring/mvp (structural
+    # guarantee), this is the explicit regression check, same pattern as
+    # the B3 detail-card regression test above.
+    enriched = _enriched_for_b3_regression()
+    r_before = enriched["R_final"].copy()
+    h_before = enriched["H"].copy()
+
+    empty_packages_dir = tmp_path / "bdl_packages"  # no packages cached -- the common case
+    tie_break_raw_index = load_tie_break_raw(empty_packages_dir)
+    enriched["tie_break"] = [
+        tie_break_for_stand(row["adr_for"], tie_break_raw_index) for _, row in enriched.iterrows()
+    ]
+
+    pd.testing.assert_series_equal(enriched["R_final"], r_before)
+    pd.testing.assert_series_equal(enriched["H"], h_before)
+    assert enriched["tie_break"].tolist() == [0.5, 0.5]  # neutral -- no package data

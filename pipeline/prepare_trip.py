@@ -33,6 +33,7 @@ from pipeline.search_area import (
     search_tiles, fetch_search_stands, within_radius,
     fetch_cached_gdos, fetch_cached_osm,
 )
+from pipeline.tie_break import load_tie_break_raw, tie_break_for_stand
 from pipeline.tiles import tile_bbox_2180
 from pipeline.weather import (
     fetch_weather_raw, fetch_climatology_raw, make_grid,
@@ -317,6 +318,17 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         roads_routing_gdf=osm_features["roads"], entrances_gdf=entrances,
         top_n_for_routing=profile["entrances"]["top_n_for_routing"],
     )
+
+    # Plan 2.1 "Zmiana 4": must run before group_into_regions below --
+    # pipeline.regions._summarize_cluster uses tie_break as a secondary
+    # sort key for region member ordering. Reuses the same
+    # cache/bdl_packages/ directory as load_packages/load_package_details
+    # above; a stand whose adr_for isn't covered gets a neutral 0.5
+    # (pipeline.tie_break.tie_break_for_stand).
+    tie_break_raw_index = load_tie_break_raw(cache_dir / "bdl_packages")
+    enriched["tie_break"] = [
+        tie_break_for_stand(row["adr_for"], tie_break_raw_index) for _, row in enriched.iterrows()
+    ]
 
     print("Grouping into search regions...")
     regions = group_into_regions(enriched, profile)
