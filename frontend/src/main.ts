@@ -178,7 +178,7 @@ function speciesList(items: SpeciesShare[]) {
 function packageSection(detail?: StandDetail) {
   if (!detail || !detail.drzew_species.length)
     return '<p class="muted">Skład gatunkowy, zwarcie, podszyt i typ gleby: brak paczki BDL dla tego wydzielenia.</p>';
-  return `<div class="package-detail"><p><strong>Skład gatunkowy (warstwa drzew)</strong></p>${speciesList(detail.drzew_species)}<p><strong>Zwarcie</strong> ${escape(densityLabel(detail.density))}</p><p><strong>Podszyt</strong></p>${speciesList(detail.podszyt_species)}<p><strong>Typ gleby</strong> ${detail.soil_type ? escape(detail.soil_type) : "brak danych"}</p>${detail.package_date ? `<p class="muted">Dane paczki BDL z dnia ${escape(detail.package_date)}.</p>` : ""}</div>`;
+  return `<div class="package-detail"><p><strong>Skład gatunkowy (warstwa drzew)</strong></p>${speciesList(detail.drzew_species)}<p><strong>Zwarcie</strong> ${escape(densityLabel(detail.density))}</p><p><strong>Pokrycie gleby</strong> ${detail.veg_cover ? escape(detail.veg_cover) : "brak danych"}</p><p><strong>Zadrzewienie</strong> ${finite(detail.standdensity_index) ? `${detail.standdensity_index!.toFixed(1)} (skala ok. 0–2, 1,0 = pełne)` : "brak danych"}</p><p><strong>Podszyt</strong></p>${speciesList(detail.podszyt_species)}<p><strong>Typ gleby</strong> ${detail.soil_type ? escape(detail.soil_type) : "brak danych"}</p>${detail.package_date ? `<p class="muted">Dane paczki BDL z dnia ${escape(detail.package_date)}.</p>` : ""}</div>`;
 }
 function neighborsSection(detail?: StandDetail) {
   const summary = neighborsSummary(detail?.neighbors);

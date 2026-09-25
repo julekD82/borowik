@@ -127,6 +127,36 @@ describe("data and classification", () => {
       ),
     ).toThrow();
   });
+  it("rejects a malformed tie_break instead of silently accepting it", () => {
+    expect(() =>
+      parseData(
+        [{ ...score("A", 40), tie_break: "not-a-number" }, score("B", 30)],
+        stands,
+      ),
+    ).toThrow();
+  });
+  describe("joinData tie_break secondary sort", () => {
+    it("prefers the higher tie_break when R rounds to the same value at 2 decimals", () => {
+      // A has the higher RAW R (50.004 > 50.001) but the lower tie_break --
+      // both round to 50.00, so a plain (unrounded) R sort would already
+      // put A first without tie_break mattering at all. Swapping which
+      // side has the higher tie_break proves tie_break is what decides
+      // the order, not leftover precision in R itself.
+      const entries = joinData(
+        [
+          { ...score("A", 50.004), tie_break: 0.2 },
+          { ...score("B", 50.001), tie_break: 0.9 },
+        ],
+        stands,
+      );
+      expect(entries.map((e) => e.score.stand_id)).toEqual(["B", "A"]);
+    });
+
+    it("falls back to stand_id when tie_break is absent on both sides (older export)", () => {
+      const entries = joinData([score("B", 50.0), score("A", 50.0)], stands);
+      expect(entries.map((e) => e.score.stand_id)).toEqual(["A", "B"]);
+    });
+  });
   it("rejects mixed dates and malformed data", () => {
     expect(() =>
       parseData(
@@ -252,6 +282,8 @@ describe("data and classification", () => {
     neighbors: ["zrąb"],
     stand_stru: "DRZEW",
     prot_categ: null,
+    veg_cover: "zadarniona",
+    standdensity_index: 0.9,
     ...overrides,
   });
   it("parseData accepts a missing details argument and an empty details array (plan 2.1 step B3)", () => {
@@ -299,6 +331,30 @@ describe("data and classification", () => {
     expect(() =>
       parseData(scores, stands, undefined, [
         { ...detail("A"), neighbors: "zrąb" },
+      ]),
+    ).toThrow();
+  });
+  it("parseData round-trips veg_cover and standdensity_index, and accepts them null without package coverage", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    const result = parseData(scores, stands, undefined, [detail("A")]);
+    expect(result.details[0].veg_cover).toBe("zadarniona");
+    expect(result.details[0].standdensity_index).toBe(0.9);
+
+    const noPackage = detail("B", { veg_cover: null, standdensity_index: null });
+    const result2 = parseData(scores, stands, undefined, [noPackage]);
+    expect(result2.details[0].veg_cover).toBeNull();
+    expect(result2.details[0].standdensity_index).toBeNull();
+  });
+  it("parseData rejects a malformed veg_cover or standdensity_index", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    expect(() =>
+      parseData(scores, stands, undefined, [
+        { ...detail("A"), veg_cover: 42 },
+      ]),
+    ).toThrow();
+    expect(() =>
+      parseData(scores, stands, undefined, [
+        { ...detail("A"), standdensity_index: "0.9" },
       ]),
     ).toThrow();
   });

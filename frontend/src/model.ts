@@ -33,6 +33,9 @@ export type Score = {
   // shape as area_ha above -- optional so older exports (before this
   // field existed) still load.
   G_season?: number | null;
+  // Plan 2.1 "Zmiana 4": ground-cover/density ordinal secondary sort key
+  // (pipeline.tie_break), same optional-field pattern as area_ha/G_season.
+  tie_break?: number | null;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -217,7 +220,21 @@ export function joinData(scores: Score[], stands: Stands): StandView[] {
     throw new Error("Wyniki i geometrie dotyczą różnych zestawów wydzieleń.");
   return scores
     .filter((s) => s.mask && finite(s.R))
-    .sort((a, b) => b.R! - a.R! || a.stand_id.localeCompare(b.stand_id))
+    .sort((a, b) => {
+      // Plan 2.1 "Zmiana 4": R rounded to 2 decimal places is the primary
+      // key (same precision pipeline.regions._summarize_cluster uses for
+      // region member ordering, chosen against a real Będziemyśl export --
+      // see that function's own docstring), tie_break the secondary key
+      // among stands tied at that precision, stand_id the final
+      // deterministic tiebreaker.
+      const ra = Math.round(a.R! * 100);
+      const rb = Math.round(b.R! * 100);
+      if (rb !== ra) return rb - ra;
+      const ta = a.tie_break ?? -1;
+      const tb = b.tie_break ?? -1;
+      if (tb !== ta) return tb - ta;
+      return a.stand_id.localeCompare(b.stand_id);
+    })
     .map((score) => {
       const feature = byGeometry.get(score.stand_id)!;
       return { score, feature, point: standCentroid(feature) };
@@ -246,6 +263,12 @@ export type StandDetail = {
   neighbors: string[];
   stand_stru: string | null;
   prot_categ: string | null;
+  // Plan 2.1 "Zmiana 4": word-form ground cover + numeric stand density
+  // index, next to the existing `density` (zwarcie) field -- null when
+  // adr_for isn't covered by any package, same as the other package-only
+  // fields above.
+  veg_cover: string | null;
+  standdensity_index: number | null;
 };
 
 export type Region = {
@@ -330,6 +353,7 @@ export function parseData(
         (s.d_park_m === undefined || numeric(s.d_park_m)) &&
         (s.area_ha === undefined || numeric(s.area_ha)) &&
         (s.G_season === undefined || numeric(s.G_season)) &&
+        (s.tie_break === undefined || numeric(s.tie_break)) &&
         Array.isArray(s.explanation) &&
         s.explanation.every(
           (e) =>
@@ -443,7 +467,9 @@ export function parseData(
           nullableString(d.package_date) &&
           strings(d.neighbors) &&
           nullableString(d.stand_stru) &&
-          nullableString(d.prot_categ),
+          nullableString(d.prot_categ) &&
+          nullableString(d.veg_cover) &&
+          (d.standdensity_index === null || finite(d.standdensity_index)),
       )
     )
       throw new Error("Niepoprawny plik szczegółów wydzieleń.");
