@@ -13,6 +13,9 @@ import {
   navigationUrl,
   finite,
   isStandaloneTarget,
+  standStructureLabel,
+  densityLabel,
+  neighborsSummary,
 } from "./model";
 import type {
   StandView,
@@ -175,16 +178,16 @@ function speciesList(items: SpeciesShare[]) {
 function packageSection(detail?: StandDetail) {
   if (!detail || !detail.drzew_species.length)
     return '<p class="muted">Skład gatunkowy, zwarcie, podszyt i typ gleby: brak paczki BDL dla tego wydzielenia.</p>';
-  return `<div class="package-detail"><p><strong>Skład gatunkowy (warstwa drzew)</strong></p>${speciesList(detail.drzew_species)}<p><strong>Zwarcie</strong> ${detail.density ? escape(detail.density) : "brak danych"}</p><p><strong>Podszyt</strong></p>${speciesList(detail.podszyt_species)}<p><strong>Typ gleby</strong> ${detail.soil_type ? escape(detail.soil_type) : "brak danych"}</p>${detail.package_date ? `<p class="muted">Dane paczki BDL z dnia ${escape(detail.package_date)}.</p>` : ""}</div>`;
+  return `<div class="package-detail"><p><strong>Skład gatunkowy (warstwa drzew)</strong></p>${speciesList(detail.drzew_species)}<p><strong>Zwarcie</strong> ${escape(densityLabel(detail.density))}</p><p><strong>Podszyt</strong></p>${speciesList(detail.podszyt_species)}<p><strong>Typ gleby</strong> ${detail.soil_type ? escape(detail.soil_type) : "brak danych"}</p>${detail.package_date ? `<p class="muted">Dane paczki BDL z dnia ${escape(detail.package_date)}.</p>` : ""}</div>`;
 }
 function neighborsSection(detail?: StandDetail) {
-  if (!detail || !detail.neighbors.length)
-    return '<p class="muted">Graniczy z: brak danych o sąsiedztwie.</p>';
+  const summary = neighborsSummary(detail?.neighbors);
+  if (summary !== null || !detail) return `<p class="muted">Graniczy z: ${escape(summary ?? "")}.</p>`;
   return `<p><strong>Graniczy z</strong></p><ul class="neighbors-list">${detail.neighbors.map((n) => `<li>${escape(n)}</li>`).join("")}</ul>`;
 }
 function structureSection(detail?: StandDetail) {
   if (!detail || (!detail.stand_stru && !detail.prot_categ)) return "";
-  return `<dl class="metrics">${detail.stand_stru ? `<div><dt>Budowa drzewostanu</dt><dd>${escape(detail.stand_stru)}</dd></div>` : ""}${detail.prot_categ ? `<div><dt>Kategoria ochronności</dt><dd>${escape(detail.prot_categ)}</dd></div>` : ""}</dl>`;
+  return `<dl class="metrics">${detail.stand_stru ? `<div><dt>Budowa drzewostanu</dt><dd>${escape(standStructureLabel(detail.stand_stru))}</dd></div>` : ""}${detail.prot_categ ? `<div><dt>Kategoria ochronności</dt><dd>${escape(detail.prot_categ)}</dd></div>` : ""}</dl>`;
 }
 function detailFor(standId: string): StandDetail | undefined {
   return allDetails.find((d) => d.stand_id === standId);

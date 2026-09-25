@@ -83,6 +83,36 @@ export function isStandaloneTarget(score: Score): boolean {
   // "too small".
   return !finite(score.area_ha) || score.area_ha >= MIN_STANDALONE_AREA_HA;
 }
+// BDL stand_stru codes (WFS). The data packages carry no dictionary for this
+// field, so the few codes seen in real data are expanded here; KO/KDO are
+// regeneration classes, not a storey count, hence the code kept in brackets.
+const STAND_STRUCTURE: Record<string, string> = {
+  DRZEW: "jednopiętrowy",
+  "2 PIET": "dwupiętrowy",
+  "W PIET": "wielopiętrowy",
+  KO: "klasa odnowienia (KO)",
+  KDO: "klasa do odnowienia (KDO)",
+};
+export function standStructureLabel(code: string): string {
+  const key = code.trim().toUpperCase().replace("Ę", "E");
+  return STAND_STRUCTURE[key] ?? code;
+}
+// f_density_dic mixes descriptive entries (pełne, umiarkowane...) with plain
+// numbers 0.0-1.0; a bare "0.9" on the card needs its scale spelled out.
+export function densityLabel(value: string | null): string {
+  if (!value) return "brak danych";
+  return /^\d(\.\d+)?$/.test(value.trim()) ? `${value.trim()} (skala 0–1)` : value;
+}
+// pipeline/neighbors.py lists only distinguishing neighbours (non-stand
+// areas, other dominant species, stands < 20 years). An empty list therefore
+// means "nothing different next door", not missing data; land outside the
+// state-forest BDL layer is never listed either.
+export function neighborsSummary(neighbors: string[] | undefined): string | null {
+  if (!neighbors) return "brak danych o sąsiedztwie";
+  if (!neighbors.length)
+    return "tylko podobne drzewostany (ten sam gatunek panujący, wiek ≥ 20 lat) lub teren spoza lasów państwowych";
+  return null;
+}
 export function confidenceLabel(value?: string): string {
   return (
     (

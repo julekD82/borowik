@@ -9,9 +9,33 @@ import {
   parseData,
   isStandaloneTarget,
   MIN_STANDALONE_AREA_HA,
+  standStructureLabel,
+  densityLabel,
+  neighborsSummary,
 } from "./model";
 import { readSaved, saveRegion } from "./storage";
 import type { Score, Stands, Region, StandDetail } from "./model";
+
+describe("stand detail labels", () => {
+  it("expands stand structure codes, with or without diacritics", () => {
+    expect(standStructureLabel("DRZEW")).toBe("jednopiętrowy");
+    expect(standStructureLabel("2 PIĘT")).toBe("dwupiętrowy");
+    expect(standStructureLabel("2 PIET")).toBe("dwupiętrowy");
+    expect(standStructureLabel("KO")).toBe("klasa odnowienia (KO)");
+    expect(standStructureLabel("XYZ")).toBe("XYZ");
+  });
+  it("adds the scale to numeric density and leaves descriptive density alone", () => {
+    expect(densityLabel("0.9")).toBe("0.9 (skala 0–1)");
+    expect(densityLabel("1.0")).toBe("1.0 (skala 0–1)");
+    expect(densityLabel("umiarkowane")).toBe("umiarkowane");
+    expect(densityLabel(null)).toBe("brak danych");
+  });
+  it("tells no-data apart from only-similar neighbours", () => {
+    expect(neighborsSummary(undefined)).toBe("brak danych o sąsiedztwie");
+    expect(neighborsSummary([])).toMatch(/^tylko podobne drzewostany/);
+    expect(neighborsSummary(["zrąb"])).toBeNull();
+  });
+});
 
 const score = (id: string, r: number, mask = true): Score => ({
   stand_id: id,
