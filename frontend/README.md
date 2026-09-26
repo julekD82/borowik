@@ -54,6 +54,7 @@ Przygotowane lokalne dane, `node_modules/` i `dist/` są ignorowane przez Git. N
 - Karta pokazuje informacje konkretnego wydzielenia. H nazwano niskim/średnim/wysokim potencjałem według pomocniczych progów UI 0.4/0.7, nie jako skalibrowane prawdopodobieństwo.
 - Kliknięcie karty lub poligonu wybiera wydzielenie; mapa ustawia właściwą stronę listy. Przycisk szczegółów otwiera pełny wynik wydzielenia.
 - Zapis w `localStorage` obejmuje nazwę, dzień analizy, współrzędne, klasę i uzasadnienie. Klucz uwzględnia ID i współrzędne. Zachowano schemat `borowik.saved-regions.v1`, aby wcześniejsze zapisy rejonów pozostały dostępne. Można przeglądać i usuwać zapisy. Błędy zapisu są pokazywane użytkownikowi.
+- Pasek „Zapisane mapy” nad listą/mapą pozwala przełączać się między „Aktualną” (dane z `data/`, zawsze dostępne) a analizami zapisanymi przez launcher (`frontend/public/data/trips/<id>/`, wymienione w `data/trips/index.json`). Zapisany wpis jest zamrożoną migawką: ponowna analiza tego samego miejsca nie zmienia wcześniej zapisanych wpisów. Zapis/usuwanie wpisów odbywa się w launcherze/Eksploratorze, nie w przeglądarce.
 - Podkład OpenFreeMap oraz fonty Google wymagają internetu; fonty mają systemowy fallback. Przy awarii podkładu nadal działają granice i lista. Przy braku WebGL pozostaje lista.
 
 ## Ważne ograniczenia danych / uwagi do specyfikacji
