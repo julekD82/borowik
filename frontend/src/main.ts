@@ -567,18 +567,27 @@ window.addEventListener("storage", () => {
   updateSavedCount();
   renderPanel();
 });
+let loadSeq = 0;
 async function initialize(basePath: string = "data/", tripId: string | null = null) {
   currentBasePath = basePath;
   currentTripId = tripId;
+  const seq = ++loadSeq;
   loaded = false;
   loadError = "";
   $("#cards").innerHTML =
     '<div class="empty"><span class="loading-ring"></span><h2>Wczytujemy analizę…</h2></div>';
   renderPanel();
-  try {
-    const [data, trips] = await Promise.all([loadData(basePath), loadTrips()]);
+  // Fetched independently of loadData below: a broken "Aktualna" (or a
+  // broken saved trip) must still let the user reach a working saved trip
+  // from the dropdown, not hide the whole list just because THIS load failed.
+  void loadTrips().then((trips) => {
+    if (seq !== loadSeq) return; // superseded by a newer switch/retry
     savedTrips = trips;
     renderTripsPanel();
+  });
+  try {
+    const data = await loadData(basePath);
+    if (seq !== loadSeq) return; // a newer switch/retry already started
     entries = data.entries;
     allScores = data.scores;
     allRegions = data.regions;
@@ -650,11 +659,18 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
     }
     renderPanel();
   } catch (error) {
+    if (seq !== loadSeq) return; // a newer switch/retry already started
     loadError =
       error instanceof Error ? error.message : "Nieznany błąd wczytywania.";
     $("#analysis-date").textContent = "Dane niedostępne";
     $("#conditions").innerHTML =
       `<span class="condition-symbol">${icon("info")}</span><div><strong>Brak dostępnej analizy</strong><p>Przygotuj komplet danych przed wyjazdem.</p></div>`;
+    // Otherwise a failed switch (e.g. a corrupted saved trip) leaves the
+    // PREVIOUS dataset's polygons/pin drawn under the error banner, which
+    // misleadingly looks like it's still the current view.
+    entries = [];
+    map?.setData([]);
+    map?.select("");
     renderPanel();
   }
 }
