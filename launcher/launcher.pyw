@@ -18,12 +18,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+from launcher.trip_archive import read_day, save_trip, trip_exists, trip_id
 FRONTEND_DIR = REPO_ROOT / "frontend"
 PYTHON_EXE = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 CONFIG_PATH = Path(__file__).resolve().parent / "launcher_config.json"
 DEV_URL = "http://127.0.0.1:5173"
 
-DEFAULT_CONFIG = {"lat": "53.1509", "lon": "16.7382", "radius_km": "25"}
+DEFAULT_CONFIG = {"lat": "53.1509", "lon": "16.7382", "radius_km": "25", "place": ""}
 
 
 def load_config() -> dict:
@@ -77,6 +79,12 @@ class LauncherApp:
         self.radius_var = tk.StringVar(value=config["radius_km"])
         ttk.Entry(form, textvariable=self.radius_var, width=15).grid(row=1, column=1, sticky="w", padx=5, pady=(6, 0))
 
+        ttk.Label(form, text="Nazwa miejsca:").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.place_var = tk.StringVar(value=config["place"])
+        ttk.Entry(form, textvariable=self.place_var, width=30).grid(
+            row=2, column=1, columnspan=3, sticky="w", padx=5, pady=(6, 0)
+        )
+
         buttons = ttk.Frame(root, padding=(10, 0))
         buttons.pack(fill="x")
         self.run_button = ttk.Button(buttons, text="Uruchom analize i podglad", command=self.on_run_full)
@@ -85,6 +93,10 @@ class LauncherApp:
         self.preview_button.pack(side="left", padx=8)
         self.stop_button = ttk.Button(buttons, text="Zatrzymaj serwer", command=self.stop_server)
         self.stop_button.pack(side="left")
+        self.save_trip_button = ttk.Button(
+            buttons, text="Zapisz do listy", command=self.on_save_trip
+        )
+        self.save_trip_button.pack(side="left", padx=8)
 
         self.status_var = tk.StringVar(value="Gotowy.")
         ttk.Label(root, textvariable=self.status_var, padding=(10, 6)).pack(fill="x")
@@ -151,6 +163,39 @@ class LauncherApp:
         self.worker_running = True
         self.set_buttons_enabled(False)
         threading.Thread(target=self.run_preview_only, daemon=True).start()
+
+    def on_save_trip(self) -> None:
+        if self.worker_running:
+            messagebox.showinfo("Info", "Poprzednie zadanie jeszcze trwa.")
+            return
+        name = self.place_var.get().strip()
+        if not name:
+            messagebox.showerror("Blad", "Podaj nazwe miejsca przed zapisem.")
+            return
+        values = self.validate_inputs()
+        if values is None:
+            return
+        lat, lon, radius = values
+        data_dir = FRONTEND_DIR / "public" / "data"
+        trips_dir = data_dir / "trips"
+        try:
+            day = read_day(data_dir / "scores.json")
+        except ValueError as exc:
+            messagebox.showerror("Blad", str(exc))
+            return
+        tid = trip_id(name, day)
+        if trip_exists(trips_dir, tid) and not messagebox.askyesno(
+            "Potwierdzenie",
+            f"Wpis '{name}' z dnia {day} juz istnieje. Nadpisac?",
+        ):
+            self.log("Zapis anulowany (wpis juz istnieje).")
+            return
+        meta = save_trip(data_dir, trips_dir, name, radius, lat, lon)
+        save_config({
+            "lat": str(lat), "lon": str(lon), "radius_km": str(radius), "place": name,
+        })
+        self.log(f"Zapisano '{meta.name} - {meta.radius_km:g}km - {meta.day}' do listy.")
+        self.set_status("Zapisano do listy zapisanych map.")
 
     def set_buttons_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
