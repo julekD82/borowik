@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 notebooks/output/
 notebooks/known_points.yaml
+launcher/launcher_config.json
+*.lnk
