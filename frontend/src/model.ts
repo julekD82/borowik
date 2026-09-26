@@ -36,6 +36,9 @@ export type Score = {
   // Plan 2.1 "Zmiana 4": ground-cover/density ordinal secondary sort key
   // (pipeline.tie_break), same optional-field pattern as area_ha/G_season.
   tie_break?: number | null;
+  // Plan 2026-09-26 A1: exp-weighted share of the P26w window whose rain
+  // came from the IMGW radar (pipeline.radar), same optional-field pattern.
+  rain_radar_coverage?: number | null;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -357,6 +360,7 @@ export function parseData(
         (s.area_ha === undefined || numeric(s.area_ha)) &&
         (s.G_season === undefined || numeric(s.G_season)) &&
         (s.tie_break === undefined || numeric(s.tie_break)) &&
+        (s.rain_radar_coverage === undefined || numeric(s.rain_radar_coverage)) &&
         Array.isArray(s.explanation) &&
         s.explanation.every(
           (e) =>

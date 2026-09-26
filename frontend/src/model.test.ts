@@ -129,6 +129,22 @@ describe("data and classification", () => {
       ),
     ).toThrow();
   });
+  it("accepts an optional rain_radar_coverage field and still loads without it", () => {
+    const scores = [
+      { ...score("A", 40), rain_radar_coverage: 0.93 },
+      score("B", 30), // no rain_radar_coverage -- older export
+    ];
+    const result = parseData(scores, stands);
+    expect(result.scores.map((s) => s.rain_radar_coverage)).toEqual([0.93, undefined]);
+  });
+  it("rejects a malformed rain_radar_coverage instead of silently accepting it", () => {
+    expect(() =>
+      parseData(
+        [{ ...score("A", 40), rain_radar_coverage: "not-a-number" }, score("B", 30)],
+        stands,
+      ),
+    ).toThrow();
+  });
   it("rejects a malformed tie_break instead of silently accepting it", () => {
     expect(() =>
       parseData(

@@ -25,6 +25,9 @@ SCORE_FIELDS = [
     # Plan 2.1 "Zmiana 4": ground-cover/density ordinal secondary sort key
     # (pipeline.tie_break) -- presentation-only, see that module's docstring.
     "tie_break",
+    # Plan 2026-09-26 A1: exp-weighted share of the P26w window whose rain
+    # came from the IMGW radar (pipeline.radar), 0 = Open-Meteo only.
+    "rain_radar_coverage",
 ]
 
 

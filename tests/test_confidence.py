@@ -88,3 +88,21 @@ def test_compute_confidence_never_exceeds_niska_when_data_quality_is_niska(monke
     }}
     final, _reasons = compute_confidence({"species_cd": "SO"}, low_profile)
     assert final == "NISKA"
+
+
+def test_score_data_quality_uses_radar_factor_when_coverage_high():
+    base = {"species_cd": "SO", "s_host_source": "wfs"}
+    nwp = score_data_quality({**base, "rain_radar_coverage": 0.0}, PROFILE)
+    radar = score_data_quality({**base, "rain_radar_coverage": 0.9}, PROFILE)
+    f = PROFILE["confidence"]["data_quality_factors"]
+    assert radar / nwp == pytest.approx(f["pogoda_radar_1km"] / f["pogoda_nwp_2km"])
+
+
+def test_compute_confidence_reason_names_radar_only_above_threshold():
+    reasons_cfg = PROFILE["confidence"]["reasons"]
+    _, low = compute_confidence({"species_cd": "SO", "rain_radar_coverage": 0.5}, PROFILE)
+    _, high = compute_confidence({"species_cd": "SO", "rain_radar_coverage": 0.8}, PROFILE)
+    _, missing = compute_confidence({"species_cd": "SO"}, PROFILE)
+    assert reasons_cfg["weather_nwp"] in low and reasons_cfg["weather_radar"] not in low
+    assert reasons_cfg["weather_radar"] in high and reasons_cfg["weather_nwp"] not in high
+    assert reasons_cfg["weather_nwp"] in missing

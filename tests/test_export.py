@@ -29,6 +29,7 @@ def _enriched_stands():
         "forecast_days": [1, 1],
         "G_season": [0.91, 1.0],
         "tie_break": [0.75, 0.5],
+        "rain_radar_coverage": [0.0, 0.0],
         "s_host_source": ["paczka", "wfs"],
         "s_host_package_date": ["2026-06-23", None],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
@@ -308,3 +309,10 @@ def test_write_details_json_one_record_per_stand(tmp_path):
     assert with_package["drzew_species"]
     assert without_package["drzew_species"] == []
     assert without_package["stand_stru"] is None
+
+
+from pipeline.export import SCORE_FIELDS
+
+
+def test_score_fields_include_rain_radar_coverage():
+    assert "rain_radar_coverage" in SCORE_FIELDS

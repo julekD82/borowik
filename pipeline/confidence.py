@@ -1,6 +1,11 @@
 CONFIDENCE_ORDER = {"NISKA": 0, "SREDNIA": 1, "WYSOKA": 2}
 
 
+def _uses_radar(row, profile) -> bool:
+    coverage = row.get("rain_radar_coverage")
+    return coverage is not None and coverage >= profile["radar"]["min_coverage_for_quality"]
+
+
 def score_data_quality(row: dict, profile: dict) -> float:
     cfg = profile["confidence"]["data_quality_factors"]
     if row.get("s_host_source") == "paczka":
@@ -12,7 +17,8 @@ def score_data_quality(row: dict, profile: dict) -> float:
     else:
         species_known = row.get("species_cd") in profile["host_affinity"]
         kompletnosc = cfg["kompletnosc_gatunek_panujacy"] if species_known else cfg["kompletnosc_gatunek_nieznany"]
-    return kompletnosc * cfg["swiezosc_bez_s2"] * cfg["pogoda_nwp_2km"]
+    weather = cfg["pogoda_radar_1km"] if _uses_radar(row, profile) else cfg["pogoda_nwp_2km"]
+    return kompletnosc * cfg["swiezosc_bez_s2"] * weather
 
 
 def classify_data_quality(value: float, profile: dict) -> str:
@@ -31,7 +37,9 @@ def compute_confidence(row: dict, profile: dict) -> tuple[str, list[str]]:
 
     reasons = [cfg["reasons"]["model_uncalibrated"]]
     factors = cfg["data_quality_factors"]
-    if factors["pogoda_nwp_2km"] < 1.0:
+    if _uses_radar(row, profile):
+        reasons.append(cfg["reasons"]["weather_radar"])
+    elif factors["pogoda_nwp_2km"] < 1.0:
         reasons.append(cfg["reasons"]["weather_nwp"])
     if row.get("s_host_source") == "paczka":
         # "tylko gatunek panujący" no longer applies -- the whole point of
