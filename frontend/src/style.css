@@ -242,6 +242,33 @@ h1 {
   color: #50743d;
   flex-shrink: 0;
 }
+.trips-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.trips-bar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green);
+  flex-shrink: 0;
+}
+.trips-bar svg {
+  width: 18px;
+  height: 18px;
+}
+.trips-bar select {
+  flex: 1;
+  max-width: 320px;
+}
 .conditions strong {
   font-size: 13px;
   font-weight: 600;

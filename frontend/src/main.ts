@@ -16,6 +16,8 @@ import {
   standStructureLabel,
   densityLabel,
   neighborsSummary,
+  loadTrips,
+  formatTripLabel,
 } from "./model";
 import type {
   StandView,
@@ -24,6 +26,7 @@ import type {
   RegionView,
   StandDetail,
   SpeciesShare,
+  TripMeta,
 } from "./model";
 import { ForestMap } from "./map";
 import { readSaved, saveRegion, removeSaved, savedKey } from "./storage";
@@ -78,6 +81,9 @@ let map: ForestMap | undefined;
 let loaded = false;
 let loadError = "";
 let noticeTimer: ReturnType<typeof setTimeout>;
+let savedTrips: TripMeta[] = [];
+let currentTripId: string | null = null;
+let currentBasePath = "data/";
 // "regions" (grouped) vs "stands" (flat, every wydzielenie individually) --
 // two peer views over the same analysis, not one replacing the other.
 let viewMode: "regions" | "stands" = "regions";
@@ -112,6 +118,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main>
     <section class="intro" aria-labelledby="page-title"><div><p class="eyebrow">MNIEJ SZUKANIA. WIĘCEJ LASU.</p><h1 id="page-title">Wybierz swój kawałek lasu.</h1><p class="intro-copy">Obiecujące wydzielenia na prawdziwki, wybrane na podstawie siedliska i pogody.</p></div><div class="trip-date">${icon("calendar")}<div><small>DATA ANALIZY</small><strong id="analysis-date">Wczytywanie…</strong></div></div></section>
     <section id="conditions" class="conditions" aria-live="polite"><span class="condition-symbol">${icon("leaf")}</span><div><strong>Sprawdzamy warunki w obszarze</strong><p>Wczytujemy przygotowaną analizę lasu.</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span></section>
+    <section id="trips-bar" class="trips-bar" aria-label="Zapisane mapy"><label for="trips-select">${icon("bookmark")}<span>Zapisane mapy</span></label><select id="trips-select"><option value="">Aktualna</option></select></section>
     <section class="workspace" aria-label="Wydzielenia poszukiwań">
       <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Ranking porównuje miejsca w tej analizie.<br>Nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
       <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
@@ -140,6 +147,16 @@ function getSaved() {
 }
 function updateSavedCount() {
   $("#saved-count").textContent = String(getSaved().length);
+}
+function renderTripsPanel() {
+  const options = [
+    `<option value="">Aktualna</option>`,
+    ...savedTrips.map(
+      (t) => `<option value="${escape(t.id)}">${escape(formatTripLabel(t))}</option>`,
+    ),
+  ];
+  $("#trips-select").innerHTML = options.join("");
+  ($("#trips-select") as HTMLSelectElement).value = currentTripId ?? "";
 }
 function setMapStatus(message: string) {
   $("#map-status").textContent = message;
@@ -514,11 +531,17 @@ document.addEventListener("click", (event) => {
         ($("#about-dialog") as HTMLDialogElement).showModal();
       break;
     case "retry":
-      void initialize();
+      void initialize(currentBasePath, currentTripId);
       break;
   }
   if (button.classList.contains("dialog-close"))
     ($("#about-dialog") as HTMLDialogElement).close();
+});
+document.addEventListener("change", (event) => {
+  const select = event.target as HTMLElement;
+  if (select.id !== "trips-select") return;
+  const value = (select as HTMLSelectElement).value;
+  void initialize(value ? `data/trips/${value}/` : "data/", value || null);
 });
 $("#cards").addEventListener("pointerover", (event) => {
   const card = (event.target as Element).closest<HTMLElement>("[data-card]");
@@ -544,14 +567,18 @@ window.addEventListener("storage", () => {
   updateSavedCount();
   renderPanel();
 });
-async function initialize() {
+async function initialize(basePath: string = "data/", tripId: string | null = null) {
+  currentBasePath = basePath;
+  currentTripId = tripId;
   loaded = false;
   loadError = "";
   $("#cards").innerHTML =
     '<div class="empty"><span class="loading-ring"></span><h2>Wczytujemy analizę…</h2></div>';
   renderPanel();
   try {
-    const data = await loadData();
+    const [data, trips] = await Promise.all([loadData(basePath), loadTrips()]);
+    savedTrips = trips;
+    renderTripsPanel();
     entries = data.entries;
     allScores = data.scores;
     allRegions = data.regions;
