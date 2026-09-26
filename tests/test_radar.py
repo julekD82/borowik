@@ -86,3 +86,141 @@ def test_sample_stack_means_blocks_ignoring_nan_and_all_nan_gives_nan():
     assert out[0, 0] == pytest.approx(3.0)  # mean(1, 3, 5)
     assert math.isnan(out[1, 0])
     assert math.isnan(out[0, 1])  # point outside grid
+
+
+import io
+import tarfile
+from datetime import date, timedelta
+
+import pandas as pd
+from pyproj import Transformer
+
+from pipeline.radar import (
+    RadarUnavailableError, archive_url, oper_url, quantize, dequantize, radar_hourly_at_points,
+)
+
+_TO_2180 = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
+POINT = (50.0555, 21.7889)  # Bedziemysl
+_X, _Y = _TO_2180.transform(POINT[1], POINT[0])
+# 3x3 km synthetic grid whose centre cell contains POINT
+XLL, YLL = math.floor(_X / 1000) * 1000 - 1000, math.floor(_Y / 1000) * 1000 - 1000
+
+
+def _grid_bytes(centre_mm: float) -> bytes:
+    v = [[0.0] * 3 for _ in range(3)]
+    v[1][1] = centre_mm
+    return _asc(v, xll=XLL, yll=YLL)
+
+
+def _tar(files: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+HTML = b"<!DOCTYPE html><html><body>Brak</body></html>"
+
+
+class FakeHttp:
+    def __init__(self, responses: dict[str, bytes]):
+        self.responses = responses
+        self.calls: list[str] = []
+
+    def __call__(self, url):
+        self.calls.append(url)
+        return self.responses.get(url, HTML)
+
+
+def test_quantize_roundtrip_keeps_centimillimetres_and_nan():
+    g = np.array([[0.0, 1.234, np.nan, 700.0]], dtype=np.float32)
+    back = dequantize(quantize(g))
+    assert back[0, 1] == pytest.approx(1.23)
+    assert math.isnan(back[0, 2])
+    assert back[0, 3] == pytest.approx(655.34)  # clipped just below the NaN sentinel
+
+
+def test_archive_and_oper_urls():
+    assert archive_url(date(2026, 9, 21)).endswith(
+        "/Arch/Nowcasting/rain_grs/grs_60_asc/2026/09/grs_60_asc_2026-09-21.tar")
+    assert oper_url(datetime(2026, 9, 25, 13, tzinfo=timezone.utc)).endswith(
+        "/Oper/Nowcasting/rain_grs/grs_60_asc/202609251300_acc0060_grs.asc")
+
+
+def test_archive_day_is_sampled_cached_and_not_refetched(tmp_path):
+    day = date(2026, 9, 21)
+    http = FakeHttp({archive_url(day): _tar({
+        "grs_60_asc_2026-09-21/202609210100_acc0060_grs.asc": _grid_bytes(2.5),
+        "grs_60_asc_2026-09-21/202609210200_acc0060_grs.asc": _grid_bytes(1.0),
+    })})
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    start = datetime(2026, 9, 21, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 22, 0, tzinfo=timezone.utc)
+
+    df = radar_hourly_at_points([POINT], 0, start, end, tmp_path, http_get=http, now_utc=now)
+
+    assert df["precip_mm"].tolist() == pytest.approx([2.5, 1.0])
+    assert df["hour_end_utc"].tolist() == [
+        pd.Timestamp("2026-09-21 01:00", tz="UTC"), pd.Timestamp("2026-09-21 02:00", tz="UTC")]
+    assert (tmp_path / "2026-09-21.npz").exists()
+
+    http.calls.clear()
+    again = radar_hourly_at_points([POINT], 0, start, end, tmp_path, http_get=http, now_utc=now)
+    assert again["precip_mm"].tolist() == pytest.approx([2.5, 1.0])
+    assert not any("2026-09-21" in c for c in http.calls)  # complete archive day served from cache
+
+
+def test_html_instead_of_tar_falls_back_to_oper_hours(tmp_path):
+    now = datetime(2026, 9, 26, 3, 30, tzinfo=timezone.utc)
+    http = FakeHttp({
+        oper_url(datetime(2026, 9, 26, 1, tzinfo=timezone.utc)): _grid_bytes(4.0),
+        oper_url(datetime(2026, 9, 26, 2, tzinfo=timezone.utc)): _grid_bytes(0.5),
+    })
+    df = radar_hourly_at_points(
+        [POINT], 0, datetime(2026, 9, 26, 0, tzinfo=timezone.utc), now, tmp_path,
+        http_get=http, now_utc=now)
+    assert df["precip_mm"].tolist() == pytest.approx([4.0, 0.5])
+    # hours after `now` are never requested
+    assert oper_url(datetime(2026, 9, 26, 5, tzinfo=timezone.utc)) not in http.calls
+
+
+def test_html_instead_of_asc_is_skipped(tmp_path):
+    now = datetime(2026, 9, 26, 3, 30, tzinfo=timezone.utc)
+    http = FakeHttp({oper_url(datetime(2026, 9, 26, 2, tzinfo=timezone.utc)): _grid_bytes(0.5)})
+    df = radar_hourly_at_points(
+        [POINT], 0, datetime(2026, 9, 26, 0, tzinfo=timezone.utc), now, tmp_path,
+        http_get=http, now_utc=now)
+    assert df["hour_end_utc"].tolist() == [pd.Timestamp("2026-09-26 02:00", tz="UTC")]
+
+
+def test_old_day_without_archive_does_not_request_oper_hours(tmp_path):
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    http = FakeHttp({})
+    df = radar_hourly_at_points(
+        [POINT], 0, datetime(2026, 9, 10, 0, tzinfo=timezone.utc),
+        datetime(2026, 9, 11, 0, tzinfo=timezone.utc), tmp_path, http_get=http, now_utc=now)
+    assert df.empty
+    assert all("/Oper/" not in c for c in http.calls)  # oper keeps only ~30 h
+
+
+def test_partial_oper_day_rechecks_archive_on_next_run(tmp_path):
+    now = datetime(2026, 9, 26, 3, 30, tzinfo=timezone.utc)
+    start = datetime(2026, 9, 26, 0, tzinfo=timezone.utc)
+    http = FakeHttp({oper_url(datetime(2026, 9, 26, 1, tzinfo=timezone.utc)): _grid_bytes(4.0)})
+    radar_hourly_at_points([POINT], 0, start, now, tmp_path, http_get=http, now_utc=now)
+    http.calls.clear()
+    radar_hourly_at_points([POINT], 0, start, now, tmp_path, http_get=http, now_utc=now)
+    assert archive_url(date(2026, 9, 26)) in http.calls
+    assert oper_url(datetime(2026, 9, 26, 1, tzinfo=timezone.utc)) not in http.calls  # cached hour
+
+
+def test_unreachable_server_raises_radar_unavailable(tmp_path):
+    def down(url):
+        raise RadarUnavailableError("dns")
+    with pytest.raises(RadarUnavailableError):
+        radar_hourly_at_points([POINT], 0, datetime(2026, 9, 21, tzinfo=timezone.utc),
+                               datetime(2026, 9, 22, tzinfo=timezone.utc), tmp_path,
+                               http_get=down, now_utc=datetime(2026, 9, 26, tzinfo=timezone.utc))
