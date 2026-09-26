@@ -12,9 +12,11 @@ import {
   standStructureLabel,
   densityLabel,
   neighborsSummary,
+  parseTrips,
+  formatTripLabel,
 } from "./model";
 import { readSaved, saveRegion } from "./storage";
-import type { Score, Stands, Region, StandDetail } from "./model";
+import type { Score, Stands, Region, StandDetail, TripMeta } from "./model";
 
 describe("stand detail labels", () => {
   it("expands stand structure codes, with or without diacritics", () => {
@@ -422,5 +424,41 @@ describe("saved regions", () => {
     expect(
       readSaved({ getItem: () => '{"version":1,"regions":[{}]}' }),
     ).toEqual([]);
+  });
+});
+
+const trip = (overrides: Partial<TripMeta> = {}): TripMeta => ({
+  id: "bedziemysl-2026-09-26",
+  name: "Będziemyśl",
+  radius_km: 20,
+  day: "2026-09-26",
+  lat: 50.0555,
+  lon: 21.7889,
+  saved_at: "2026-09-26T18:04:12+02:00",
+  ...overrides,
+});
+
+describe("saved trips", () => {
+  it("formats a trip as name - radius - short date", () => {
+    expect(formatTripLabel(trip())).toBe("Będziemyśl - 20km - 26.09");
+  });
+  it("parses a well-formed trips list", () => {
+    expect(parseTrips([trip()])).toEqual([trip()]);
+  });
+  it("returns an empty list for a non-array payload", () => {
+    expect(parseTrips({ not: "an array" })).toEqual([]);
+    expect(parseTrips(null)).toEqual([]);
+  });
+  it("filters out entries missing required fields, keeping valid ones", () => {
+    const bad = { ...trip(), id: undefined };
+    expect(parseTrips([trip(), bad])).toEqual([trip()]);
+  });
+  it("filters out an entry with a malformed day", () => {
+    const bad = trip({ day: "26-09-2026" });
+    expect(parseTrips([bad])).toEqual([]);
+  });
+  it("filters out an entry with a non-finite radius or coordinate", () => {
+    expect(parseTrips([trip({ radius_km: NaN })])).toEqual([]);
+    expect(parseTrips([trip({ lat: Infinity })])).toEqual([]);
   });
 });

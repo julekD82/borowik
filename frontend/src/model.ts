@@ -489,10 +489,10 @@ export function parseData(
 
   return { entries: joinData(scores, stands), scores, stands, regions, details };
 }
-export async function loadData() {
+export async function loadData(basePath: string = "data/") {
   const [scoresRaw, standsRaw] = await Promise.all(
     ["scores.json", "stands.geojson"].map(async (file) => {
-      const response = await fetch(`${import.meta.env.BASE_URL}data/${file}`, {
+      const response = await fetch(`${import.meta.env.BASE_URL}${basePath}${file}`, {
         cache: "no-cache",
         signal: AbortSignal.timeout(20000),
       });
@@ -516,7 +516,7 @@ export async function loadData() {
   // regions" just because something went wrong reading it.
   let regionsRaw: unknown = undefined;
   const regionsResponse = await fetch(
-    `${import.meta.env.BASE_URL}data/regions.json`,
+    `${import.meta.env.BASE_URL}${basePath}regions.json`,
     { cache: "no-cache", signal: AbortSignal.timeout(20000) },
   ).catch(() => undefined);
   if (regionsResponse?.ok) {
@@ -532,7 +532,7 @@ export async function loadData() {
   // plan 2.1 step B3.
   let detailsRaw: unknown = undefined;
   const detailsResponse = await fetch(
-    `${import.meta.env.BASE_URL}data/details.json`,
+    `${import.meta.env.BASE_URL}${basePath}details.json`,
     { cache: "no-cache", signal: AbortSignal.timeout(20000) },
   ).catch(() => undefined);
   if (detailsResponse?.ok) {
@@ -545,4 +545,50 @@ export async function loadData() {
     }
   }
   return parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
+}
+export type TripMeta = {
+  id: string;
+  name: string;
+  radius_km: number;
+  day: string;
+  lat: number;
+  lon: number;
+  saved_at: string;
+};
+export function formatTripLabel(trip: TripMeta): string {
+  const [, month, day] = trip.day.split("-");
+  return `${trip.name} - ${trip.radius_km}km - ${day}.${month}`;
+}
+export function parseTrips(raw: unknown): TripMeta[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (t): t is TripMeta =>
+      object(t) &&
+      typeof t.id === "string" &&
+      t.id.length > 0 &&
+      typeof t.name === "string" &&
+      t.name.length > 0 &&
+      finite(t.radius_km) &&
+      date(t.day) &&
+      finite(t.lat) &&
+      finite(t.lon) &&
+      typeof t.saved_at === "string",
+  );
+}
+// index.json is optional and, unlike scores/stands/regions/details, is
+// appended to incrementally by the launcher over time -- a single bad
+// entry (or a missing/corrupted file) means "fewer saved trips to show",
+// never a load failure for the live analysis. Same tolerant pattern as
+// storage.ts's readSaved, not parseData's throw-on-invalid pattern.
+export async function loadTrips(): Promise<TripMeta[]> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.BASE_URL}data/trips/index.json`,
+      { cache: "no-cache", signal: AbortSignal.timeout(20000) },
+    );
+    if (!response.ok) return [];
+    return parseTrips(await response.json());
+  } catch {
+    return [];
+  }
 }
