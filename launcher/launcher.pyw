@@ -18,8 +18,16 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-from launcher.trip_archive import read_day, save_trip, trip_exists, trip_id
+# Sibling import, not `from launcher.trip_archive import ...`: launcher.pyw
+# is normally started by double-clicking (python[w].exe launcher.pyw
+# directly), which puts launcher/ itself -- not the repo root -- at
+# sys.path[0]. Since .pyw is a recognized import source suffix on this
+# platform, a package-style import of "launcher" resolved to this very
+# file (launcher/launcher.pyw, sitting in sys.path[0]) instead of the real
+# launcher/ package, breaking with "'launcher' is not a package". A bare
+# sibling import needs no sys.path change, because launcher/ is already on
+# sys.path for direct execution.
+from trip_archive import read_day, save_trip, trip_exists, trip_id
 FRONTEND_DIR = REPO_ROOT / "frontend"
 PYTHON_EXE = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 CONFIG_PATH = Path(__file__).resolve().parent / "launcher_config.json"
