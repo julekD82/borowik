@@ -372,6 +372,70 @@ def _default_climatology_call(points: list[tuple[float, float]], start_year: int
     return results
 
 
+_OPEN_METEO_ARCHIVE_DAILY_BATCH_SIZE = 30  # lighter per-point weight than the
+# 30-year climatology pull (one calendar year, same variable set as the live
+# forecast call) -- see _OPEN_METEO_CLIMATOLOGY_BATCH_SIZE's docstring for the
+# weight formula this is scaled down from. Conservative guess, same caveat.
+
+
+def _default_archive_daily_call(points: list[tuple[float, float]], start_date: str, end_date: str) -> list[dict]:
+    """Archive API pull for an arbitrary date range with the same variable
+    set/order as _default_open_meteo_call's live forecast (so
+    _parse_open_meteo_response can be reused as-is) -- for backtesting
+    scoring against a specific historical period, not for the 30-year
+    climatology baseline (_default_climatology_call), which only needs
+    precipitation+ET0+soil_moisture."""
+    import openmeteo_requests
+    import requests_cache
+    from retry_requests import retry
+
+    cache_session = requests_cache.CachedSession(".cache/open_meteo_archive_daily", expire_after=-1)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    client = openmeteo_requests.Client(session=retry_session)
+
+    results = []
+    for chunk in _chunked(points, _OPEN_METEO_ARCHIVE_DAILY_BATCH_SIZE):
+        responses = client.weather_api(
+            "https://archive-api.open-meteo.com/v1/archive",
+            params={
+                "latitude": [lat for lat, lon in chunk],
+                "longitude": [lon for lat, lon in chunk],
+                "start_date": start_date,
+                "end_date": end_date,
+                "daily": ["precipitation_sum", "temperature_2m_mean", "temperature_2m_min",
+                           "temperature_2m_max", "et0_fao_evapotranspiration"],
+                "hourly": ["soil_moisture_7_to_28cm"],
+                "timezone": "Europe/Warsaw",
+            },
+        )
+        results.extend(_parse_open_meteo_response(r) for r in responses)
+    return results
+
+
+def fetch_archive_daily(points: list[tuple[float, float]], start_date: str, end_date: str,
+                          call_api=None, cache_dir: Path | None = None) -> pd.DataFrame:
+    """Daily weather series for an arbitrary past [start_date, end_date]
+    range -- e.g. a full calendar year, for reconstructing what
+    compute_weather_features would have seen on any past day (backtesting).
+    Same DI/caching shape as fetch_weather_raw/fetch_climatology_raw."""
+    call_api = call_api or _default_archive_daily_call
+    if cache_dir is None:
+        results = call_api(points, start_date, end_date)
+    else:
+        results = _fetch_with_point_cache(
+            points, Path(cache_dir) / "archive_daily_points",
+            f"{start_date}_{end_date}",
+            lambda pts: call_api(pts, start_date, end_date),
+        )
+    frames = []
+    for (lat, lon), data in zip(points, results):
+        df = pd.DataFrame(data)
+        df["lat"] = lat
+        df["lon"] = lon
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+
 def climatology_window_values(clim_df: pd.DataFrame, lat: float, lon: float, day_of_year: int,
                                 column: str, window_days: int = 15) -> np.ndarray:
     at_point = clim_df[(clim_df["lat"] == lat) & (clim_df["lon"] == lon)].copy()
