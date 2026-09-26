@@ -174,3 +174,93 @@ def test_save_trip_overwrites_existing_entry_with_same_id(tmp_path):
     index = json.loads((trips_dir / "index.json").read_text(encoding="utf-8"))
     assert len(index) == 1
     assert index[0]["radius_km"] == 25.0
+
+
+# --- Post-review fixes (final review of the whole branch, 2026-09-26) ---
+
+
+def test_copy_trip_files_removes_stale_optional_files_not_in_new_source(tmp_path):
+    # Review finding (Important #1): re-saving a trip whose new source lacks
+    # regions.json/details.json must not leave the OLD snapshot's copies
+    # behind -- otherwise the "overwritten" trip mixes old regions with new
+    # stands, silently wrong.
+    dest = tmp_path / "trips" / "some-id"
+    dest.mkdir(parents=True)
+    (dest / "regions.json").write_text("old-regions", encoding="utf-8")
+    (dest / "details.json").write_text("old-details", encoding="utf-8")
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "scores.json").write_text("[]", encoding="utf-8")
+    (data_dir / "stands.geojson").write_text("{}", encoding="utf-8")
+    # regions.json / details.json intentionally absent from the new source.
+
+    copy_trip_files(data_dir, dest)
+
+    assert not (dest / "regions.json").exists()
+    assert not (dest / "details.json").exists()
+
+
+def test_save_trip_overwrite_does_not_leave_stale_regions_file(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_json(data_dir / "scores.json", [{"stand_id": "A", "day": "2026-09-26"}])
+    (data_dir / "regions.json").write_text("[]", encoding="utf-8")
+    trips_dir = tmp_path / "trips"
+    save_trip(data_dir, trips_dir, "X", 20.0, 50.0, 21.0)
+    assert (trips_dir / "x-2026-09-26" / "regions.json").exists()
+
+    (data_dir / "regions.json").unlink()  # new run has no regions export
+    save_trip(data_dir, trips_dir, "X", 20.0, 50.0, 21.0)
+
+    assert not (trips_dir / "x-2026-09-26" / "regions.json").exists()
+
+
+def test_write_index_leaves_no_temp_file_behind(tmp_path):
+    path = tmp_path / "trips" / "index.json"
+    write_index(path, [{"id": "a"}])
+    leftovers = list(path.parent.glob("*.tmp*"))
+    assert leftovers == []
+    assert read_index(path) == [{"id": "a"}]
+
+
+def test_save_trip_backs_up_a_corrupted_index_instead_of_discarding_it(tmp_path):
+    # Review finding (Important #2): read_index treats corrupted/wrong-shape
+    # JSON the same as "no entries yet" -- fine for the browser (nothing to
+    # show), but save_trip's read-modify-write must not silently overwrite a
+    # corrupted index with just the one new entry, discarding whatever was
+    # in it. Back it up instead, so it's recoverable.
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_json(data_dir / "scores.json", [{"stand_id": "A", "day": "2026-09-26"}])
+    trips_dir = tmp_path / "trips"
+    trips_dir.mkdir()
+    index_path = trips_dir / "index.json"
+    index_path.write_text("{not valid json, has real entries lost here", encoding="utf-8")
+
+    save_trip(data_dir, trips_dir, "New", 20.0, 50.0, 21.0)
+
+    backups = list(trips_dir.glob("index.json.bak-*"))
+    assert len(backups) == 1
+    assert "has real entries lost here" in backups[0].read_text(encoding="utf-8")
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    assert len(index) == 1
+    assert index[0]["name"] == "New"
+
+
+def test_read_day_rejects_non_dict_first_record(tmp_path):
+    # Review finding (Important #3): a malformed scores.json whose first
+    # element isn't an object (e.g. [5]) made `"day" not in data[0]` raise
+    # TypeError instead of the intended ValueError -- an uncaught TypeError
+    # in the launcher is silent under pythonw (no console).
+    path = tmp_path / "scores.json"
+    _write_json(path, [5])
+    with pytest.raises(ValueError):
+        read_day(path)
+
+
+def test_slugify_truncates_very_long_names(tmp_path):
+    # Review finding (Important #3): an unbounded slug can exceed Windows'
+    # MAX_PATH once combined with the repo path and file names inside it.
+    long_name = "a" * 300
+    slug = slugify(long_name)
+    assert len(slug) <= 60
