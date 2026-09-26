@@ -24,6 +24,7 @@ from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.neighbors import find_neighbor_labels
 from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M
+from pipeline.radar import make_radar_weather_fetcher
 from pipeline.osm import fetch_osm_features, _default_overpass_call
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
@@ -61,6 +62,21 @@ def _radius_scaled_spacing(base_spacing_m: float, radius_km: float) -> float:
     return base_spacing_m * radius_km / REFERENCE_RADIUS_KM
 
 
+def build_weather_fetcher(base_fetcher, *, use_radar: bool, profile: dict, grid_spacing_m: float,
+                          cache_dir: pathlib.Path, radar_factory=make_radar_weather_fetcher):
+    """Plan 2026-09-26 A1: wrap the Open-Meteo fetcher so past precipitation
+    comes from the IMGW radar, averaged over each weather point's own
+    grid_spacing_m square (the area whose stands use that point)."""
+    if not use_radar or not profile["radar"]["enabled"]:
+        return base_fetcher
+    return radar_factory(
+        base_fetcher,
+        half_size_m=grid_spacing_m / 2.0,
+        window_days=profile["radar"]["window_days"],
+        cache_dir=pathlib.Path(cache_dir) / "radar_grs",
+    )
+
+
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="prepare_trip",
@@ -81,6 +97,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--profile", type=str, default="profiles/boletus_edulis.yaml")
     parser.add_argument("--out-dir", type=str, default="notebooks/output")
     parser.add_argument("--cache-dir", type=str, default="cache")
+    parser.add_argument(
+        "--no-radar", action="store_true",
+        help="Nie uzywaj radaru IMGW (RainGRS) -- opady tylko z modelu Open-Meteo (np. do porownania).",
+    )
     args = parser.parse_args(argv)
     if not (math.isfinite(args.lat) and -90 <= args.lat <= 90 and
             math.isfinite(args.lon) and -180 <= args.lon <= 180):
@@ -171,7 +191,7 @@ def _rate_limited(default_call, *args, should_retry, max_attempts=6, backoff_s=6
 
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
                           profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path,
-                          target_date: date | None = None) -> dict:
+                          target_date: date | None = None, use_radar: bool = True) -> dict:
     """Analyze stands whose EPSG:2180 centroid lies within the search radius.
 
     Source queries use aligned 10 km tiles; scoring, pressure normalization
@@ -270,7 +290,10 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
         bdl_fetcher=lambda _layer, _bbox: stands.copy(),
-        weather_fetcher=functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
+        weather_fetcher=build_weather_fetcher(
+            functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
+            use_radar=use_radar, profile=profile, grid_spacing_m=grid_spacing_m, cache_dir=cache_dir,
+        ),
         climatology_fetcher=functools.partial(
             fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
         ),
@@ -283,6 +306,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask, "
         f"{scored.attrs['diagnostics']['package_stand_count']} z paczki BDL"
     )
+    print(f"Opady z radaru IMGW: srednie pokrycie okna P26w {scored.attrs['diagnostics']['radar_coverage_mean']:.0%}", flush=True)
 
     gdos_gdf, gdos_failed_tiles = fetch_cached_gdos(tiles, cache_dir, _gdos_call_api)
     osm_features, osm_failed_tiles = fetch_cached_osm(
@@ -371,6 +395,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
         "forecast_days": scored.attrs["diagnostics"]["forecast_days"],
+        "radar_coverage_mean": scored.attrs["diagnostics"]["radar_coverage_mean"],
     }
 
 
@@ -385,7 +410,7 @@ def main(argv=None) -> int:
         summary = run_trip_preparation(
             lat=args.lat, lon=args.lon, day=day, radius_km=args.radius_km,
             profile_path=args.profile, out_dir=pathlib.Path(args.out_dir), cache_dir=pathlib.Path(args.cache_dir),
-            target_date=target_date,
+            target_date=target_date, use_radar=not args.no_radar,
         )
     except TripPreparationError as exc:
         print(f"Blad: {exc}")

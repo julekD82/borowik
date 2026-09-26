@@ -272,3 +272,36 @@ def test_tie_break_step_does_not_change_r_or_h(tmp_path):
     pd.testing.assert_series_equal(enriched["R_final"], r_before)
     pd.testing.assert_series_equal(enriched["H"], h_before)
     assert enriched["tie_break"].tolist() == [0.5, 0.5]  # neutral -- no package data
+
+
+def test_parse_args_no_radar_flag():
+    import pipeline.prepare_trip as trip
+    assert trip.parse_args(["--lat", "50.0", "--lon", "21.0"]).no_radar is False
+    assert trip.parse_args(["--lat", "50.0", "--lon", "21.0", "--no-radar"]).no_radar is True
+
+
+def test_build_weather_fetcher_wraps_with_radar_using_half_grid_spacing(tmp_path):
+    import pipeline.prepare_trip as trip
+    captured = {}
+
+    def factory(base, **kwargs):
+        captured.update(kwargs)
+        return "wrapped"
+
+    base = object()
+    profile = {"radar": {"enabled": True, "window_days": 30, "min_coverage_for_quality": 0.8}}
+    out = trip.build_weather_fetcher(base, use_radar=True, profile=profile, grid_spacing_m=4000.0,
+                                     cache_dir=tmp_path, radar_factory=factory)
+    assert out == "wrapped"
+    assert captured == {"half_size_m": 2000.0, "window_days": 30, "cache_dir": tmp_path / "radar_grs"}
+
+
+def test_build_weather_fetcher_returns_base_when_radar_disabled(tmp_path):
+    import pipeline.prepare_trip as trip
+    base = object()
+    on = {"radar": {"enabled": True, "window_days": 30, "min_coverage_for_quality": 0.8}}
+    off = {"radar": {"enabled": False, "window_days": 30, "min_coverage_for_quality": 0.8}}
+    assert trip.build_weather_fetcher(base, use_radar=False, profile=on, grid_spacing_m=4000.0,
+                                      cache_dir=tmp_path) is base
+    assert trip.build_weather_fetcher(base, use_radar=True, profile=off, grid_spacing_m=4000.0,
+                                      cache_dir=tmp_path) is base
