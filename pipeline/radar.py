@@ -308,3 +308,60 @@ def radar_hourly_at_points(points: list[tuple[float, float]], half_size_m: float
         return pd.DataFrame({"lat": [], "lon": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"),
                              "precip_mm": []})
     return pd.concat(frames, ignore_index=True)
+
+
+def expected_local_hours(day: date) -> int:
+    """23/24/25 -- number of real hours in the Europe/Warsaw calendar day.
+    Aware datetimes sharing one tzinfo subtract NAIVELY in Python, hence
+    the explicit conversion to UTC first."""
+    nxt = day + timedelta(days=1)
+    start = datetime(day.year, day.month, day.day, tzinfo=WARSAW).astimezone(timezone.utc)
+    end = datetime(nxt.year, nxt.month, nxt.day, tzinfo=WARSAW).astimezone(timezone.utc)
+    return int(round((end - start).total_seconds() / 3600))
+
+
+_DAILY_COLUMNS = ["lat", "lon", "local_date", "radar_mm", "radar_hours", "expected_hours"]
+
+
+def radar_daily_at_points(hourly: pd.DataFrame) -> pd.DataFrame:
+    """Sum hours into local days. An hour belongs to the local day of its
+    START (hour_end - 1 h). NaN hours (no radar data at the point) are not
+    counted, so they get gap-filled in merge_radar_into_daily."""
+    valid = hourly.dropna(subset=["precip_mm"])
+    if valid.empty:
+        return pd.DataFrame(columns=_DAILY_COLUMNS)
+    start_local = (pd.to_datetime(valid["hour_end_utc"], utc=True) - pd.Timedelta(hours=1)).dt.tz_convert("Europe/Warsaw")
+    grouped = (
+        valid.assign(local_date=start_local.dt.date)
+        .groupby(["lat", "lon", "local_date"], as_index=False)
+        .agg(radar_mm=("precip_mm", "sum"), radar_hours=("precip_mm", "size"))
+    )
+    grouped["expected_hours"] = grouped["local_date"].map(expected_local_hours)
+    return grouped[_DAILY_COLUMNS]
+
+
+def merge_radar_into_daily(weather_daily: pd.DataFrame, radar_daily: pd.DataFrame,
+                           window_start: date, window_end: date) -> pd.DataFrame:
+    """Plan A1 D6: precip = radar_sum + model * (1 - k/n) for local days in
+    [window_start, window_end] with k>0 radar hours; untouched otherwise."""
+    out = weather_daily.reset_index(drop=True).copy()
+    out["precipitation_mm"] = out["precipitation_mm"].astype(float)
+    out["precipitation_mm_model"] = out["precipitation_mm"]
+    out["radar_frac"] = 0.0
+    if radar_daily.empty:
+        return out
+    dates = out["date"]
+    # Open-Meteo's `date` is the UTC instant of LOCAL midnight -- converting
+    # is what makes 2026-09-25 22:00 UTC mean local 2026-09-26.
+    local_date = (dates.dt.tz_convert("Europe/Warsaw") if dates.dt.tz is not None else dates).dt.date
+    in_window = ((local_date >= window_start) & (local_date <= window_end)).to_numpy()
+    joined = radar_daily.set_index(["lat", "lon", "local_date"]).reindex(
+        pd.MultiIndex.from_arrays([out["lat"], out["lon"], local_date]))
+    hours = joined["radar_hours"].to_numpy(dtype=float)
+    expected = joined["expected_hours"].to_numpy(dtype=float)
+    has = in_window & np.nan_to_num(hours, nan=0.0).astype(bool)
+    frac = np.clip(np.nan_to_num(hours / expected, nan=0.0), 0.0, 1.0)
+    merged = joined["radar_mm"].to_numpy(dtype=float) + out["precipitation_mm_model"].to_numpy() * (1.0 - frac)
+    out.loc[has, "precipitation_mm"] = merged[has]
+    out.loc[has, "radar_frac"] = frac[has]
+    return out

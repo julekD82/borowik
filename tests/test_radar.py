@@ -224,3 +224,79 @@ def test_unreachable_server_raises_radar_unavailable(tmp_path):
         radar_hourly_at_points([POINT], 0, datetime(2026, 9, 21, tzinfo=timezone.utc),
                                datetime(2026, 9, 22, tzinfo=timezone.utc), tmp_path,
                                http_get=down, now_utc=datetime(2026, 9, 26, tzinfo=timezone.utc))
+
+
+from pipeline.radar import expected_local_hours, radar_daily_at_points, merge_radar_into_daily
+
+
+def _hourly(rows):
+    return pd.DataFrame(rows, columns=["lat", "lon", "hour_end_utc", "precip_mm"])
+
+
+def test_expected_local_hours_on_dst_days():
+    assert expected_local_hours(date(2026, 9, 21)) == 24
+    assert expected_local_hours(date(2026, 10, 25)) == 25  # CEST -> CET
+    assert expected_local_hours(date(2026, 3, 29)) == 23   # CET -> CEST
+
+
+def test_radar_daily_assigns_each_hour_to_local_day_of_its_start():
+    h = _hourly([
+        (50.0, 21.0, pd.Timestamp("2026-09-20 22:00", tz="UTC"), 1.0),  # 23:00-00:00 local 20.09
+        (50.0, 21.0, pd.Timestamp("2026-09-20 23:00", tz="UTC"), 2.0),  # 00:00-01:00 local 21.09
+        (50.0, 21.0, pd.Timestamp("2026-09-21 00:00", tz="UTC"), float("nan")),  # no data: not counted
+    ])
+    d = radar_daily_at_points(h).set_index("local_date")
+    assert d.loc[date(2026, 9, 20), "radar_mm"] == 1.0
+    assert d.loc[date(2026, 9, 21), "radar_mm"] == 2.0
+    assert d.loc[date(2026, 9, 21), "radar_hours"] == 1
+    assert d.loc[date(2026, 9, 21), "expected_hours"] == 24
+
+
+def _om_daily(values_by_local_day: dict):
+    # Same shape as pipeline.weather._parse_open_meteo_response: `date` is the
+    # UTC instant of LOCAL midnight (22:00 UTC the previous day in summer time).
+    rows = []
+    for d, mm in values_by_local_day.items():
+        rows.append({"lat": 50.0, "lon": 21.0,
+                     "date": pd.Timestamp(d.isoformat(), tz="Europe/Warsaw").tz_convert("UTC"),
+                     "precipitation_mm": mm, "tmean_c": 12.0, "tmin_c": 6.0, "tmax_c": 18.0,
+                     "et0_mm": 1.0, "soil_moisture": 0.3})
+    return pd.DataFrame(rows)
+
+
+def _radar_day(d, mm, hours, expected=24):
+    return pd.DataFrame([{"lat": 50.0, "lon": 21.0, "local_date": d, "radar_mm": mm,
+                          "radar_hours": hours, "expected_hours": expected}])
+
+
+def test_merge_uses_local_date_of_utc_midnight_timestamps():
+    daily = _om_daily({date(2026, 9, 21): 17.0, date(2026, 9, 22): 13.0})
+    out = merge_radar_into_daily(daily, _radar_day(date(2026, 9, 22), 12.5, 24),
+                                 date(2026, 9, 1), date(2026, 9, 26))
+    assert out["precipitation_mm"].tolist() == pytest.approx([17.0, 12.5])
+    assert out["radar_frac"].tolist() == [0.0, 1.0]
+    assert out["precipitation_mm_model"].tolist() == pytest.approx([17.0, 13.0])
+
+
+def test_merge_partial_coverage_fills_missing_share_from_model():
+    daily = _om_daily({date(2026, 9, 11): 20.0})
+    out = merge_radar_into_daily(daily, _radar_day(date(2026, 9, 11), 15.0, 18),
+                                 date(2026, 9, 1), date(2026, 9, 26))
+    assert out["precipitation_mm"].iloc[0] == pytest.approx(15.0 + 20.0 * 6 / 24)
+    assert out["radar_frac"].iloc[0] == pytest.approx(0.75)
+
+
+def test_merge_no_radar_keeps_model_value():
+    daily = _om_daily({date(2026, 9, 24): 0.1})
+    empty = radar_daily_at_points(_hourly([]))
+    out = merge_radar_into_daily(daily, empty, date(2026, 9, 1), date(2026, 9, 26))
+    assert out["precipitation_mm"].iloc[0] == pytest.approx(0.1)
+    assert out["radar_frac"].iloc[0] == 0.0
+
+
+def test_merge_leaves_days_outside_window_untouched():
+    daily = _om_daily({date(2026, 8, 1): 5.0, date(2026, 9, 27): 3.0})  # too old / forecast
+    radar = pd.concat([_radar_day(date(2026, 8, 1), 0.0, 24), _radar_day(date(2026, 9, 27), 0.0, 24)])
+    out = merge_radar_into_daily(daily, radar, date(2026, 8, 28), date(2026, 9, 26))
+    assert out["precipitation_mm"].tolist() == pytest.approx([5.0, 3.0])
+    assert out["radar_frac"].tolist() == [0.0, 0.0]
