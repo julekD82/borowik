@@ -151,7 +151,10 @@ class LauncherApp:
             messagebox.showinfo("Info", "Poprzednie zadanie jeszcze trwa.")
             return
         lat, lon, radius = values
-        save_config({"lat": str(lat), "lon": str(lon), "radius_km": str(radius)})
+        save_config({
+            "lat": str(lat), "lon": str(lon), "radius_km": str(radius),
+            "place": self.place_var.get().strip(),
+        })
         self.worker_running = True
         self.set_buttons_enabled(False)
         threading.Thread(target=self.run_full_pipeline, args=(lat, lon, radius), daemon=True).start()
@@ -190,7 +193,16 @@ class LauncherApp:
         ):
             self.log("Zapis anulowany (wpis juz istnieje).")
             return
-        meta = save_trip(data_dir, trips_dir, name, radius, lat, lon)
+        try:
+            meta = save_trip(data_dir, trips_dir, name, radius, lat, lon)
+        except (OSError, ValueError) as exc:
+            # save_trip can also fail after the confirmation dialog above
+            # (disk full, permission denied, an unexpected data shape) --
+            # under pythonw there is no console, so an uncaught exception
+            # here would fail completely silently (review finding, plan
+            # 2026-09-26-borowik-saved-maps).
+            messagebox.showerror("Blad", f"Zapis nie powiodl sie: {exc}")
+            return
         save_config({
             "lat": str(lat), "lon": str(lon), "radius_km": str(radius), "place": name,
         })
