@@ -300,3 +300,46 @@ def test_merge_leaves_days_outside_window_untouched():
     out = merge_radar_into_daily(daily, radar, date(2026, 8, 28), date(2026, 9, 26))
     assert out["precipitation_mm"].tolist() == pytest.approx([5.0, 3.0])
     assert out["radar_frac"].tolist() == [0.0, 0.0]
+
+
+from pipeline.radar import make_radar_weather_fetcher, radar_window
+
+
+def test_radar_window_ends_now_and_spans_window_days_of_local_days():
+    now = datetime(2026, 9, 26, 10, tzinfo=timezone.utc)
+    ws, we, s_utc, e_utc = radar_window(date(2026, 9, 26), 30, now)
+    assert (ws, we) == (date(2026, 8, 28), date(2026, 9, 26))
+    assert s_utc == datetime(2026, 8, 27, 22, tzinfo=timezone.utc)  # local midnight 28.08
+    assert e_utc == now
+
+
+def _base_fetcher(points, past_days, forecast_days=1):
+    return _om_daily({date(2026, 9, 21): 17.0, date(2026, 9, 22): 13.0})
+
+
+def test_radar_weather_fetcher_replaces_precipitation_in_window():
+    def fake_hourly(points, half_size_m, start_utc, end_utc, cache_dir, http_get=None, now_utc=None):
+        assert half_size_m == 2000.0
+        return _hourly([(50.0, 21.0, pd.Timestamp("2026-09-21 12:00", tz="UTC"), 20.0)])
+
+    fetcher = make_radar_weather_fetcher(
+        _base_fetcher, half_size_m=2000.0, window_days=30, cache_dir="unused",
+        now_utc=datetime(2026, 9, 26, 10, tzinfo=timezone.utc), today=date(2026, 9, 26),
+        radar_hourly_fn=fake_hourly)
+    out = fetcher([(50.0, 21.0)], 92, forecast_days=1)
+    assert out["precipitation_mm"].tolist() == pytest.approx([20.0 + 17.0 * 23 / 24, 13.0])
+    assert out["radar_frac"].tolist() == pytest.approx([1 / 24, 0.0])
+
+
+def test_radar_unavailable_falls_back_to_model_with_warning(capsys):
+    def down(*args, **kwargs):
+        raise RadarUnavailableError("dns")
+
+    fetcher = make_radar_weather_fetcher(
+        _base_fetcher, half_size_m=2000.0, window_days=30, cache_dir="unused",
+        now_utc=datetime(2026, 9, 26, 10, tzinfo=timezone.utc), today=date(2026, 9, 26),
+        radar_hourly_fn=down)
+    out = fetcher([(50.0, 21.0)], 92)
+    assert out["precipitation_mm"].tolist() == pytest.approx([17.0, 13.0])
+    assert (out["radar_frac"] == 0.0).all()
+    assert "UWAGA: radar IMGW niedostepny" in capsys.readouterr().out

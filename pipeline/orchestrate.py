@@ -145,6 +145,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     s_host_values, s_site_values, s_age_values = [], [], []
     s_host_source_values, s_host_package_date_values = [], []
     m_values, t_values, k_frost_values = [], [], []
+    rain_radar_coverage_values = []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
     # a plausible-looking number (see spec review: 59% of stands were hitting
     # the unknown-code fallback unnoticed).
@@ -187,6 +188,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
 
         centroid = row.geometry.centroid
         wrow = _nearest_weather_row(centroid, weather_feat_gdf)
+        rain_radar_coverage_values.append(float(wrow.get("rain_radar_coverage", 0.0)))
 
         cell = weather_to_clim_cell[(wrow["lat"], wrow["lon"])]
         if cell not in percentiles_by_cell:
@@ -239,6 +241,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["M"] = m_values
     stands["T"] = t_values
     stands["K_frost"] = k_frost_values
+    stands["rain_radar_coverage"] = rain_radar_coverage_values
     # Same forecast_days for every stand in the run (one weather fetch, one
     # target_date) -- exported per stand anyway (spec §3.3: "Oznaczyć w UI,
     # ile dni okna pochodzi z prognozy"), matching how every other weather-
@@ -256,5 +259,6 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "package_stand_count": package_stand_count,
         "package_unknown_species_count": package_unknown_species_count,
         "g_season": g_season,
+        "radar_coverage_mean": float(sum(rain_radar_coverage_values) / len(rain_radar_coverage_values)) if rain_radar_coverage_values else 0.0,
     }
     return stands

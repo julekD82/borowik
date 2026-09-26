@@ -273,3 +273,22 @@ def test_climatology_window_values_filters_by_point_and_doy_window():
     assert 1.0 in values and 2.0 in values and 3.0 in values
     assert 99.0 not in values   # outside +/-15 day window (Sep 15)
     assert 100.0 not in values  # wrong point (lat 60.0)
+
+
+def test_compute_weather_features_rain_radar_coverage_is_exp_weighted_radar_frac():
+    dates = pd.date_range("2026-09-01", periods=26, freq="D")
+    frac = [0.0] * 25 + [1.0]  # only the most recent day from radar
+    df = pd.DataFrame({"lat": 50.0, "lon": 21.0, "date": dates, "precipitation_mm": 1.0,
+                       "tmean_c": 12.0, "tmin_c": 6.0, "tmax_c": 18.0, "et0_mm": 1.0,
+                       "soil_moisture": 0.3, "radar_frac": frac})
+    feat = compute_weather_features(df).iloc[0]
+    weights = 0.5 ** (np.arange(25, -1, -1) / 10.0)
+    assert feat["rain_radar_coverage"] == pytest.approx(weights[-1] / weights.sum())
+
+
+def test_compute_weather_features_without_radar_frac_reports_zero_coverage():
+    dates = pd.date_range("2026-09-01", periods=5, freq="D")
+    df = pd.DataFrame({"lat": 50.0, "lon": 21.0, "date": dates, "precipitation_mm": 1.0,
+                       "tmean_c": 12.0, "tmin_c": 6.0, "tmax_c": 18.0, "et0_mm": 1.0,
+                       "soil_moisture": 0.3})
+    assert compute_weather_features(df).iloc[0]["rain_radar_coverage"] == 0.0

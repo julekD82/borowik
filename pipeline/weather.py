@@ -215,6 +215,15 @@ def _exp_weighted_sum(series: pd.Series, window: int, half_life_days: float = 10
     return float((tail.to_numpy() * weights).sum())
 
 
+def _exp_weighted_mean(series: pd.Series, window: int, half_life_days: float = 10.0) -> float:
+    """Same weights as _exp_weighted_sum, normalised -- the share of the
+    P26w window's weight that `series` (0..1 per day) represents."""
+    tail = series.iloc[-window:]
+    ages = np.arange(len(tail) - 1, -1, -1)
+    weights = 0.5 ** (ages / half_life_days)
+    return float((tail.to_numpy(dtype=float) * weights).sum() / weights.sum())
+
+
 def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
     """Each window is `.iloc[-N:]` on `group`, sorted chronologically --
     i.e. it ends on whatever the LAST row of `daily_df` is, not "today".
@@ -237,6 +246,12 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
         tmin = group["tmin_c"]
         p26w = _exp_weighted_sum(p, window=min(26, len(p)))
         et026w = _exp_weighted_sum(et0, window=min(26, len(et0)))
+        # Plan A1: share of the P26w window's weight whose rain came from
+        # the IMGW radar (pipeline.radar) rather than Open-Meteo's model.
+        rain_radar_coverage = (
+            _exp_weighted_mean(group["radar_frac"], window=min(26, len(p)))
+            if "radar_frac" in group else 0.0
+        )
         at_or_above_10 = group[p >= 10.0]
         if len(at_or_above_10):
             last_p10_pos = group.index.get_indexer(at_or_above_10.index).max()
@@ -252,6 +267,7 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
             "tmean5": tmean.iloc[-5:].mean(), "tmean20": tmean.iloc[-20:].mean(),
             "tmin3": tmin.iloc[-3:].min(),
             "days_since_p10": days_since_p10,
+            "rain_radar_coverage": rain_radar_coverage,
         })
     return pd.DataFrame(rows)
 

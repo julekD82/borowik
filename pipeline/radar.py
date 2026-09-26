@@ -365,3 +365,38 @@ def merge_radar_into_daily(weather_daily: pd.DataFrame, radar_daily: pd.DataFram
     out.loc[has, "precipitation_mm"] = merged[has]
     out.loc[has, "radar_frac"] = frac[has]
     return out
+
+
+def radar_window(today: date, window_days: int, now_utc: datetime) -> tuple[date, date, datetime, datetime]:
+    """Local-day window [today - window_days + 1, today] and its UTC bounds
+    (end clipped to now: future hours have no radar)."""
+    window_start = today - timedelta(days=window_days - 1)
+    start_utc = datetime(window_start.year, window_start.month, window_start.day,
+                         tzinfo=WARSAW).astimezone(timezone.utc)
+    nxt = today + timedelta(days=1)
+    end_utc = min(now_utc, datetime(nxt.year, nxt.month, nxt.day, tzinfo=WARSAW).astimezone(timezone.utc))
+    return window_start, today, start_utc, end_utc
+
+
+def make_radar_weather_fetcher(base_fetcher, *, half_size_m: float, window_days: int, cache_dir,
+                               http_get=None, now_utc: datetime | None = None, today: date | None = None,
+                               radar_hourly_fn=None):
+    """Wrap an Open-Meteo weather_fetcher (same signature) so precipitation
+    in the radar window comes from RainGRS. IMGW down -> Open-Meteo only."""
+    radar_hourly_fn = radar_hourly_fn or radar_hourly_at_points
+
+    def fetcher(points, past_days, forecast_days=1):
+        daily = base_fetcher(points, past_days, forecast_days=forecast_days)
+        now = now_utc or datetime.now(timezone.utc)
+        local_today = today or now.astimezone(WARSAW).date()
+        window_start, window_end, start_utc, end_utc = radar_window(local_today, window_days, now)
+        try:
+            hourly = radar_hourly_fn(points, half_size_m, start_utc, end_utc, cache_dir,
+                                     http_get=http_get, now_utc=now)
+        except RadarUnavailableError as exc:
+            print(f"UWAGA: radar IMGW niedostepny ({exc}) -- opady tylko z modelu Open-Meteo.", flush=True)
+            hourly = pd.DataFrame({"lat": [], "lon": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"),
+                                   "precip_mm": []})
+        return merge_radar_into_daily(daily, radar_daily_at_points(hourly), window_start, window_end)
+
+    return fetcher
