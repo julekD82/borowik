@@ -1,5 +1,35 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-26 — aktualne (23): pierwsza obserwacja terenowa, porównanie radar/stacje, decyzje A1/A2/B — **następny krok: plan A1**
+
+**Następna sesja:** wykonać `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md` (zacząć od Task 0 — decyzje D1–D4 do potwierdzenia + niezacommitowane `pipeline/weather.py`/`notebooks/03_backtest_gbif.py`). **Tryb wykonania wybrany przez użytkownika: Native** (`superpowers:executing-plans`, inline, jeden recenzent całej gałęzi na końcu), model `opusplan`. Kod w tej sesji **nie był zmieniany** (tylko ten plan + notatka).
+
+**Obserwacja terenowa 2026-09-26 (sobota, ~11–13, rejon 1 z eksportu 2026-09-26, wejście od południa od Bratkowic):** 2 h marszu, ok. 10 grzybów wyraźnie starych (głównie podgrzybki, 2 koźlarze) + 2 małe (~3 cm), w tym 1 borowik. W rejonie 1 widoczne ślady innych grzybiarzy — wg użytkownika dojeżdżają rowerami duktami leśnymi. Wnioski użytkownika (przyjęte):
+1. Model F ocenia „czy warunki sprzyjają teraz”, nie „w której fazie jest wysyp” — potrzebny model czasu owocnikowania liczony od konkretnego opadu, z temperaturą (także nocną). Obecnie noce wchodzą tylko przez `tmin3` (przymrozek), `tmean20` to średnia dobowa.
+2. Presja P liczy tylko parkingi/drogi utwardzone (`osm.road_highway_types` celowo bez `track`) — nie widzi rowerzystów/pieszych z pobliskich wsi wchodzących duktami.
+
+**Decyzje użytkownika (2026-09-26):**
+- **A (model wysypu):** wariant „faza wysypu na dziś + ocena kolejnych dni”. Podzielony na **A1** (źródło opadów: radar) → **A2** (model wysypu). Relacja A2 do R (osobny wskaźnik vs. zastąpienie F) — **jeszcze nierozstrzygnięta**, rekomendacja: osobny wskaźnik + oś czasu, R bez zmian do czasu walidacji na GBIF.
+- **Źródło opadów:** radar IMGW RainGRS jako główne źródło opadów z przeszłości; Open-Meteo uzupełnia luki i daje prognozę.
+- **B (presja: rowery/piesi po duktach):** osobny podprojekt, później.
+
+**Radar IMGW — ustalenia (sprawdzone na żywo):** publiczny produkt RainGRS (radar + deszczomierze, godzinowy, 1 km, ESRI ASCII) — pliki bieżące ~30 h + archiwum dobowych tarów od 2018 (opóźnienie ~2–3 dni), bez klucza. **Sekcja 3.3 `docs/projekt-borowik.md` („tylko najnowszy plik, wymaga pollera”) jest nieaktualna** — do poprawy w A1 Task 8. Szczegóły, URL-e i pułapki (HTML zamiast 404, brak godzin 19–23 UTC w archiwum przed 13.09, `date` Open-Meteo = północ lokalna w UTC) w sekcji „Decyzje projektowe” planu A1.
+
+**Porównanie opadów (spike, 2026-09-26):** 4 niezależne stacje Weathercloud (S1 ok. 3–4 km od rejonu 1, S2 Będziemyśl, S3 pogórze na południu, S4 zachód od Sędziszowa; dane dobowe w `cache/stations/weathercloud_2026-09.yaml`, poza repo — lokalizacje prywatnych stacji). MAE dobowe 13–23.09 (pełne godziny radaru):
+
+| Stacja | radar RainGRS | Open-Meteo | suma obs / radar / OM (mm) |
+|---|---|---|---|
+| S1 | 0,91 | 1,41 | 46,4 / 39,4 / 36,3 |
+| S2 | 0,28 | 1,12 | 31,6 / 31,5 / 43,9 |
+| S3 | 0,55 | 1,04 | 33,2 / 35,6 / 42,6 |
+| S4 | 0,38 | 1,65 | 34,2 / 35,2 / 51,6 |
+
+29.08–12.09 (radar bez 5 h/dobę): MAE radar 0,58–1,31 vs OM 1,68–2,70. Open-Meteo przegapił burze 29.08/31.08/03.09 (stacje 4–15 mm, OM 0–2 mm) i dał fałszywe opady 03.09 (S4 7,7 mm), 05.09, 15.09; 21.09 przy S4 30 mm vs stacja 17,3. Trafność „dzień ≥2 mm”: radar 14/15 i 11/11, OM 11–13/15 i 9–11/11.
+
+**Obserwacja o przestrzennym M (eksport 2026-09-26, Będziemyśl 20 km):** M nie jest jednolite — 0,94 w północnym bloku lasów Głogowa (1808 wydzieleń, wszystkie 5 rejonów), 0,43 na zachodzie, 0,21–0,29 na pogórzu. Ostry skok 0,43→0,94 ok. dł. 21,72 wygląda na granicę komórek modelu Open-Meteo; radar za 13–23.09 pokazuje różnice rzędu 10–25% (31,5–39 mm). A1 Task 8 ma sprawdzić, czy skok znika.
+
+**Odpowiedzi dla użytkownika w tej sesji (kontekst, nie kod):** rekomendacja wyjazdu do rejonu 1 od południa (Bratkowice) zamiast od DW987/Ostrów; pogoda: ~30 mm 21–22.09 (model) — dziś 4.–5. dzień po opadzie, szczyt drugiej fali szacowany ~30.09–5.10. Serwisy grzybiarzy (grzyby.pl 24.09): na południu jesienny wysyp „w ciągu tygodnia–dwóch”; zgłoszenia z Przemyśla 25–26.09 (liczne prawdziwki).
+
 ## 2026-09-25 — aktualne (22): fenologia (G_season), kalibracja wilgotności, tie-break pokrycia/zadrzewienia
 
 Zrealizowany plan `docs/superpowers/plans/2026-09-25-borowik-fenologia-wilgotnosc-tiebreak.md` (przegląd użytkownika 2026-09-25, wykonanie inline, TDD krok po kroku, 10 zadań implementacyjnych + to podsumowanie). Trzy niezależne zmiany, każda addytywna względem H/R_final:
