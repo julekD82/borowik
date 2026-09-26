@@ -1,5 +1,20 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-26 — aktualne (24): zapisane mapy (lista do porównywania analiz)
+
+Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spec: `docs/superpowers/specs/2026-09-26-borowik-saved-maps-design.md`), wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-saved-maps` na gałęzi `worktree-borowik-saved-maps`. Cel: zapisanie aktualnie wyświetlanej analizy pod nazwą (np. "Będziemyśl - 20km - 26.09") i przełączanie się między zapisanymi analizami w przeglądarce, bez ponownego uruchamiania pipeline'u.
+
+**Co powstało:**
+- `launcher/trip_archive.py` — czysta logika (bez GUI, w pełni TDD'owana, `tests/test_trip_archive.py`): `slugify`/`trip_id`, `read_index`/`write_index`/`upsert_entry`, `read_day`, `copy_trip_files`, `trip_exists`, `save_trip`. Kopiuje `scores.json`/`stands.geojson`/opcjonalnie `regions.json`/`details.json` z `frontend/public/data/` do `frontend/public/data/trips/<id>/` i dopisuje wpis do `frontend/public/data/trips/index.json`.
+- `launcher/launcher.pyw` — nowe pole „Nazwa miejsca” i przycisk „Zapisz do listy” (`on_save_trip`), z potwierdzeniem nadpisania istniejącego wpisu.
+- Frontend: `loadData(basePath)` (parametryzacja dotychczasowych trzech `fetch()`), `TripMeta`/`parseTrips`/`formatTripLabel`/`loadTrips` w `model.ts`; pasek „Zapisane mapy” nad mapą w `main.ts` (`renderTripsPanel`, przełączanie przez `initialize(basePath, tripId)`, `retry` wraca do tego samego celu).
+
+**Czysto addytywne:** zero zmian w `pipeline/` i zero zmian w kształcie jakiegokolwiek dotychczas eksportowanego pola — cały mechanizm opiera się na kopiowaniu już zsynchronizowanych plików. Zapisane migawki są zamrożone: nowa analiza tego samego miejsca nie zmienia wcześniej zapisanych wpisów (zweryfikowane ręcznie w przeglądarce z syntetycznymi danymi, zob. plan Task 5).
+
+**Świadomie pominięte (YAGNI):** usuwanie/zmiana nazwy zapisanego wpisu z poziomu aplikacji (na razie: ręcznie w Eksploratorze), limit liczby zapisów, synchronizacja między urządzeniami.
+
+**Do sprawdzenia przy okazji kolejnej sesji (nie naprawione, poza zakresem tego planu):** w `npm run dev` serwer Vite odpowiada na brakujący `public/data/*.json` stroną `index.html` (HTTP 200 SPA-fallback) zamiast 404 — `loadData`'s sprawdzanie `response.ok` dla opcjonalnych `regions.json`/`details.json` bierze to za "plik jest, ale niepoprawny" zamiast "pliku nie ma". W realnym przepływie (`npm run sync-data` zawsze pisze oba pliki, bo grupowanie jest aktywne) nigdy się nie objawia — znalezione tylko przy budowaniu syntetycznych danych testowych bez `regions.json`.
+
 ## 2026-09-26 — aktualne (23): pierwsza obserwacja terenowa, porównanie radar/stacje, decyzje A1/A2/B — **następny krok: plan A1**
 
 **Następna sesja:** wykonać `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md` (zacząć od Task 0 — decyzje D1–D4 do potwierdzenia + niezacommitowane `pipeline/weather.py`/`notebooks/03_backtest_gbif.py`). **Tryb wykonania wybrany przez użytkownika: Native** (`superpowers:executing-plans`, inline, jeden recenzent całej gałęzi na końcu), model `opusplan`. Kod w tej sesji **nie był zmieniany** (tylko ten plan + notatka).
