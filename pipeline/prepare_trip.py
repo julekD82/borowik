@@ -9,15 +9,17 @@ from datetime import date, timedelta
 import geopandas as gpd
 import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
+from pyproj import Transformer
 
 from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_package_details import load_package_details
 from pipeline.bdl_packages import load_packages
+from pipeline.conditions_timeline import build_conditions_timeline
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
-    write_regions_json, write_details_json,
+    write_regions_json, write_details_json, write_conditions_json,
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
@@ -60,6 +62,22 @@ def _radius_scaled_spacing(base_spacing_m: float, radius_km: float) -> float:
     than the same fixed spacing "wasting" its point budget over less
     ground. User request 2026-09-24."""
     return base_spacing_m * radius_km / REFERENCE_RADIUS_KM
+
+
+_WGS84_TO_2180 = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
+
+
+def points_within_radius(points, lat: float, lon: float, radius_km: float) -> list[tuple[float, float]]:
+    """Weather/climatology grid points inside the search circle (plan A2:
+    the conditions timeline is the median/percentile over exactly these
+    points)."""
+    cx, cy = _WGS84_TO_2180.transform(lon, lat)
+    out = []
+    for p_lat, p_lon in points:
+        x, y = _WGS84_TO_2180.transform(p_lon, p_lat)
+        if math.hypot(x - cx, y - cy) <= radius_km * 1000.0:
+            out.append((p_lat, p_lon))
+    return out
 
 
 def build_weather_fetcher(base_fetcher, *, use_radar: bool, profile: dict, grid_spacing_m: float,
@@ -287,16 +305,18 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             max_attempts=3, backoff_s=5, pace_s=0.5,
         )
 
+    weather_fetcher = build_weather_fetcher(
+        functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
+        use_radar=use_radar, profile=profile, grid_spacing_m=grid_spacing_m, cache_dir=cache_dir,
+    )
+    climatology_fetcher = functools.partial(
+        fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
+    )
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
         bdl_fetcher=lambda _layer, _bbox: stands.copy(),
-        weather_fetcher=build_weather_fetcher(
-            functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
-            use_radar=use_radar, profile=profile, grid_spacing_m=grid_spacing_m, cache_dir=cache_dir,
-        ),
-        climatology_fetcher=functools.partial(
-            fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
-        ),
+        weather_fetcher=weather_fetcher,
+        climatology_fetcher=climatology_fetcher,
         grid_spacing_m=grid_spacing_m,
         climatology_grid_spacing_m=climatology_grid_spacing_m,
         target_date=target_date,
@@ -307,6 +327,26 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         f"{scored.attrs['diagnostics']['package_stand_count']} z paczki BDL"
     )
     print(f"Opady z radaru IMGW: srednie pokrycie okna P26w {scored.attrs['diagnostics']['radar_coverage_mean']:.0%}", flush=True)
+
+    # Plan A2 Plan-B: real F per horizon day (today..today+6) + fact-only
+    # rain summary. Never uses pipeline.flush's disproven Gaussian model.
+    conditions_out = out_dir / f"conditions_{day}.json"
+    conditions_out.unlink(missing_ok=True)
+    conditions_path = None
+    conditions_points = points_within_radius(make_grid(bbox, spacing_m=grid_spacing_m), lat, lon, radius_km)
+    conditions_clim_points = points_within_radius(
+        make_grid(bbox, spacing_m=climatology_grid_spacing_m), lat, lon, radius_km)
+    conditions_daily = weather_fetcher(conditions_points, 92, forecast_days=profile["conditions"]["horizon_days"])
+    conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
+    rain_scale = profile["conditions"]["radar_rain_scale"] if use_radar and profile["radar"]["enabled"] else 1.0
+    try:
+        timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
+                                             conditions_clim_points, date.today(), profile, rain_scale=rain_scale)
+    except ValueError as exc:
+        print(f"UWAGA: warunki na kolejne dni pominiete ({exc}).", flush=True)
+    else:
+        conditions_path = write_conditions_json(timeline, day, conditions_out)
+        print(f"Warunki: {timeline['summary']}", flush=True)
 
     gdos_gdf, gdos_failed_tiles = fetch_cached_gdos(tiles, cache_dir, _gdos_call_api)
     osm_features, osm_failed_tiles = fetch_cached_osm(
@@ -392,6 +432,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "scores_path": scores_path, "stands_path": stands_path,
         "geojson_path": geojson_path, "regions_path": regions_path,
         "details_path": details_path,
+        "conditions_path": str(conditions_path) if conditions_path else None,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
         "forecast_days": scored.attrs["diagnostics"]["forecast_days"],

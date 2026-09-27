@@ -305,3 +305,11 @@ def test_build_weather_fetcher_returns_base_when_radar_disabled(tmp_path):
                                       cache_dir=tmp_path) is base
     assert trip.build_weather_fetcher(base, use_radar=True, profile=off, grid_spacing_m=4000.0,
                                       cache_dir=tmp_path) is base
+
+
+def test_points_within_radius_keeps_only_points_inside_the_circle():
+    import pipeline.prepare_trip as trip
+    center = (50.0555, 21.7889)
+    near = (50.0555, 21.80)      # ~0.8 km east
+    far = (50.40, 21.7889)       # ~38 km north
+    assert trip.points_within_radius([near, far], *center, 20.0) == [near]

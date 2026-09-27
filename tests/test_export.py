@@ -316,3 +316,15 @@ from pipeline.export import SCORE_FIELDS
 
 def test_score_fields_include_rain_radar_coverage():
     assert "rain_radar_coverage" in SCORE_FIELDS
+
+
+from pipeline.export import write_conditions_json
+
+
+def test_write_conditions_json_adds_day_and_writes_strict_json(tmp_path):
+    timeline = {"generated_for": "2026-09-27", "horizon_days": 7, "pulse_min_mm": 15.0,
+                "rains": [], "days": [{"date": "2026-09-27", "F": 0.5, "level": 2, "forecast": False}],
+                "summary": "Brak deszczu ≥ 15 mm w ostatnich dniach."}
+    path = write_conditions_json(timeline, "2026-09-27", tmp_path / "conditions_2026-09-27.json")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["day"] == "2026-09-27" and data["summary"] == timeline["summary"]

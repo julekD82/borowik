@@ -214,3 +214,14 @@ def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib
         records.append(record)
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path
+
+
+def write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path:
+    """Plan A2 Plan-B: area conditions timeline
+    (pipeline.conditions_timeline.build_conditions_timeline), optional on
+    the frontend like regions/details."""
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps({"day": day, **timeline}, ensure_ascii=False, indent=2, allow_nan=False),
+                        encoding="utf-8")
+    return out_path
