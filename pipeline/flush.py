@@ -7,8 +7,12 @@ this module is deliberately NOT imported by pipeline.orchestrate /
 scoring / mvp / habitat, so R cannot change because of it."""
 import math
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 import numpy as np
+import pandas as pd
+
+from pipeline.phenology import compute_g_season
 
 
 @dataclass(frozen=True)
@@ -102,3 +106,130 @@ def flush_series(precip, tmean, tmin, params: FlushParams):
     for pulse, dd in zip(pulses, dds):
         index = np.maximum(index, wave_intensity(dd, pulse.strength, params))
     return index, pulses, dds
+
+
+PHASE_LABELS = {
+    "przed_fala": "grzyby dopiero rosną",
+    "poczatek": "początek wysypu",
+    "szczyt": "szczyt wysypu",
+    "starzeje_sie": "fala się starzeje",
+    "po_fali": "po fali",
+}
+
+
+def wave_phase(dd_today: float, params: FlushParams) -> str:
+    if math.isnan(dd_today):
+        return "przed_fala"  # rain still falling today: the clock has not started
+    peak, sigma = params.dd_peak, params.dd_sigma
+    if dd_today < peak - 2 * sigma:
+        return "przed_fala"
+    if dd_today < peak - 0.5 * sigma:
+        return "poczatek"
+    if dd_today <= peak + 0.5 * sigma:
+        return "szczyt"
+    if dd_today <= peak + 2 * sigma:
+        return "starzeje_sie"
+    return "po_fali"  # also +inf after frost
+
+
+def peak_window(dd: np.ndarray, dates: list, params: FlushParams):
+    """Dates when thermal time crosses peak -/+ 0.5 sigma. Past the end of
+    the series: extrapolated with the mean daily rate of the last <=7
+    accumulated days. None after frost or before any day accumulated."""
+    dd = np.asarray(dd, dtype=float)
+    if np.isinf(dd).any():
+        return None
+    finite = np.flatnonzero(np.isfinite(dd))
+    if len(finite) == 0:
+        return None
+    last = finite[-1]
+    k = min(7, len(finite))
+    base = dd[finite[-k - 1]] if len(finite) > k else 0.0
+    rate = (dd[last] - base) / k
+
+    def crossing(threshold):
+        hits = finite[dd[finite] >= threshold]
+        if len(hits):
+            return dates[hits[0]]
+        if rate <= 0:
+            return None
+        return dates[last] + timedelta(days=math.ceil((threshold - dd[last]) / rate))
+
+    lo = crossing(params.dd_peak - 0.5 * params.dd_sigma)
+    hi = crossing(params.dd_peak + 0.5 * params.dd_sigma)
+    return (lo, hi) if lo is not None and hi is not None else None
+
+
+def fmt_day_range(a: date, b: date) -> str:
+    if a == b:
+        return f"{a.day}.{a.month:02d}"
+    if a.month == b.month:
+        return f"{a.day}–{b.day}.{b.month:02d}"
+    return f"{a.day}.{a.month:02d}–{b.day}.{b.month:02d}"
+
+
+def area_daily_weather(daily: pd.DataFrame, points) -> pd.DataFrame:
+    """Per-LOCAL-day median over `points` (Open-Meteo `date` is the UTC
+    instant of local midnight; naive dates from test fakes are taken as-is)."""
+    wanted = set(points)
+    sel = daily[[(la, lo) in wanted for la, lo in zip(daily["lat"], daily["lon"])]]
+    dates = sel["date"]
+    local = (dates.dt.tz_convert("Europe/Warsaw") if dates.dt.tz is not None else dates).dt.date
+    return (sel.assign(local_date=local)
+            .groupby("local_date")[["precipitation_mm", "tmean_c", "tmin_c"]].median()
+            .sort_index()
+            .rename_axis("date"))
+
+
+def timeline_summary(waves: list[dict], pulse_min_mm: float) -> str:
+    if not waves:
+        return (f"Brak świeżej fali po większym deszczu (≥ {pulse_min_mm:.0f} mm) "
+                "— wysyp mało prawdopodobny")
+    parts = []
+    for i, w in enumerate(waves):
+        rain = fmt_day_range(date.fromisoformat(w["rain_start"]), date.fromisoformat(w["rain_end"]))
+        text = f"{'Fala' if i == 0 else 'starsza fala'} po deszczu {rain}: {w['phase_label']}"
+        if w["phase"] in ("przed_fala", "poczatek") and w["peak_from"]:
+            peak = fmt_day_range(date.fromisoformat(w["peak_from"]), date.fromisoformat(w["peak_to"]))
+            text += f", szczyt ok. {peak}"
+        parts.append(text)
+    return " · ".join(parts)
+
+
+def build_area_timeline(area: pd.DataFrame, today: date, profile: dict, rain_scale: float = 1.0) -> dict:
+    cfg = profile["flush"]
+    params = flush_params(profile, rain_scale)
+    horizon = cfg["horizon_days"]
+    area = area[area.index <= today + timedelta(days=horizon - 1)]
+    dates = list(area.index)
+    if today not in dates:
+        raise ValueError(f"brak danych pogodowych dla {today.isoformat()}")
+    t = dates.index(today)
+    index, pulses, dds = flush_series(area["precipitation_mm"].to_numpy(), area["tmean_c"].to_numpy(),
+                                      area["tmin_c"].to_numpy(), params)
+    seasonal = index * np.array([compute_g_season(d.timetuple().tm_yday, profile) for d in dates])
+    days = []
+    for k in range(t, min(t + horizon, len(dates))):
+        value = float(seasonal[k])
+        days.append({"date": dates[k].isoformat(), "index": round(value, 3),
+                     "level": int(sum(value >= th for th in cfg["level_thresholds"])), "forecast": k > t})
+    waves = []
+    for pulse, dd in sorted(zip(pulses, dds), key=lambda x: -x[0].end):
+        if pulse.end > t or (today - dates[pulse.end]).days > cfg["lookback_days"]:
+            continue
+        phase = wave_phase(float(dd[t]), params)
+        if phase == "po_fali":
+            continue
+        window = peak_window(dd, dates, params)
+        waves.append({
+            "rain_start": dates[pulse.start].isoformat(), "rain_end": dates[pulse.end].isoformat(),
+            "rain_mm": round(pulse.rain_mm, 1), "strength": round(pulse.strength, 2),
+            "phase": phase, "phase_label": PHASE_LABELS[phase],
+            "peak_from": window[0].isoformat() if window else None,
+            "peak_to": window[1].isoformat() if window else None,
+        })
+        if len(waves) == cfg["max_waves"]:
+            break
+    return {"generated_for": today.isoformat(), "horizon_days": horizon,
+            "pulse_min_mm": round(params.pulse_min_mm, 1), "waves": waves, "days": days,
+            "summary": timeline_summary(waves, params.pulse_min_mm)}
