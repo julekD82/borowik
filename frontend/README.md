@@ -57,6 +57,10 @@ Przygotowane lokalne dane, `node_modules/` i `dist/` są ignorowane przez Git. N
 - Pasek „Zapisane mapy” nad listą/mapą pozwala przełączać się między „Aktualną” (dane z `data/`, zawsze dostępne) a analizami zapisanymi przez launcher (`frontend/public/data/trips/<id>/`, wymienione w `data/trips/index.json`). Zapisany wpis jest zamrożoną migawką: ponowna analiza tego samego miejsca nie zmienia wcześniej zapisanych wpisów. Zapis/usuwanie wpisów odbywa się w launcherze/Eksploratorze, nie w przeglądarce.
 - Podkład OpenFreeMap oraz fonty Google wymagają internetu; fonty mają systemowy fallback. Przy awarii podkładu nadal działają granice i lista. Przy braku WebGL pozostaje lista.
 
+## Warunki na kolejne dni
+
+Pasek „Warunki” pokazuje 7 kafelków (dziś..dziś+6). Poziom 0–3 to klasa F z profilu (`fruiting_classes`) tego dnia — ta sama, już zwalidowana ocena wilgotności/temperatury co reszta interfejsu, liczona ponownie dla każdego dnia horyzontu, **nie** osobny, skalibrowany model fazy wysypu (ten został wypróbowany i odrzucony — patrz `docs/CODEX-HANDOFF.md` note (27)). Pierwszy kafelek to dziś (dane zmierzone); kolejne używają prognozy temperatury/opadu. Zdanie nad kafelkami podaje wyłącznie fakty o ostatnim większym deszczu (daty, suma mm, ile dni temu) — nie przewiduje szczytu wysypu. `conditions.json` jest opcjonalny jak `regions.json`/`details.json`: brak pliku = tylko baner „Warunki w obszarze” bez kafelków, uszkodzony plik = głośny błąd.
+
 ## Źródła danych
 
 Opady z ostatnich 30 dni: radar IMGW-PIB RainGRS (1 km, godzinowy), uzupełniany modelem Open-Meteo. Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy; dane zostały przetworzone (sumy dobowe, średnie blokowe).
