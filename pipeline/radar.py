@@ -169,8 +169,12 @@ def _default_http_get(url: str) -> bytes | None:
     for attempt in range(3):
         try:
             response = requests.get(url, timeout=300)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
-            # Intermittent DNS failures for danepubliczne.imgw.pl observed live 2026-09-26.
+        except requests.exceptions.RequestException as exc:
+            # Intermittent DNS failures for danepubliczne.imgw.pl observed
+            # live 2026-09-26 (ConnectionError/Timeout); a connection dropped
+            # mid-download (e.g. downloading an ~80 MB archive tar) raises
+            # ChunkedEncodingError instead -- same RequestException family,
+            # same retry-then-give-up treatment (D9).
             last_exc = exc
             time.sleep(5 * (attempt + 1))
             continue
@@ -351,9 +355,16 @@ def merge_radar_into_daily(weather_daily: pd.DataFrame, radar_daily: pd.DataFram
     if radar_daily.empty:
         return out
     dates = out["date"]
-    # Open-Meteo's `date` is the UTC instant of LOCAL midnight -- converting
-    # is what makes 2026-09-25 22:00 UTC mean local 2026-09-26.
-    local_date = (dates.dt.tz_convert("Europe/Warsaw") if dates.dt.tz is not None else dates).dt.date
+    # Open-Meteo's `date` is the UTC instant of LOCAL midnight, but
+    # pipeline.weather._parse_open_meteo_response builds the whole column
+    # with one FIXED 24h UTC step from the first day's local midnight
+    # (pd.date_range(..., freq=86400s)) -- across a DST transition that step
+    # is off by the DST hour, so a naive tz_convert().dt.date collapses two
+    # rows onto the same local date and shifts every later date back by one.
+    # Recentring on local NOON before converting survives up to a +/-12h
+    # drift, far more than one DST hour ever introduces.
+    local_date = ((dates + pd.Timedelta(hours=12)).dt.tz_convert("Europe/Warsaw").dt.date
+                 if dates.dt.tz is not None else dates.dt.date)
     in_window = ((local_date >= window_start) & (local_date <= window_end)).to_numpy()
     joined = radar_daily.set_index(["lat", "lon", "local_date"]).reindex(
         pd.MultiIndex.from_arrays([out["lat"], out["lon"], local_date]))
@@ -395,6 +406,14 @@ def make_radar_weather_fetcher(base_fetcher, *, half_size_m: float, window_days:
                                      http_get=http_get, now_utc=now)
         except RadarUnavailableError as exc:
             print(f"UWAGA: radar IMGW niedostepny ({exc}) -- opady tylko z modelu Open-Meteo.", flush=True)
+            hourly = pd.DataFrame({"lat": [], "lon": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"),
+                                   "precip_mm": []})
+        except Exception as exc:
+            # D9: "a run never fails because of IMGW" -- a corrupt cached
+            # .npz, a truncated archive tar surviving http_get's retries, or
+            # a malformed grid header are unanticipated failure shapes, not
+            # RadarUnavailableError, but the fallback must be the same.
+            print(f"UWAGA: radar IMGW niedostepny (blad: {exc}) -- opady tylko z modelu Open-Meteo.", flush=True)
             hourly = pd.DataFrame({"lat": [], "lon": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"),
                                    "precip_mm": []})
         return merge_radar_into_daily(daily, radar_daily_at_points(hourly), window_start, window_end)

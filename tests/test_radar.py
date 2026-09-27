@@ -226,6 +226,29 @@ def test_unreachable_server_raises_radar_unavailable(tmp_path):
                                http_get=down, now_utc=datetime(2026, 9, 26, tzinfo=timezone.utc))
 
 
+def test_default_http_get_retries_and_gives_up_on_any_request_exception(monkeypatch):
+    import requests
+
+    from pipeline.radar import _default_http_get
+
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def broken_get(url, timeout):
+        calls.append(url)
+        # A mid-download connection drop raises ChunkedEncodingError, not
+        # ConnectionError/Timeout -- both are requests.exceptions.RequestException,
+        # but only the first two were retried before this fix (D9: "a run
+        # never fails because of IMGW" requires treating the whole
+        # RequestException family the same way).
+        raise requests.exceptions.ChunkedEncodingError("connection broken")
+
+    monkeypatch.setattr(requests, "get", broken_get)
+    with pytest.raises(RadarUnavailableError):
+        _default_http_get("https://danepubliczne.imgw.pl/x")
+    assert len(calls) == 3  # retried, not raised raw on the first attempt
+
+
 from pipeline.radar import expected_local_hours, radar_daily_at_points, merge_radar_into_daily
 
 
@@ -343,3 +366,45 @@ def test_radar_unavailable_falls_back_to_model_with_warning(capsys):
     assert out["precipitation_mm"].tolist() == pytest.approx([17.0, 13.0])
     assert (out["radar_frac"] == 0.0).all()
     assert "UWAGA: radar IMGW niedostepny" in capsys.readouterr().out
+
+
+def test_radar_unexpected_error_still_falls_back_to_model_with_warning(capsys):
+    # D9 ("a run never fails because of IMGW") must hold for any failure
+    # inside radar_hourly_fn, not only the anticipated RadarUnavailableError
+    # -- a corrupt cached .npz, a malformed grid header, or a truncated
+    # archive tar surface as EOFError/ValueError/KeyError, not
+    # RadarUnavailableError.
+    def broken(*args, **kwargs):
+        raise EOFError("corrupt cache/radar_grs/2026-09-21.npz")
+
+    fetcher = make_radar_weather_fetcher(
+        _base_fetcher, half_size_m=2000.0, window_days=30, cache_dir="unused",
+        now_utc=datetime(2026, 9, 26, 10, tzinfo=timezone.utc), today=date(2026, 9, 26),
+        radar_hourly_fn=broken)
+    out = fetcher([(50.0, 21.0)], 92)
+    assert out["precipitation_mm"].tolist() == pytest.approx([17.0, 13.0])
+    assert (out["radar_frac"] == 0.0).all()
+    assert "UWAGA: radar IMGW niedostepny" in capsys.readouterr().out
+
+
+def test_merge_derives_local_date_correctly_across_a_fixed_step_dst_series():
+    # pipeline.weather._parse_open_meteo_response builds `date` with a FIXED
+    # 24h UTC step from the first local midnight (pd.date_range(..., freq=
+    # 86400s)) -- unlike _om_daily's helper above, which tz_converts each day
+    # independently and can't reproduce the 1h drift a DST transition
+    # (2026-10-25, CEST->CET) introduces into that fixed step. Naively
+    # tz_converting this fixed-step series and taking .dt.date collapses two
+    # different UTC instants onto the same local date and permanently shifts
+    # every later day back by one -- exactly what Review Focus #1 warns about.
+    start = pd.Timestamp("2026-10-23 22:00", tz="UTC")  # true local midnight 24.10 (CEST, UTC+2)
+    dates = pd.date_range(start, periods=6, freq=pd.Timedelta(seconds=86400))
+    daily = pd.DataFrame({"lat": 50.0, "lon": 21.0, "date": dates, "precipitation_mm": 0.0})
+    radar = pd.concat([
+        _radar_day(date(2026, 10, 24), 10.0, 24, expected=24),
+        _radar_day(date(2026, 10, 25), 20.0, 25, expected=25),
+        _radar_day(date(2026, 10, 26), 30.0, 24, expected=24),
+        _radar_day(date(2026, 10, 27), 40.0, 24, expected=24),
+        _radar_day(date(2026, 10, 28), 50.0, 24, expected=24),
+    ], ignore_index=True)
+    out = merge_radar_into_daily(daily, radar, date(2026, 10, 1), date(2026, 11, 1))
+    assert out["precipitation_mm"].tolist() == pytest.approx([10.0, 20.0, 30.0, 40.0, 50.0, 0.0])
