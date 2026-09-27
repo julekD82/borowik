@@ -112,6 +112,16 @@ def test_classify_fruiting_boundaries(f, expected):
     assert classify_fruiting(f, PROFILE) == expected
 
 
+@pytest.mark.parametrize("f,expected", [
+    (0.1, 0), (0.2, 1), (0.44, 1), (0.45, 2), (0.69, 2), (0.70, 3),
+])
+def test_classify_fruiting_level_matches_classify_fruiting_label(f, expected):
+    from pipeline.scoring import classify_fruiting_level
+    assert classify_fruiting_level(f, PROFILE) == expected
+    classes = PROFILE["fruiting_classes"]
+    assert classes[classify_fruiting_level(f, PROFILE)]["label"] == classify_fruiting(f, PROFILE)
+
+
 from pipeline.scoring import compute_ranking
 
 

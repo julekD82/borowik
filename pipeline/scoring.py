@@ -59,6 +59,17 @@ def classify_fruiting(f: float, profile: dict) -> str:
     return profile["fruiting_classes"][-1]["label"]
 
 
+def classify_fruiting_level(f: float, profile: dict) -> int:
+    """Same boundary semantics as classify_fruiting, as a 0-based index
+    (plan A2 Plan-B: this is the flush timeline's per-day tile `level`,
+    replacing a separate threshold table)."""
+    classes = profile["fruiting_classes"]
+    for i, cls in enumerate(classes):
+        if f < cls["max"]:
+            return i
+    return len(classes) - 1
+
+
 def compute_ranking(mask: bool, h: float | None, f_loc: float | None,
                       p: float = 0.0, alpha: float = 0.3) -> float:
     if not mask or h is None or f_loc is None:

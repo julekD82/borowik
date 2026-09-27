@@ -187,22 +187,38 @@ radar:
 
 flush:
   # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
-  # flush-timing model, pipeline/flush.py. NEVER feeds R. [E] values below
-  # are initial; pulse_min_mm/t_base_c/dd_peak/dd_sigma are calibrated in
-  # Task 3 on the GBIF backtest (ERA5 rain) -- record the result here.
+  # flush-timing model, pipeline/flush.py. NEVER feeds R.
+  # SHIP GATE FAILED 2026-09-27 (Task 3: LOYO held-out mean 0.548 <
+  # baseline F_loc bez G_season 0.626; notebooks 08/09 traced the earlier
+  # apparent rain-recency signal to a season confound). Frozen as an
+  # uncalibrated experiment -- NOT imported by prepare_trip/frontend.
+  # See pipeline/conditions_timeline.py for what shipped instead (Plan-B).
   wet_day_mm: 1.0
-  pulse_min_mm: 15.0          # [E] ERA5 mm; production multiplies by radar_rain_scale
-  radar_rain_scale: 0.848     # radar/ERA5 rain ratio, notebooks/05 (note (25))
-  t_base_c: 5.0               # [E]
-  cold_night_c: 5.0           # [E] tmin below this -> that day's rate * cold_night_factor
-  cold_night_factor: 0.5      # [E]
-  frost_c: -1.0               # [E] tmin below this ends the wave
-  dd_peak: 100.0              # [E] degree-days after the pulse at peak (~10 d at 15 C mean)
-  dd_sigma: 35.0              # [E]
+  pulse_min_mm: 15.0
+  radar_rain_scale: 0.848
+  t_base_c: 5.0
+  cold_night_c: 5.0
+  cold_night_factor: 0.5
+  frost_c: -1.0
+  dd_peak: 100.0
+  dd_sigma: 35.0
   lookback_days: 45
   horizon_days: 7
   max_waves: 2
   level_thresholds: [0.1, 0.3, 0.6]
+
+conditions:
+  # Plan 2026-09-27 A2 "Plan-B" (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # pipeline/conditions_timeline.py. Real F per horizon day (already
+  # validated in the GBIF backtest, 0.626) + a fact-only rain summary,
+  # reusing only flush.py's pulse DETECTION (not its thermal clock/peak
+  # model -- see the flush: section's comment above for why).
+  wet_day_mm: 1.0
+  pulse_min_mm: 15.0          # "big enough to mention" cutoff, not calibrated
+  radar_rain_scale: 0.848     # radar/ERA5 rain ratio, notebooks/05 (note (25))
+  lookback_days: 45
+  horizon_days: 7
+  max_rains: 2
 
 osm:
   parking_amenity: "parking"
