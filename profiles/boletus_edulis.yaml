@@ -185,6 +185,25 @@ radar:
   window_days: 30                # covers P26w (26 d) + P5
   min_coverage_for_quality: 0.8  # rain_radar_coverage threshold for pogoda_radar_1km
 
+flush:
+  # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # flush-timing model, pipeline/flush.py. NEVER feeds R. [E] values below
+  # are initial; pulse_min_mm/t_base_c/dd_peak/dd_sigma are calibrated in
+  # Task 3 on the GBIF backtest (ERA5 rain) -- record the result here.
+  wet_day_mm: 1.0
+  pulse_min_mm: 15.0          # [E] ERA5 mm; production multiplies by radar_rain_scale
+  radar_rain_scale: 0.848     # radar/ERA5 rain ratio, notebooks/05 (note (25))
+  t_base_c: 5.0               # [E]
+  cold_night_c: 5.0           # [E] tmin below this -> that day's rate * cold_night_factor
+  cold_night_factor: 0.5      # [E]
+  frost_c: -1.0               # [E] tmin below this ends the wave
+  dd_peak: 100.0              # [E] degree-days after the pulse at peak (~10 d at 15 C mean)
+  dd_sigma: 35.0              # [E]
+  lookback_days: 45
+  horizon_days: 7
+  max_waves: 2
+  level_thresholds: [0.1, 0.3, 0.6]
+
 osm:
   parking_amenity: "parking"
   # spec §4.5 defines d_park against "publicznej drogi utwardzonej" (a public
