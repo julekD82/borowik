@@ -223,7 +223,7 @@ Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::218
 |---|---|---|---|---|
 | **IMGW API telemetria** `/api/data/meteo` [Z] | 788 stacji, 699 z opadem 10-min | bieżące | **brak** (tylko stan bieżący) | trzeba odpytywać co 10–60 min i archiwizować samemu; **poza obecnym zakresem** (wymaga stałej infrastruktury) |
 | IMGW API synop `/api/data/synop` [Z] | ~60 stacji | godz. | brak | temperatura, wilgotność, opad |
-| **IMGW radar** `/api/data/product` [Z] | kompozyt ~1 km | 5–10 min | **tylko najnowszy plik** | `COMPO_PAC` (akumulacja), `COMPO_SRI` (natężenie), HDF5. **Poza obecnym zakresem** — wymaga pollera działającego bez przerwy |
+| **IMGW radar RainGRS** `grs_60_asc` [Z] | 1 km, godzinowy (radar + deszczomierze) | archiwum: opóźnienie ~2–3 dni; bieżące pliki: ~30 h | publiczne archiwum dobowe (tar) od 2018 + ostatnie ~30 h plików godzinowych — **poller niepotrzebny**. **Zaimplementowane w planie A1 (2026-09-26)** jako główne źródło opadów z przeszłości; 4-stacyjne porównanie: MAE radaru 0,28–0,91 vs Open-Meteo 1,04–1,65 mm/d (13–23.09.2026) |
 | IMGW archiwum dobowe (klimat, opad, synop) [Z] | posterunki opadowe | z opóźnieniem (miesiące) | od lat 50. | do kalibracji i klimatologii, nie do bieżących danych |
 | IMGW COSMO 2,8 km GRIB [Z] | 2,8 km | 4×/dobę | prognoza | poza obecnym zakresem |
 | **Open-Meteo** [Z, K] | ICON-D2 ~2 km (prognoza), ERA5/ERA5-Land 9–25 km (archiwum) | godz. | 1940– | jedna biblioteka: opad, Tmin/Tmax, ET0, VPD, wilgotność gleby 0–1 m, `past_days` do 92. **Darmowe tylko niekomercyjnie**, limit <10 000 wywołań/dobę, CC BY 4.0. **Używane w kodzie** (`pipeline/weather.py`, `openmeteo-requests`). |
@@ -232,9 +232,9 @@ Układ: EPSG:2180. **Uwaga na kolejność osi:** przy `urn:ogc:def:crs:EPSG::218
 | GPM IMERG | 0,1° | 4 h – 3,5 mies. | 2000– | nad Polską gorsze od radaru + stacji. **Pomijamy.** |
 | EUMETSAT H SAF | 3–25 km | NRT | | zgrubne. **Pomijamy.** |
 
-**Decyzja (bez zmian):**
+**Decyzja:**
 - **Zaimplementowane [K]:** Open-Meteo (siatka punktów co ~5 km, forecast + archiwum + klimatologia percentyli 1991–2020, ta sama biblioteka dla obu).
-- **Poza obecnym zakresem, do rozważenia dopiero jeśli okaże się realnym problemem:** własne archiwum IMGW (radar PAC + telemetria) — przy burzach konwekcyjnych różnice opadu w obrębie 20 km sięgają dziesiątek mm, model NWP tego nie odda. Wymaga jednak stale działającego pollera, co jest sprzeczne z zasadą „analiza uruchamiana przed wyjazdem” (sekcja 0, 7) — nie wdrażać bez konkretnego dowodu, że różnica ma znaczenie dla wyników.
+- **Zaimplementowane w planie A1 (2026-09-26) [K, `pipeline/radar.py`]:** publiczne archiwum IMGW RainGRS (radar + deszczomierze, 1 km, godzinowe) jako główne źródło opadów z przeszłości dla ostatnich `radar.window_days` (30) dni — archiwum dobowe (tar, od 2018, opóźnienie ~2–3 dni) + ostatnie ~30 h plików bieżących, bez klucza i bez pollera (archiwum jest publikowane przez IMGW samodzielnie). Open-Meteo uzupełnia luki (proporcjonalnie do brakujących godzin) i daje prognozę; temperatura/ET0/wilgotność gleby nadal z Open-Meteo. Pierwotna obawa o konieczność stale działającego pollera (poniżej, sekcja 16) okazała się nieaktualna po sprawdzeniu żywego API archiwum.
 
 **Prognoza do dnia wyjazdu (2.1, do zaimplementowania):** Open-Meteo forecast API zwraca do 16 dni prognozy w tym samym zapytaniu (`forecast_days`), bez dodatkowego kosztu limitu poza liczbą dni. Dziś `forecast_days=1` i `--date` nie wpływa na obliczenia. Zmiana: pobierać przeszłość + prognozę do `--date` i liczyć okna (P26w, CWB26, Tmean20, Tmean5, Tmin3) z końcem w dniu wyjazdu. Wilgotność gleby z prognozy też jest dostępna. Dla daty > 16 dni lub w przeszłości: komunikat i liczenie „na dziś”. Oznaczyć w UI, ile dni okna pochodzi z prognozy (niepewność rośnie z horyzontem).
 
@@ -695,7 +695,7 @@ Zachowuje panel szczegółów z wersji 1.0 (numer wydzielenia, S_host/S_site/S_a
 
 *(Bez zmian merytorycznych — struktura trzech wskaźników jest niezależna od częstotliwości użycia.)*
 
-**1. Data quality (per wydzielenie, 0–1)** — iloczyn: kompletność drzewostanu (1,0 pełny skład LMN — nieosiągalne w obecnym zakresie / **0,7 tylko gatunek panujący WFS** — dzisiejszy stan / 0,3 brak BDL); świeżość BDL (1,0 brak sygnału zmiany S2 — dziś zawsze 1,0, bo S2 nie jest podłączone, więc to pole nie odróżnia realnie świeżych i nieaktualnych danych, patrz zastrzeżenie sekcja 15); pogoda (0,8 NWP ~2 km — dzisiejszy stan przez Open-Meteo).
+**1. Data quality (per wydzielenie, 0–1)** — iloczyn: kompletność drzewostanu (1,0 pełny skład LMN — nieosiągalne w obecnym zakresie / **0,7 tylko gatunek panujący WFS** — dzisiejszy stan / 0,3 brak BDL); świeżość BDL (1,0 brak sygnału zmiany S2 — dziś zawsze 1,0, bo S2 nie jest podłączone, więc to pole nie odróżnia realnie świeżych i nieaktualnych danych, patrz zastrzeżenie sekcja 15); pogoda (0,8 NWP ~2 km — Open-Meteo dla temperatury/prognozy i dni poza oknem radaru / **0,9 opady z radaru IMGW 1 km (A1)** — dla dni w oknie `radar.window_days` z pokryciem ≥ `min_coverage_for_quality`).
 
 **2. Model confidence (globalne):** **maks. „ŚREDNIA”**, bo model jest ekspercki i nieskalibrowany. **[K] Zaimplementowane jako stały pułap** w `profiles/boletus_edulis.yaml` (`model_confidence_cap: "SREDNIA"`). Pozostaje tak, dopóki nie ma kalibracji na danych terenowych (sekcja 16) — realistycznie może pozostać tak na stałe, i to jest w porządku (sekcja 15).
 

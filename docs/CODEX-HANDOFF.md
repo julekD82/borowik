@@ -1,5 +1,45 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-27 — aktualne (25): A1 — opady z radaru IMGW RainGRS
+
+Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-radar-opady-a1` na gałęzi `worktree-borowik-radar-opady-a1`. Cel: zastąpienie modelowanych opadów Open-Meteo pomiarem z radaru IMGW-PIB RainGRS dla ostatnich 30 dni, z Open-Meteo jako uzupełnieniem luk i prognozą — bez zmiany temperatury/ET0/wilgotności gleby/klimatologii/współczynników scoringu.
+
+**Uwaga o numeracji:** plan zakładał, że ta notatka będzie "(24)" — w międzyczasie do master trafił plan zapisanych map, który zajął numer (24) jako pierwszy. Ta notatka jest więc (25).
+
+**Co powstało:**
+- Nowy moduł `pipeline/radar.py` — parsowanie siatki ESRI ASCII (`parse_grs_asc`, odrzuca HTML zamiast pliku), pobieranie archiwum (`.tar`, dobowe, od 2018, opóźnienie ~2-3 dni) i plików bieżących (`.asc`, ostatnie ~30 h) z cache per-dzień w `cache/radar_grs/*.npz` (skwantowane uint16 centi-mm, ~4-5 MB/dobę dla całej Polski), agregacja godzin do dób lokalnych (Europe/Warsaw, z uwzględnieniem DST) i scalanie z ramką dobową Open-Meteo z proporcjonalnym uzupełnieniem brakujących godzin (`merge_radar_into_daily`) oraz `make_radar_weather_fetcher` — owija dowolny `weather_fetcher` o tym samym sygnaturze, więc `pipeline.orchestrate.run_poc` nie zmienił interfejsu.
+- `pipeline/weather.py::compute_weather_features` — nowa cecha `rain_radar_coverage` (wykładniczo ważony udział P26w pochodzący z radaru, 0 gdy brak `radar_frac`).
+- `pipeline/orchestrate.py::run_poc` — eksportuje `rain_radar_coverage` per wydzielenie i `diagnostics["radar_coverage_mean"]`.
+- `pipeline/confidence.py` — nowy czynnik jakości `pogoda_radar_1km: 0,9` (zamiast `pogoda_nwp_2km: 0,8`) gdy `rain_radar_coverage >= radar.min_coverage_for_quality` (0,8); nowy powód `weather_radar`.
+- `profiles/boletus_edulis.yaml` — nowa sekcja `radar:` (`enabled`, `window_days: 30`, `min_coverage_for_quality: 0.8`).
+- `pipeline/export.py` — nowe pole `rain_radar_coverage` w `SCORE_FIELDS`.
+- `pipeline/prepare_trip.py` — `build_weather_fetcher` (owija bazowy fetcher radarem, `half_size_m = grid_spacing_m / 2`), nowa flaga CLI `--no-radar` (opady tylko z Open-Meteo, np. do porównania), `run_trip_preparation(..., use_radar: bool = True)`, nowy print `Opady z radaru IMGW: srednie pokrycie okna P26w NN%`.
+- Frontend: `Stand.rain_radar_coverage?: number | null` w `model.ts` (ten sam wzorzec opcjonalnego pola co `G_season`/`tie_break`), link do IMGW w oknie "Warto wiedzieć", sekcja "Źródła danych" w `frontend/README.md`.
+
+**Task 0 — ustalenia CRS/znacznika czasu:** sprawdzono `https://danepubliczne.imgw.pl/pl/repository` i stronę RainGRS w Laboratorium Modelowania Meteorologicznego CMOK IMGW-PIB — **nie znaleziono** oficjalnego opisu produktu podającego wprost układ współrzędnych siatki ani czy znacznik czasu pliku to początek czy koniec godziny akumulacji. Brak sprzeczności z założeniami (`EPSG:2180`, znacznik = koniec godziny) w tym, co udało się znaleźć — założenia zweryfikowano empirycznie w Task 7 (patrz niżej), obie się potwierdziły.
+
+**Task 7 — walidacja (dane na żywo, 2026-09-27):**
+- Porównanie z 4 stacjami Weathercloud (`notebooks/04_radar_vs_stations.py`, dane stacji w `cache/stations/weathercloud_2026-09.yaml`, poza repo), 13-23.09.2026 (doby z pełnymi 24 godzinami archiwum), znacznik = koniec godziny: MAE radaru 0,93/0,27/0,54/0,37 mm/d (S1/S2/S3/S4) vs Open-Meteo 1,41/1,12/1,04/1,65 — radar wyraźnie dokładniejszy dla wszystkich 4 stacji, zgodnie ze spike'iem z 2026-09-26 (różnice ≤ 0,02 mm). Wariant "znacznik = początek godziny" dał nieco WYŻSZE sumaryczne MAE (2,15 vs 2,11) — `GRS_TIMESTAMP_IS_HOUR_END` pozostaje `True`, bez zmian w kodzie.
+- Sprawdzenie D1 (`notebooks/05_radar_era5_bias.py`): stosunek sumy opadu radaru do ERA5-Land (Open-Meteo archive) na siatce Będziemyśl 20 km, 2025-08-01..2025-09-30, 59/144 punktów z pełnym pokryciem radaru: **0,848** (suma radar 13985 mm, ERA5 16494 mm; per-punkt: średnia 0,853, odch. std 0,104, zakres 0,635-1,147) — tuż poniżej progu akceptacji planu (0,85-1,15), o 0,002. Zgodnie z regułą D1 zatrzymano się i zapytano użytkownika; **decyzja: zaakceptować odchylenie bez zmiany kodu** (różnica w granicach szumu przy n=59 dni, kierunek zgodny z porównaniem stacyjnym). Do rewizji, jeśli rozkład M z realnego biegu wygląda nierealistycznie, albo przy walidacji A2 na GBIF.
+
+**Task 8 — realny bieg Będziemyśl 20 km, przed/po (2026-09-27, `notebooks/output/no_radar` vs `notebooks/output/`):**
+- Radar: `Radar IMGW (RainGRS): biezace 2, brak 1, cache 28 dob`, `Opady z radaru IMGW: srednie pokrycie okna P26w 82%`.
+- Rozkład klas F (3656 wydzieleń przechodzących maskę, identyczne w obu biegach): **przed** (Open-Meteo) Bardzo dobre 1808, Dobre 863, Umiarkowane 985. **Po** (radar) Bardzo dobre 1808 (bez zmian), Dobre 3 (z 863!), Umiarkowane 1845 — radar w tym konkretnym biegu/okresie systematycznie "suchszy" (zgodne z D1: stosunek 0,848), duża część wydzieleń "Dobre" spadła do "Umiarkowane"; klasa "Bardzo dobre" nietknięta.
+- R ≥ 85: 0 w obu biegach (bez zmian).
+- 5 rejonów: identyczny skład wydzieleń w każdym z 5 rejonów przed/po (9/12/3/4/3 wydzieleń), `rank_score` spadł jednolicie o ok. 5 punktów w każdym (79,83→74,65, 77,83→72,77, 76,74→71,76, 75,68→70,76, 73,66→68,87) — efekt niższego F z radaru, nie zmiana grupowania.
+- Skok M ok. lon 21,72 (artefakt siatki Open-Meteo zgłoszony 2026-09-26): **nie zniknął** — pasmo zachodnie (lon 21,60-21,71) średnia M 0,278→0,168 (przed/po), pasmo wschodnie (lon 21,73-21,85) 0,746→0,655; względny skok podobny lub nieco większy z radarem. Wygląda na to, że skok NIE jest wyłącznie artefaktem modelu opadu Open-Meteo (klimatologia/percentyle nadal z ERA5, D2 — być może stamtąd), albo odzwierciedla realną zmienność terenową (pogórze). Nierozstrzygnięte — do sprawdzenia przy A2 lub jeśli wpłynie na rekomendacje.
+- Dane zsynchronizowane do frontendu (`npm run sync-data`) z biegu z radarem.
+
+**Testy:** 439 (402 na starcie planu → 439, +37 nowych w `test_radar.py`/`test_weather.py`/`test_orchestrate.py`/`test_confidence.py`/`test_export.py`/`test_prepare_trip.py`), wszystkie bez sieci. Frontend: 58 (56→58, +2 w `model.test.ts`), `tsc --noEmit` czysto.
+
+**Błąd znaleziony i naprawiony podczas wykonania (Task 6):** `run_trip_preparation`'s nowy domyślny `use_radar=True` sprawił, że 3 istniejące testy w `tests/test_search_area.py` (wołające `run_trip_preparation` bezpośrednio, bez wyłączenia radaru) zaczęły robić prawdziwe, niezamockowane zapytania HTTP do `danepubliczne.imgw.pl` — jeden pełny bieg testów trwał **6 godzin 6 minut** zamiast ok. 20 sekund, bo IMGW bywa wolny, a nie nieosiągalny (więc `RadarUnavailableError`'s fallback się nie uruchamiał). Naprawione: `use_radar=False` w tych 3 wywołaniach + strażnik w `configure_sources` rzucający natychmiast, jeśli dojdzie do prawdziwego zapytania radarowego (zamienia ewentualny przyszły regres z wielogodzinnego zawieszenia na błąd w ~3 sekundy).
+
+**Otwarte kwestie / następny krok:**
+- Wilgotność gleby nadal liczona z opadu Open-Meteo, nie radaru (świadome, D2) — do rewizji w A2 (model wysypu/flush).
+- Próbkowanie przestrzenne radaru per punkt siatki pogodowej (średnia blokowa), nie per wydzielenie — możliwe doprecyzowanie później.
+- Skok M przy lon 21,72 nierozwiązany (patrz wyżej) — może nie być artefaktem Open-Meteo.
+- Następny krok wg planu: **A2** (model fazy wysypu, licząc od konkretnego opadu, z uwzględnieniem nocnej temperatury) oraz osobno **B** (presja z rowerów/pieszych po duktach leśnych — patrz notatka (23) niżej).
+
 ## 2026-09-26 — aktualne (24): zapisane mapy (lista do porównywania analiz)
 
 Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spec: `docs/superpowers/specs/2026-09-26-borowik-saved-maps-design.md`), wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-saved-maps` na gałęzi `worktree-borowik-saved-maps`. Cel: zapisanie aktualnie wyświetlanej analizy pod nazwą (np. "Będziemyśl - 20km - 26.09") i przełączanie się między zapisanymi analizami w przeglądarce, bez ponownego uruchamiania pipeline'u.
