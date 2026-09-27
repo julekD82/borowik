@@ -265,10 +265,18 @@ def test_cli_rejects_nonfinite_or_invalid_coordinates(args):
 
 def configure_sources(monkeypatch):
     import pipeline.prepare_trip as trip
+    import pipeline.radar as radar
     # _gdos_call_api/_osm_call_api pace every real call via time.sleep --
     # harmless in production, but real wall-clock delay against these
     # fakes otherwise (each GDOS tile call alone added 0.5s).
     monkeypatch.setattr(trip.time, 'sleep', lambda s: None)
+
+    def _no_real_radar_http(url):
+        raise AssertionError(
+            f"real IMGW radar HTTP call attempted in a test ({url}) -- pass "
+            "use_radar=False to run_trip_preparation instead of hitting the network"
+        )
+    monkeypatch.setattr(radar, '_default_http_get', _no_real_radar_http)
     rdlp = gpd.GeoDataFrame({"region_name": ["TEST"]}, geometry=[box(0,0,1000000,1000000)], crs=2180)
     monkeypatch.setattr(trip, 'fetch_rdlp_boundaries_cached', lambda *a: rdlp)
     def bdl(layer, bbox):
@@ -302,7 +310,7 @@ def test_real_pipeline_with_mocked_sources_expands_radius_and_exports_consistent
     outputs=[]
     for radius in [10,20]:
         out=tmp_path/str(radius)
-        summary=run_trip_preparation(50.5318,18.6055,'2026-09-24',radius,'profiles/boletus_edulis.yaml',out,tmp_path/'cache')
+        summary=run_trip_preparation(50.5318,18.6055,'2026-09-24',radius,'profiles/boletus_edulis.yaml',out,tmp_path/'cache',use_radar=False)
         scores=json.loads(summary['scores_path'].read_text(encoding='utf-8'))
         features=json.loads(summary['geojson_path'].read_text(encoding='utf-8'))['features']
         regions=json.loads(summary['regions_path'].read_text(encoding='utf-8'))
@@ -340,7 +348,7 @@ def test_gdos_tile_failure_does_not_abort_the_run(monkeypatch,tmp_path,capsys):
             raise RuntimeError('GDOS unavailable')
         return gpd.GeoDataFrame(geometry=[],crs=2180)
     monkeypatch.setattr('pipeline.prepare_trip.fetch_protected_areas', fail_once)
-    summary = run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache')
+    summary = run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache',use_radar=False)
     assert summary['scores_path'].exists()
     assert 'GDOS unavailable' in capsys.readouterr().out
 
@@ -356,5 +364,5 @@ def test_failure_mid_pipeline_preserves_previous_export(monkeypatch,tmp_path):
         raise RuntimeError('Zakazy unavailable')
     monkeypatch.setattr('pipeline.prepare_trip.check_periodic_ban', fail_ban)
     with pytest.raises(RuntimeError,match='Zakazy unavailable'):
-        run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache')
+        run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache',use_radar=False)
     assert marker.read_text() == 'previous result'
