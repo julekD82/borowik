@@ -1,8 +1,11 @@
 import json
 import math
+import pathlib
+from datetime import date
 
 import geopandas as gpd
 import pytest
+import requests
 from shapely.geometry import Point, box
 
 from pipeline.search_area import (
@@ -366,3 +369,72 @@ def test_failure_mid_pipeline_preserves_previous_export(monkeypatch,tmp_path):
     with pytest.raises(RuntimeError,match='Zakazy unavailable'):
         run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache',use_radar=False)
     assert marker.read_text() == 'previous result'
+
+
+def test_conditions_timeline_written_when_todays_weather_is_available(monkeypatch, tmp_path):
+    # Plan A2 Plan-B: the fixed fake weather fetcher covers 2026-08-01..30
+    # (test_orchestrate.fake_weather_fetcher) -- freeze date.today() inside
+    # that range so the conditions block takes its success path, not the
+    # UWAGA skip every other test in this file exercises via the real
+    # (September+) wall-clock date.
+    configure_sources(monkeypatch)
+
+    class FrozenDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 8, 20)
+
+    monkeypatch.setattr('pipeline.prepare_trip.date', FrozenDate)
+    out = tmp_path / 'out'
+    out.mkdir()
+    stale = out / 'conditions_2026-09-24.json'
+    stale.write_text('{"day": "stale"}', encoding='utf-8')
+
+    summary = run_trip_preparation(50.5318, 18.6055, '2026-09-24', 10, 'profiles/boletus_edulis.yaml',
+                                    out, tmp_path / 'cache', use_radar=False)
+
+    assert summary['conditions_path'] is not None
+    data = json.loads(pathlib.Path(summary['conditions_path']).read_text(encoding='utf-8'))
+    assert data['day'] == '2026-09-24'
+    assert isinstance(data['days'], list) and len(data['days']) == 7
+    assert isinstance(data['summary'], str)
+
+
+def test_conditions_skipped_and_stale_same_day_file_removed_when_weather_lacks_today(monkeypatch, tmp_path):
+    # The fixed fake weather (2026-08-01..30) does not cover the real
+    # wall-clock "today" -- the conditions block must skip gracefully
+    # (UWAGA, not a crash) AND must not leave a stale same-day file behind.
+    configure_sources(monkeypatch)
+    out = tmp_path / 'out'
+    out.mkdir()
+    stale = out / 'conditions_2026-09-24.json'
+    stale.write_text('{"day": "stale"}', encoding='utf-8')
+
+    summary = run_trip_preparation(50.5318, 18.6055, '2026-09-24', 10, 'profiles/boletus_edulis.yaml',
+                                    out, tmp_path / 'cache', use_radar=False)
+
+    assert summary['conditions_path'] is None
+    assert not stale.exists()
+
+
+def test_conditions_fetch_network_error_does_not_abort_an_otherwise_successful_run(monkeypatch, tmp_path, capsys):
+    # Review finding: the conditions-timeline weather fetch is a SEPARATE,
+    # optional API call after run_poc has already succeeded -- a transient
+    # network error there must not abort a trip preparation that otherwise
+    # completed fine. Fails only the conditions call (forecast_days=7,
+    # unique to it -- run_poc's own same-day search always requests
+    # forecast_days=1), leaving run_poc's own weather fetch untouched.
+    configure_sources(monkeypatch)
+
+    def flaky_weather(points, past_days, forecast_days=1, **kw):
+        if forecast_days == 7:
+            raise requests.ConnectionError('network unavailable')
+        return fake_weather_fetcher(points, past_days, forecast_days=forecast_days)
+    monkeypatch.setattr('pipeline.prepare_trip.fetch_weather_raw', flaky_weather)
+
+    summary = run_trip_preparation(50.5318, 18.6055, '2026-09-24', 10, 'profiles/boletus_edulis.yaml',
+                                    tmp_path, tmp_path / 'cache', use_radar=False)
+
+    assert summary['scores_path'].exists()
+    assert summary['conditions_path'] is None
+    assert 'UWAGA' in capsys.readouterr().out

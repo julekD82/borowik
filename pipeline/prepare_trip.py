@@ -336,13 +336,19 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     conditions_points = points_within_radius(make_grid(bbox, spacing_m=grid_spacing_m), lat, lon, radius_km)
     conditions_clim_points = points_within_radius(
         make_grid(bbox, spacing_m=climatology_grid_spacing_m), lat, lon, radius_km)
-    conditions_daily = weather_fetcher(conditions_points, 92, forecast_days=profile["conditions"]["horizon_days"])
-    conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
     rain_scale = profile["conditions"]["radar_rain_scale"] if use_radar and profile["radar"]["enabled"] else 1.0
+    # This whole block is a best-effort addendum to an ALREADY-SUCCESSFUL
+    # trip preparation (run_poc above has finished) -- a transient network
+    # failure fetching its own separate, redundant weather/climatology
+    # range must not abort a run that otherwise completed fine, any more
+    # than a single failed GDOS/OSM tile does (above).
     try:
+        conditions_daily = weather_fetcher(conditions_points, 92,
+                                           forecast_days=profile["conditions"]["horizon_days"])
+        conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
         timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
                                              conditions_clim_points, date.today(), profile, rain_scale=rain_scale)
-    except ValueError as exc:
+    except (ValueError, requests.RequestException, OpenMeteoRequestsError) as exc:
         print(f"UWAGA: warunki na kolejne dni pominiete ({exc}).", flush=True)
     else:
         conditions_path = write_conditions_json(timeline, day, conditions_out)

@@ -49,6 +49,18 @@ def test_recent_rains_rejects_missing_today():
         recent_rains(_area([0.0] * 5), date(2026, 12, 1), PROFILE)
 
 
+def test_recent_rains_ignores_forecast_rain_when_detecting_past_pulses():
+    # Review finding: detect_pulses' one-dry-day-gap rule must not let a
+    # FORECAST wet day (not yet fallen) bridge across the gap and merge
+    # with an already-fallen pulse, pushing the merged pulse's `end` into
+    # the future and so dropping it entirely from recent_rains (real past
+    # rain must never vanish because of what the forecast says).
+    precip = [0, 0, 0, 10, 10, 10, 0, 2, 3]  # pulse days 3-5 (30mm), dry day 6, today(day7)=2mm, forecast day8=3mm
+    today = D0 + timedelta(days=7)
+    rains = recent_rains(_area(precip), today, PROFILE)
+    assert rains == [{"start": "2026-09-23", "end": "2026-09-27", "rain_mm": 32.0, "days_ago": 0}]
+
+
 def test_rains_summary_formats_dates_mm_and_days_ago():
     rains = [{"start": "2026-09-25", "end": "2026-09-25", "rain_mm": 20.0, "days_ago": 2},
              {"start": "2026-09-11", "end": "2026-09-12", "rain_mm": 20.3, "days_ago": 15}]
@@ -62,11 +74,17 @@ def test_rains_summary_without_rains_states_the_threshold():
 
 
 def _daily_multi_point(points, start, days, precip=2.0, et0=1.0, tmean=13.0, tmin=6.0):
+    """`tmean` may be a scalar (constant every day) or a callable of the
+    day index (0-based) -- the latter lets a test vary weather over the
+    fetched window, so per-day truncation in build_conditions_timeline is
+    actually load-bearing (a constant fixture can't distinguish "today's
+    window" from "the whole 47-day frame")."""
     rows = []
     for lat, lon in points:
-        for d in pd.date_range(start, periods=days, freq="D", tz="UTC"):
+        for i, d in enumerate(pd.date_range(start, periods=days, freq="D", tz="UTC")):
+            t = tmean(i) if callable(tmean) else tmean
             rows.append({"lat": lat, "lon": lon, "date": d, "precipitation_mm": precip,
-                         "et0_mm": et0, "tmean_c": tmean, "tmin_c": tmin})
+                         "et0_mm": et0, "tmean_c": t, "tmin_c": tmin})
     return pd.DataFrame(rows)
 
 
@@ -86,16 +104,27 @@ def test_build_conditions_timeline_rejects_missing_today():
 
 
 def test_build_conditions_timeline_seven_days_match_direct_recomputation():
+    # Review finding: with CONSTANT fixture weather every rolling window is
+    # identical regardless of which day it ends on, so a bug that skipped
+    # per-day truncation entirely (e.g. always using the whole 47-day
+    # frame) would still pass. tmean ramps day-over-day so each horizon
+    # day's trailing windows (tmean20/tmean5) genuinely differ, and the
+    # direct-recomputation below only matches production if it truncates
+    # to the SAME day each time.
     points = [(50.0, 21.0), (50.1, 21.1)]
     today = date(2026, 9, 27)
     start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
-    daily = _daily_multi_point(points, start, 47)
+    daily = _daily_multi_point(points, start, 47, tmean=lambda i: 5.0 + 0.4 * i)
     clim_df = _clim(points)
 
     out = build_conditions_timeline(daily, points, clim_df, points, today, PROFILE)
 
     assert [d["date"] for d in out["days"]] == [(today + timedelta(days=k)).isoformat() for k in range(7)]
     assert out["days"][0]["forecast"] is False and all(d["forecast"] for d in out["days"][1:])
+    # The ramp must actually reach the per-day F values, not just the
+    # per-day date/forecast bookkeeping above -- catches a mutation that
+    # feeds every day the same (e.g. last-day-only) weather window.
+    assert len({d["F"] for d in out["days"]}) > 1
 
     with_ld = with_local_date(daily)
     for k, entry in enumerate(out["days"]):

@@ -209,8 +209,11 @@ flush:
 
 conditions:
   # Plan 2026-09-27 A2 "Plan-B" (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
-  # pipeline/conditions_timeline.py. Real F per horizon day (already
-  # validated in the GBIF backtest, 0.626) + a fact-only rain summary,
+  # pipeline/conditions_timeline.py. Real F per horizon day (F's own
+  # components -- the same formula whose per-stand, per-point form scored
+  # 0.626 in the GBIF backtest, but computed here from the AREA MEDIAN of
+  # the weather grid, ranked against pooled climatology -- a different,
+  # not separately validated, aggregation) + a fact-only rain summary,
   # reusing only flush.py's pulse DETECTION (not its thermal clock/peak
   # model -- see the flush: section's comment above for why).
   wet_day_mm: 1.0

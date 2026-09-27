@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   fruitingClass,
   joinData,
@@ -16,6 +16,7 @@ import {
   formatTripLabel,
   parseConditions,
   dayLabel,
+  loadData,
 } from "./model";
 import { readSaved, saveRegion } from "./storage";
 import type { Score, Stands, Region, StandDetail, TripMeta } from "./model";
@@ -508,5 +509,51 @@ describe("conditions timeline", () => {
     expect(dayLabel("2026-09-27", 0)).toBe("dziś");
     expect(dayLabel("2026-09-28", 1)).toBe("pn");
     expect(dayLabel("2026-10-03", 6)).toBe("sb");
+  });
+});
+
+describe("loadData against a dev-server SPA fallback for missing optional files", () => {
+  // Review finding (Critical #1): Vite's dev-server html-fallback middleware
+  // answers a GET for a genuinely missing file (any missing file, not just
+  // conditions.json -- e.g. a saved trip made before regions/details/
+  // conditions existed) with 200 text/html (index.html), not 404. A naive
+  // `response.ok` check then treats that as "the file exists" and .json()
+  // throws, turning an optional, normally-absent file into a fatal load
+  // error for the WHOLE map, not just its own section.
+  function jsonResponse(body: unknown) {
+    return {
+      ok: true,
+      headers: new Headers({ "content-type": "application/json; charset=utf-8" }),
+      json: async () => body,
+    } as unknown as Response;
+  }
+  function htmlFallbackResponse() {
+    return {
+      ok: true,
+      headers: new Headers({ "content-type": "text/html" }),
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response;
+  }
+  const scoresBody = [score("A", 40), score("B", 30)];
+
+  it("treats a 200 text/html response for regions/details/conditions as absent, not a fatal error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes("scores.json")) return jsonResponse(scoresBody);
+        if (url.includes("stands.geojson")) return jsonResponse(stands);
+        // regions.json / details.json / conditions.json: genuinely absent,
+        // but the dev server answers as if they were present.
+        return htmlFallbackResponse();
+      }),
+    );
+    const data = await loadData();
+    expect(data.regions).toEqual([]);
+    expect(data.details).toEqual([]);
+    expect(data.conditions).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

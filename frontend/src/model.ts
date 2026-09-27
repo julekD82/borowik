@@ -564,12 +564,22 @@ export async function loadData(basePath: string = "data/") {
   // A file that DOES exist but fails to fetch/parse is a real error,
   // though (same as scores/stands above) -- not silently treated as "no
   // regions" just because something went wrong reading it.
+  //
+  // `response.ok` alone is not enough: `npm run dev`'s dev server answers
+  // a GET for a genuinely missing file with 200 text/html (its SPA
+  // fallback to index.html), not 404 -- this is common (any saved trip or
+  // run predating an optional file, e.g. this plan's own conditions.json).
+  // Without the content-type check below, that 200 is trusted as "the
+  // file exists", `.json()` throws on the HTML body, and an optional
+  // file's ABSENCE turns into a fatal error for the whole map.
+  const isJsonResponse = (response: Response) =>
+    response.headers.get("content-type")?.includes("json") ?? false;
   let regionsRaw: unknown = undefined;
   const regionsResponse = await fetch(
     `${import.meta.env.BASE_URL}${basePath}regions.json`,
     { cache: "no-cache", signal: AbortSignal.timeout(20000) },
   ).catch(() => undefined);
-  if (regionsResponse?.ok) {
+  if (regionsResponse?.ok && isJsonResponse(regionsResponse)) {
     try {
       regionsRaw = await regionsResponse.json();
     } catch {
@@ -585,7 +595,7 @@ export async function loadData(basePath: string = "data/") {
     `${import.meta.env.BASE_URL}${basePath}details.json`,
     { cache: "no-cache", signal: AbortSignal.timeout(20000) },
   ).catch(() => undefined);
-  if (detailsResponse?.ok) {
+  if (detailsResponse?.ok && isJsonResponse(detailsResponse)) {
     try {
       detailsRaw = await detailsResponse.json();
     } catch {
@@ -601,7 +611,7 @@ export async function loadData(basePath: string = "data/") {
     `${import.meta.env.BASE_URL}${basePath}conditions.json`,
     { cache: "no-cache", signal: AbortSignal.timeout(20000) },
   ).catch(() => undefined);
-  if (conditionsResponse?.ok) {
+  if (conditionsResponse?.ok && isJsonResponse(conditionsResponse)) {
     try {
       conditionsRaw = await conditionsResponse.json();
     } catch {

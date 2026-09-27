@@ -4,9 +4,13 @@
 
 Reuses only pipeline.flush's pulse DETECTION (never its thermal-clock/
 Gaussian model, which failed its GBIF ship gate) for a fact-only rain
-summary, plus real F -- already validated at 0.626 in the GBIF backtest --
-computed once per horizon day instead of once per search. Still answers
-"kiedy", never "gdzie": R is untouched."""
+summary, plus F's own components (M/T/K_frost/G_season -- the same
+formula whose per-STAND, per-POINT form scored 0.626 in the GBIF
+backtest), computed once per horizon day instead of once per search, from
+the AREA MEDIAN of the weather grid -- a different, not separately
+validated, aggregation (median-of-points ranked against pooled
+climatology, vs. the backtest's one-point-ranked-against-its-own-cell).
+Still answers "kiedy", never "gdzie": R is untouched."""
 from datetime import date, timedelta
 
 import numpy as np
@@ -50,10 +54,14 @@ def recent_rains(area: pd.DataFrame, today: date, profile: dict, rain_scale: flo
     if today not in dates:
         raise ValueError(f"brak danych pogodowych dla {today.isoformat()}")
     t = dates.index(today)
-    pulses = detect_pulses(area["precipitation_mm"].to_numpy(), params)
+    # Detection must never see forecast days: detect_pulses' one-dry-day
+    # gap can otherwise merge an already-fallen pulse with a FORECAST wet
+    # day, pushing the merged pulse's end into the future and silently
+    # dropping real, already-fallen rain from the summary.
+    pulses = detect_pulses(area["precipitation_mm"].to_numpy()[: t + 1], params)
     out = []
     for pulse in sorted(pulses, key=lambda p: -p.end):
-        if pulse.end > t or (today - dates[pulse.end]).days > cfg["lookback_days"]:
+        if (today - dates[pulse.end]).days > cfg["lookback_days"]:
             continue
         out.append({"start": dates[pulse.start].isoformat(), "end": dates[pulse.end].isoformat(),
                     "rain_mm": round(pulse.rain_mm, 1), "days_ago": (today - dates[pulse.end]).days})

@@ -59,7 +59,7 @@ Przygotowane lokalne dane, `node_modules/` i `dist/` są ignorowane przez Git. N
 
 ## Warunki na kolejne dni
 
-Pasek „Warunki” pokazuje 7 kafelków (dziś..dziś+6). Poziom 0–3 to klasa F z profilu (`fruiting_classes`) tego dnia — ta sama, już zwalidowana ocena wilgotności/temperatury co reszta interfejsu, liczona ponownie dla każdego dnia horyzontu, **nie** osobny, skalibrowany model fazy wysypu (ten został wypróbowany i odrzucony — patrz `docs/CODEX-HANDOFF.md` note (27)). Pierwszy kafelek to dziś (dane zmierzone); kolejne używają prognozy temperatury/opadu. Zdanie nad kafelkami podaje wyłącznie fakty o ostatnim większym deszczu (daty, suma mm, ile dni temu) — nie przewiduje szczytu wysypu. `conditions.json` jest opcjonalny jak `regions.json`/`details.json`: brak pliku = tylko baner „Warunki w obszarze” bez kafelków, uszkodzony plik = głośny błąd.
+Pasek „Warunki” pokazuje 7 kafelków (dziś..dziś+6). Poziom 0–3 to klasa F z profilu (`fruiting_classes`) tego dnia — ta sama formuła wilgotności/temperatury (M/T/K_frost/G_season) co reszta interfejsu, ale liczona z MEDIANY OBSZARU siatki pogodowej zamiast per wydzielenie/punkt — to inna, osobno nie zwalidowana agregacja niż backtestowe 0,626 (patrz `docs/CODEX-HANDOFF.md` note (27)). To **nie** osobny, skalibrowany model fazy wysypu (ten został wypróbowany i odrzucony — też note (27)). Pierwszy kafelek to dziś (dane zmierzone); kolejne używają prognozy temperatury/opadu. Zdanie nad kafelkami podaje wyłącznie fakty o ostatnim większym deszczu (daty, suma mm, ile dni temu) — nie przewiduje szczytu wysypu. `conditions.json` jest opcjonalny jak `regions.json`/`details.json`: brak pliku = tylko baner „Warunki w obszarze” bez kafelków, uszkodzony plik = głośny błąd.
 
 ## Źródła danych
 
