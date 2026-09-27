@@ -144,6 +144,91 @@ def test_run_poc_fetches_climatology_on_a_coarser_grid_than_weather():
     assert result["R"].notna().all()
 
 
+def test_run_poc_moisture_percentiles_follow_each_weather_point_not_the_climatology_cell():
+    # Regression (found 2026-09-27 on the real Bedziemysl export): percentiles
+    # were cached per CLIMATOLOGY cell but computed from the weather row of
+    # whichever stand hit that cell first, so every weather point sharing a
+    # (16 km) climatology cell got that first point's M -- the radar's/weather
+    # grid's own spatial detail was thrown away. Two stands here share one
+    # climatology cell but sit at different weather points, one dry, one wet.
+    def two_stand_fetcher(layer, bbox):
+        return gpd.GeoDataFrame({
+            "adr_for": ["DRY", "WET"],
+            "a_year": [2026, 2026],
+            "area_type": ["D-STAN", "D-STAN"],
+            "site_type": ["BMSW", "BMSW"],
+            "species_cd": ["SO", "SO"],
+            "part_cd": [10, 10],
+            "spec_age": [60, 60],
+            "geometry": [box(381000, 487000, 381100, 487100), box(389000, 495000, 389100, 495100)],
+        }, crs="EPSG:2180")
+
+    def split_weather_fetcher(points, past_days, forecast_days=1):
+        median_lat = sorted(lat for lat, _ in points)[len(points) // 2]
+        df = fake_weather_fetcher(points, past_days, forecast_days)
+        df["precipitation_mm"] = [10.0 if lat > median_lat else 0.0 for lat in df["lat"]]
+        return df
+
+    def spread_climatology_fetcher(points, start_year, end_year):
+        rows = []
+        for lat, lon in points:
+            for d in pd.date_range("2000-01-01", "2009-12-31", freq="D"):
+                rows.append({"lat": lat, "lon": lon, "date": d,
+                             "cwb26": -50.0 + 20.0 * (d.year - 2000), "soil_moisture": 0.4})
+        return pd.DataFrame(rows)
+
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=two_stand_fetcher,
+        weather_fetcher=split_weather_fetcher,
+        climatology_fetcher=spread_climatology_fetcher,
+        grid_spacing_m=2000.0,
+        climatology_grid_spacing_m=50000.0,  # one shared climatology cell for both stands
+        past_days=30,
+        target_date=date(2026, 8, 30),
+    )
+
+    m = dict(zip(result["adr_for"], result["M"]))
+    assert m["WET"] > m["DRY"]
+
+
+def test_run_poc_m_and_f_loc_ignore_model_soil_moisture():
+    # 2026-09-27: profile soil_moisture_weight 0.0 -- both M and the
+    # site-moisture modulation (pct_m -> F_loc) must be independent of the
+    # Open-Meteo soil moisture reading.
+    def weather_with_soil(value):
+        def fetcher(points, past_days, forecast_days=1):
+            df = fake_weather_fetcher(points, past_days, forecast_days)
+            df["soil_moisture"] = value
+            return df
+        return fetcher
+
+    def spread_climatology_fetcher(points, start_year, end_year):
+        # Non-empty window around target_date with spread soil moisture, so
+        # 0.05 and 0.9 would rank very differently if pct_sm still counted.
+        rows = []
+        for lat, lon in points:
+            for d in pd.date_range("2000-01-01", "2009-12-31", freq="D"):
+                k = d.year - 2000
+                rows.append({"lat": lat, "lon": lon, "date": d,
+                             "cwb26": -50.0 + 20.0 * k, "soil_moisture": 0.1 + 0.07 * k})
+        return pd.DataFrame(rows)
+
+    runs = [
+        run_poc(
+            layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+            bdl_fetcher=fake_bdl_fetcher, weather_fetcher=weather_with_soil(value),
+            climatology_fetcher=spread_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+            target_date=date(2026, 8, 30),
+        )
+        for value in (0.05, 0.9)
+    ]
+    assert runs[0]["M"].tolist() == pytest.approx(runs[1]["M"].tolist())
+    assert runs[0]["F_loc"].tolist() == pytest.approx(runs[1]["F_loc"].tolist())
+
+
 def test_run_poc_defaults_climatology_grid_coarser_than_weather_grid():
     weather_points_seen = []
     climatology_points_seen = []

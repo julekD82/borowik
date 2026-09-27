@@ -1,5 +1,17 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-27 — aktualne (26): dwa błędy w M znalezione po A1 — percentyle per komórka klimatologii + wilgotność gleby z innego modelu
+
+Porównanie eksportów 26.09 (Open-Meteo) / 27.09 (radar) i dodatkowy bieg `--no-radar` z 27.09 (katalog roboczy, poza repo) pokazały, że M miało tylko ~9 różnych wartości na 3656 wydzieleń mimo 71 używanych punktów pogodowych.
+
+**Błąd 1 — percentyle cache'owane per komórka klimatologii (od `43b5a80`, 2026-09-24).** `run_poc` liczył `pct_cwb26`/`pct_sm` z wiersza pogody PIERWSZEGO wydzielenia trafiającego do komórki klimatologii (16 km przy promieniu 20 km) i używał ich dla wszystkich punktów pogody w tej komórce. Naprawa: historia klimatologii nadal cache'owana per komórka (`history_by_cell`), percentyle per punkt pogody (`percentiles_by_point`). Test: `test_run_poc_moisture_percentiles_follow_each_weather_point_not_the_climatology_cell`. **„Skok M przy dł. 21,72” z notatek (23)/(25) to była granica komórek klimatologii, nie artefakt opadu.**
+
+**Błąd 2 — wilgotność gleby porównywana z klimatologią z innego modelu.** Po naprawie 1 rozkład per punkt (Będziemyśl 20 km, 144 punkty, 27.09, radar): percentyl bilansu wodnego z radaru jednolity 0,49–0,81 (mediana 0,66); bieżąca wilgotność gleby Open-Meteo (API prognozy, 9–27 cm) 0,135–0,27 m³/m³ vs mediana klimatologii ERA5-Land (archiwum, 7–28 cm) ~0,22–0,33 → `pct_sm` 0,00–0,04 prawie wszędzie, ~0,48 w blokach ~10 km z wartością 0,226. M = f(średnia obu) było więc sterowane blokami gleby modelu (M 0,2 vs 0,72). Wcześniejsze „północny blok najlepszy” (M 0,94 → 0,80 z radarem) wynikało z tego, że pierwsze wydzielenie komórki trafiło w taki blok. **Decyzja użytkownika (wariant 1):** nowy klucz profilu `fruiting.soil_moisture_weight: 0.0` (0,5 = dawna równa średnia), wspólna funkcja `pipeline.scoring.moisture_percentile` używana przez `score_moisture` i przez `pct_m` w `run_poc` (modulacja siedliskowa) oraz w `notebooks/03_backtest_gbif.py`. Do rewizji w A2 (własny bilans wody).
+
+**Efekt (bieg z radarem 27.09 po obu zmianach, katalog roboczy):** F 0,69–0,86 (mediana 0,82), klasy: Bardzo dobre 3648, Dobre 8 — M z samego opadu jest wysokie wszędzie (wrzesień powyżej normy, zgodnie ze stacjami). R ≥ 80: 25, R ≥ 70: 494, maks. 85,4. Rejony: 1 (50,1433, 21,8033 — ten sam co dawny rejon 1) 80,5; nowy 2 (50,194, 21,623) 80,5; 4 (50,165, 21,778) 78,2; 3 (50,161, 21,609) 77,8; 5 (50,198, 21,689) 75,4. Przestrzennie: północ (szer. 50,1–50,25) F ~0,82–0,86, pogórze ~0,75–0,79.
+
+**Otwarte:** (a) F znów prawie jednolite („Bardzo dobre” 99,8%) — kalibracja `moisture_midpoint` 0,50 (notatka (22)) była robiona, gdy `pct_sm` było systematycznie zaniżone przez błąd 2; zmiana wymaga zgody użytkownika. Różnicowanie w czasie ma dać A2. (b) Stosunek radar/ERA5 0,848 (notatka (25)) nadal obniża `pct_cwb26`. (c) Commit zmian i nadpisanie eksportu/frontendu — patrz rozmowa 2026-09-27.
+
 ## 2026-09-27 — aktualne (25): A1 — opady z radaru IMGW RainGRS
 
 Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-radar-opady-a1` na gałęzi `worktree-borowik-radar-opady-a1`. Cel: zastąpienie modelowanych opadów Open-Meteo pomiarem z radaru IMGW-PIB RainGRS dla ostatnich 30 dni, z Open-Meteo jako uzupełnieniem luk i prognozą — bez zmiany temperatury/ET0/wilgotności gleby/klimatologii/współczynników scoringu.

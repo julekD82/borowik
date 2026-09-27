@@ -117,6 +117,14 @@ fruiting:
   # per explicit user instruction -- do not change it without asking.
   moisture_midpoint: 0.50
   moisture_slope: 0.10
+  # 2026-09-27 user decision: M from the (IMGW radar) rain balance only.
+  # Open-Meteo's forecast soil moisture was ranked against an ERA5-Land
+  # climatology from a DIFFERENT model (live ~0.14 vs climatology median
+  # ~0.23 m3/m3 at Bedziemysl), so pct_sm sat at 0.00-0.04 almost
+  # everywhere and jumped to ~0.48 inside ~10 km model soil blocks -- M was
+  # driven by those blocks, not by rain. Revisit in A2 (own water balance).
+  # 0.5 = the pre-2026-09-27 equal mean of both percentiles.
+  soil_moisture_weight: 0.0
   temp_optimum_c: 13.0
   temp_sigma_c: 4.0
   heat_penalty_tmean5_c: 17.5

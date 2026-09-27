@@ -51,6 +51,7 @@ from pipeline.habitat import load_profile
 from pipeline.phenology import compute_g_season
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting, apply_moisture_modulation,
+    moisture_percentile,
 )
 from pipeline.weather import (
     fetch_climatology_raw, fetch_archive_daily,
@@ -330,7 +331,7 @@ def main():
             m = score_moisture(pct_cwb26, pct_sm, profile)
             t = score_temperature(f_raw["tmean20"], f_raw["tmean5"], f_raw["p5"], profile)
             k_frost = score_frost(f_raw["tmin3"], profile)
-            pct_m = (pct_cwb26 + pct_sm) / 2.0
+            pct_m = moisture_percentile(pct_cwb26, pct_sm, profile)
             g_season = compute_g_season(d, profile)
             f_full = compute_fruiting(m, t, k_frost, g_season=g_season)
             f_noseason = compute_fruiting(m, t, k_frost, g_season=1.0)

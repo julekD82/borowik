@@ -9,7 +9,7 @@ from pipeline.habitat import (
 )
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
-    apply_moisture_modulation, compute_ranking,
+    apply_moisture_modulation, compute_ranking, moisture_percentile,
 )
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
@@ -137,9 +137,14 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     g_season = compute_g_season(target_doy, profile)
     # Many stands share a weather cell, and many weather cells share a
     # (coarser) climatology cell. Avoid rescanning the whole 30-year archive
-    # for every stand when the search spans dozens of tiles.
+    # for every stand when the search spans dozens of tiles: the climatology
+    # window is cached per climatology cell, but the percentiles themselves
+    # per WEATHER point -- each point ranks its own cwb26/soil_moisture
+    # against its cell's history (caching percentiles per cell gave every
+    # weather point in a 16 km cell the first point's M, found 2026-09-27).
     climate_cells = dict(tuple(clim_df.groupby(["lat", "lon"])))
-    percentiles_by_cell = {}
+    history_by_cell = {}
+    percentiles_by_point = {}
 
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
     s_host_values, s_site_values, s_age_values = [], [], []
@@ -190,17 +195,22 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         wrow = _nearest_weather_row(centroid, weather_feat_gdf)
         rain_radar_coverage_values.append(float(wrow.get("rain_radar_coverage", 0.0)))
 
-        cell = weather_to_clim_cell[(wrow["lat"], wrow["lon"])]
-        if cell not in percentiles_by_cell:
-            history = climate_cells.get(cell, clim_df.iloc[:0])
-            cwb26_hist = climatology_window_values(history, *cell, target_doy, "cwb26")
-            sm_hist = climatology_window_values(history, *cell, target_doy, "soil_moisture")
-            percentiles_by_cell[cell] = (
+        point = (wrow["lat"], wrow["lon"])
+        if point not in percentiles_by_point:
+            cell = weather_to_clim_cell[point]
+            if cell not in history_by_cell:
+                history = climate_cells.get(cell, clim_df.iloc[:0])
+                history_by_cell[cell] = (
+                    climatology_window_values(history, *cell, target_doy, "cwb26"),
+                    climatology_window_values(history, *cell, target_doy, "soil_moisture"),
+                )
+            cwb26_hist, sm_hist = history_by_cell[cell]
+            percentiles_by_point[point] = (
                 percentile_rank(wrow["cwb26"], cwb26_hist),
                 percentile_rank(wrow["soil_moisture"], sm_hist),
                 len(cwb26_hist) == 0 or len(sm_hist) == 0,
             )
-        pct_cwb26, pct_sm, empty_window = percentiles_by_cell[cell]
+        pct_cwb26, pct_sm, empty_window = percentiles_by_point[point]
         if empty_window:
             # percentile_rank falls back to a neutral 0.5 on an empty window.
             empty_climatology_count += 1
@@ -210,7 +220,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         t = score_temperature(wrow["tmean20"], wrow["tmean5"], wrow["p5"], profile)
         k_frost = score_frost(wrow["tmin3"], profile)
         f = compute_fruiting(m, t, k_frost, g_season=g_season)
-        pct_m = (pct_cwb26 + pct_sm) / 2.0
+        pct_m = moisture_percentile(pct_cwb26, pct_sm, profile)
         f_loc = apply_moisture_modulation(f, moisture_cls, pct_m, profile)
         r = compute_ranking(mask, h, f_loc)
 

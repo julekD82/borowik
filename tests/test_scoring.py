@@ -4,7 +4,7 @@ import pytest
 from pipeline.habitat import load_profile
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
-    apply_moisture_modulation, classify_fruiting,
+    apply_moisture_modulation, classify_fruiting, moisture_percentile,
 )
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
@@ -23,6 +23,34 @@ def test_score_moisture_above_midpoint_is_higher():
     # 0.6 is 0.10 (one moisture_slope) above the new 0.50 midpoint ->
     # exponent 1.0, same derivation as before, updated for the new midpoint.
     assert score_moisture(0.6, 0.6, PROFILE) == pytest.approx(1 / (1 + math.exp(-1.0)))
+
+
+def _with_sm_weight(weight):
+    profile = {**PROFILE, "fruiting": {**PROFILE["fruiting"], "soil_moisture_weight": weight}}
+    return profile
+
+
+def test_moisture_percentile_ignores_soil_moisture_at_zero_weight():
+    assert moisture_percentile(0.7, 0.0, _with_sm_weight(0.0)) == pytest.approx(0.7)
+
+
+def test_moisture_percentile_blends_by_soil_moisture_weight():
+    assert moisture_percentile(0.8, 0.4, _with_sm_weight(0.25)) == pytest.approx(0.7)
+
+
+def test_profile_drops_model_soil_moisture_from_m():
+    # 2026-09-27 user decision: Open-Meteo's forecast soil moisture was being
+    # ranked against an ERA5-Land climatology from a different model (live
+    # ~0.14 vs climatology median ~0.23 m3/m3), so pct_sm sat at 0.00-0.04
+    # almost everywhere and jumped to ~0.48 in ~10 km model soil blocks --
+    # M ended up driven by those blocks, not by rain. Until A2 brings its own
+    # water balance, M comes from the (radar) rain balance only.
+    assert PROFILE["fruiting"]["soil_moisture_weight"] == 0.0
+
+
+def test_score_moisture_uses_weighted_percentile():
+    expected = 1 / (1 + math.exp(-(0.7 - PROFILE["fruiting"]["moisture_midpoint"]) / PROFILE["fruiting"]["moisture_slope"]))
+    assert score_moisture(0.7, 0.0, PROFILE) == pytest.approx(expected)
 
 
 def test_score_temperature_at_optimum_no_penalty():

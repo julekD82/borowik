@@ -5,9 +5,18 @@ def _logistic(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
+def moisture_percentile(pct_cwb26: float, pct_sm: float, profile: dict) -> float:
+    """Weighted mean of the rain-balance and soil-moisture percentiles --
+    the single moisture percentile both M and the site-moisture modulation
+    use. profile fruiting.soil_moisture_weight (0.0 since 2026-09-27, see
+    the profile comment) = the soil-moisture share."""
+    w = profile["fruiting"]["soil_moisture_weight"]
+    return (1.0 - w) * pct_cwb26 + w * pct_sm
+
+
 def score_moisture(pct_cwb26: float, pct_sm: float, profile: dict) -> float:
     cfg = profile["fruiting"]
-    mean_pct = (pct_cwb26 + pct_sm) / 2.0
+    mean_pct = moisture_percentile(pct_cwb26, pct_sm, profile)
     return _logistic((mean_pct - cfg["moisture_midpoint"]) / cfg["moisture_slope"])
 
 
