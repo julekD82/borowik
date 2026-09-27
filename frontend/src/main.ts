@@ -18,6 +18,7 @@ import {
   neighborsSummary,
   loadTrips,
   formatTripLabel,
+  dayLabel,
 } from "./model";
 import type {
   StandView,
@@ -27,6 +28,7 @@ import type {
   StandDetail,
   SpeciesShare,
   TripMeta,
+  ConditionsTimeline,
 } from "./model";
 import { ForestMap } from "./map";
 import { readSaved, saveRegion, removeSaved, savedKey } from "./storage";
@@ -67,6 +69,18 @@ const formatDate = (day: string) =>
   });
 const coordinates = ([lon, lat]: [number, number]) =>
   `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
+function conditionsHtml(median: number | null, conditions: ConditionsTimeline | null): string {
+  const moisture = fruitingClass(median).toLocaleLowerCase("pl");
+  if (!conditions)
+    return `<span class="condition-symbol">${icon("leaf")}</span><div><strong>Warunki w obszarze: ${moisture}</strong><p>Ocena pogody z analizy · mediana dla wydzieleń przechodzących filtry</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
+  const tiles = conditions.days
+    .map(
+      (d, i) =>
+        `<li class="conditions-day level-${d.level}${d.forecast ? " forecast" : ""}" title="${escape(formatDate(d.date))}: ${Math.round(d.F * 100)}/100"><span>${dayLabel(d.date, i)}</span><b aria-label="poziom ${d.level} z 3">${"●".repeat(d.level)}${"○".repeat(3 - d.level)}</b></li>`,
+    )
+    .join("");
+  return `<span class="condition-symbol">${icon("mushroom")}</span><div><strong>${escape(conditions.summary)}</strong><p>Warunki wilgotności: ${moisture} · prognoza F na kolejne dni z pogody (radar/model), bez przewidywania szczytu wysypu</p><ol class="conditions-days" aria-label="Warunki wzrostu w kolejnych dniach">${tiles}</ol></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
+}
 let entries: StandView[] = [];
 let allScores: Score[] = [];
 let allRegions: Region[] = [];
@@ -612,8 +626,7 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
           values[Math.floor(values.length / 2)]) /
         2
       : null;
-    $("#conditions").innerHTML =
-      `<span class="condition-symbol">${icon("leaf")}</span><div><strong>Warunki w obszarze: ${fruitingClass(median).toLocaleLowerCase("pl")}</strong><p>Ocena pogody z analizy · mediana dla wydzieleń przechodzących filtry</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
+    $("#conditions").innerHTML = conditionsHtml(median, data.conditions);
     if (!map) {
       try {
         map = new ForestMap(

@@ -1355,3 +1355,9 @@ dialog li {
 .card-title strong {
   overflow-wrap: anywhere;
 }
+.conditions-days { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 8px 0 0; padding: 0; }
+.conditions-day { display: flex; flex-direction: column; align-items: center; min-width: 40px; padding: 4px 6px; border-radius: 8px; background: rgba(127, 127, 127, 0.08); font-size: 12px; }
+.conditions-day b { font-weight: 400; letter-spacing: 1px; }
+.conditions-day.level-2 { background: rgba(46, 125, 50, 0.12); }
+.conditions-day.level-3 { background: rgba(46, 125, 50, 0.22); }
+.conditions-day.forecast span { font-style: italic; }

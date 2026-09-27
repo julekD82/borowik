@@ -14,6 +14,8 @@ import {
   neighborsSummary,
   parseTrips,
   formatTripLabel,
+  parseConditions,
+  dayLabel,
 } from "./model";
 import { readSaved, saveRegion } from "./storage";
 import type { Score, Stands, Region, StandDetail, TripMeta } from "./model";
@@ -476,5 +478,35 @@ describe("saved trips", () => {
   it("filters out an entry with a non-finite radius or coordinate", () => {
     expect(parseTrips([trip({ radius_km: NaN })])).toEqual([]);
     expect(parseTrips([trip({ lat: Infinity })])).toEqual([]);
+  });
+});
+
+describe("conditions timeline", () => {
+  const conditions = (over: Record<string, unknown> = {}) => ({
+    day: "2026-09-27",
+    generated_for: "2026-09-27",
+    horizon_days: 7,
+    pulse_min_mm: 15.0,
+    rains: [],
+    summary: "Ostatni większy deszcz: 21–22.09 (28.5 mm), 5 dni temu",
+    days: [{ date: "2026-09-27", F: 0.803, level: 3, forecast: false }],
+    ...over,
+  });
+  it("returns null when conditions.json is absent", () => {
+    expect(parseConditions(undefined, "2026-09-27")).toBeNull();
+  });
+  it("accepts a valid same-day timeline", () => {
+    expect(parseConditions(conditions(), "2026-09-27")?.summary).toContain("deszcz");
+  });
+  it("rejects another day's timeline or malformed tiles", () => {
+    expect(() => parseConditions(conditions(), "2026-09-26")).toThrow();
+    expect(() =>
+      parseConditions(conditions({ days: [{ date: "2026-09-27", F: 0.8, level: 7, forecast: false }] }), "2026-09-27"),
+    ).toThrow();
+  });
+  it("labels today and Polish weekdays", () => {
+    expect(dayLabel("2026-09-27", 0)).toBe("dziś");
+    expect(dayLabel("2026-09-28", 1)).toBe("pn");
+    expect(dayLabel("2026-10-03", 6)).toBe("sb");
   });
 });

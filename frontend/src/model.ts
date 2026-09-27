@@ -493,6 +493,52 @@ export function parseData(
 
   return { entries: joinData(scores, stands), scores, stands, regions, details };
 }
+
+export type ConditionsDay = { date: string; F: number; level: 0 | 1 | 2 | 3; forecast: boolean };
+export type ConditionsRain = { start: string; end: string; rain_mm: number; days_ago: number };
+export type ConditionsTimeline = {
+  day: string;
+  generated_for: string;
+  horizon_days: number;
+  pulse_min_mm: number;
+  rains: ConditionsRain[];
+  summary: string;
+  days: ConditionsDay[];
+};
+
+function isConditionsDay(value: unknown): value is ConditionsDay {
+  const d = value as Record<string, unknown> | null;
+  return (
+    !!d &&
+    typeof d.date === "string" &&
+    typeof d.F === "number" &&
+    Number.isFinite(d.F) &&
+    [0, 1, 2, 3].includes(d.level as number) &&
+    typeof d.forecast === "boolean"
+  );
+}
+
+export function parseConditions(raw: unknown, day: string | undefined): ConditionsTimeline | null {
+  if (raw === undefined) return null;
+  const c = raw as Record<string, unknown> | null;
+  if (
+    !c ||
+    typeof c !== "object" ||
+    c.day !== day ||
+    typeof c.summary !== "string" ||
+    !Array.isArray(c.rains) ||
+    !Array.isArray(c.days) ||
+    !c.days.every(isConditionsDay)
+  )
+    throw new Error("Plik conditions.json jest niepoprawny. Uruchom synchronizację danych.");
+  return c as unknown as ConditionsTimeline;
+}
+
+const WEEKDAYS = ["nd", "pn", "wt", "śr", "cz", "pt", "sb"];
+export function dayLabel(dateIso: string, position: number): string {
+  if (position === 0) return "dziś";
+  return WEEKDAYS[new Date(`${dateIso}T12:00:00`).getDay()];
+}
 export async function loadData(basePath: string = "data/") {
   const [scoresRaw, standsRaw] = await Promise.all(
     ["scores.json", "stands.geojson"].map(async (file) => {
@@ -548,7 +594,24 @@ export async function loadData(basePath: string = "data/") {
       );
     }
   }
-  return parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
+  // conditions.json is optional too, same reasoning as regions/details
+  // above -- plan A2 Plan-B.
+  let conditionsRaw: unknown = undefined;
+  const conditionsResponse = await fetch(
+    `${import.meta.env.BASE_URL}${basePath}conditions.json`,
+    { cache: "no-cache", signal: AbortSignal.timeout(20000) },
+  ).catch(() => undefined);
+  if (conditionsResponse?.ok) {
+    try {
+      conditionsRaw = await conditionsResponse.json();
+    } catch {
+      throw new Error(
+        "Plik conditions.json jest niedostępny lub niepoprawny. Uruchom synchronizację danych.",
+      );
+    }
+  }
+  const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
+  return { ...parsed, conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day) };
 }
 export type TripMeta = {
   id: string;
