@@ -25,35 +25,54 @@ Decisions to confirm in Task 0 (E1–E4):
 - **E3 Ship gate.** Task 3 compares the flush index (without G_season) with the CURRENT profile's F_loc (without G_season, `rank_F_loc_no_gseason` after re-running `notebooks/03_backtest_gbif.py`, since `soil_moisture_weight` changed on 2026-09-27). Ship (Tasks 4–7) only if the leave-one-year-out held-out mean rank > the baseline mean AND a paired Wilcoxon test on per-find rank differences gives p < 0.10. Otherwise **stop and ask**.
 - **E4 Timeline always starts today** (`date.today()`), independent of `--date` (which still only drives F/R's forecast windows).
 
+## Decyzja 2026-09-27 (po sesji): Plan-B -- bramka E3 NIEZALICZONA
+
+Task 3's ship gate failed: `notebooks/06_backtest_flush.py`'s leave-one-year-out held-out mean rank (0.548) was BELOW the baseline `rank_F_loc_no_gseason` (0.626), not above it (Wilcoxon p=0.041, significant in the wrong direction). Per the plan's own E3 rule this stops Tasks 4-7 as originally written. Two follow-up diagnostics (`notebooks/08_flush_pulse_timing_diagnostic.py`, `notebooks/09_flush_pulse_timing_season_controlled.py`, user-requested, no production code) explain why: days/degree-days since the most recent rain pulse looked like they separated the 90 real GBIF finds from random candidate days (KS p=0.006-0.0008) only when candidates were pooled across the WHOLE season -- once candidates are restricted to +/-15 days around each find's own day-of-year (same point/year), the effect vanishes (KS p=0.12-0.84). The apparent signal was a season confound (finds skew toward the cooler/later part of the season, where degree-days accumulate more slowly for the same elapsed time), not a real same-season "closer to a pulse is better" effect. The pulse -> thermal-clock -> Gaussian-peak model does not track real fruiting timing on this sample.
+
+**Decision (Plan-B, replaces Tasks 3-7 below):**
+- `pipeline/flush.py` (Tasks 1-2, already committed/tested) and `notebooks/06,08,09_*.py` stay in the repo as a **frozen, documented experiment** -- never imported by the production path (`prepare_trip.py`/frontend), same as they're already never imported by `orchestrate`/`scoring`/`mvp`/`habitat`. `profiles/boletus_edulis.yaml`'s `flush:` section keeps its original `[E]` values (uncalibrated -- the gate never passed) with a comment recording the gate failure.
+- Two supporting real-data checks (ad hoc, not committed, run live against Bedziemysl 20km): (a) F itself (already validated at 0.626 in the GBIF backtest) varies by *two* `fruiting_classes` boundaries across a real 7-day horizon (0.803 "Bardzo dobre" today down to 0.324 "Umiarkowane" at +6d) -- enough day-to-day variation to justify per-day tiles, by the user's own "less than one class = skip tiles" test. (b) The real last-two-rain-pulses (radar, area median, unscaled mm) are 21-22.09 (28.5mm, 5 days ago) and 11-12.09 (20.3mm, 15 days ago) -- confirms `pipeline.flush.detect_pulses`/`area_daily_weather` (the pulse-DETECTION half of Task 1-2, not the thermal-clock/Gaussian half) still produce correct, reusable facts.
+- New module **`pipeline/conditions_timeline.py`**: reuses only `pipeline.flush.{FlushParams, detect_pulses, area_daily_weather, fmt_day_range}` (pure pulse detection + date formatting, not the invalidated model) for a **fact-only** rain summary (dates, real mm, days-ago of up to 2 recent pulses -- no phase/peak language), plus a **new** per-horizon-day F computation reusing existing, unmodified `pipeline.scoring`/`pipeline.weather`/`pipeline.phenology` functions (the same math that already scores 0.626 in the GBIF backtest), run once per day of the horizon instead of once per search.
+- New profile section `conditions:` (separate from the frozen `flush:` section) holds the reporting thresholds (`wet_day_mm`, `pulse_min_mm`, `radar_rain_scale`, `lookback_days`, `horizon_days`, `max_rains`). No ship gate needed for Tasks 4 (renumbered) onward: F is already validated; nothing here is newly calibrated.
+- Artifact renamed `flush_{day}.json`/`flush.json` -> `conditions_{day}.json`/`conditions.json` throughout (export, sync, archive, frontend) -- "flush"/"wysyp" implied the disproven peak-timing claim; the new file only carries F-per-day + rain facts.
+- Tile `level` (0-3) is now the day's `fruiting_classes` index (via new `pipeline.scoring.classify_fruiting_level`), not a separate threshold table.
+
+E1 (area-level only, median over radius) and E4 (timeline always starts today) are unchanged and still apply. E2/E3 are superseded: E2's radar/ERA5 rain-scale ratio is still used (for the pulse *reporting* threshold, not a predictive parameter), but E3's ship-gate mechanism no longer applies to Tasks 4+ since nothing calibrated ships.
+
 ## Global Constraints
 
 - TDD: failing test first in every code task. Python tests run with no network.
 - Tests: `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`; frontend in `frontend/`: `npm test`, `npx tsc --noEmit`, `npx vite build`.
-- `pipeline/flush.py` must never be imported by `pipeline/orchestrate.py`, `scoring.py`, `mvp.py`, `habitat.py` (Task 4 adds a test). R, H, F, F_loc, `scores_{day}.json` fields do not change.
-- Do not change `fruiting.*`, `fruiting_classes`, `pressure.*`, `radar.*` profile values.
-- `flush_{day}.json` / `flush.json` is optional everywhere (sync, frontend, saved trips), same pattern as `regions`/`details`: missing = old „Warunki” text, malformed = loud error.
+- `pipeline/flush.py` must never be imported by `pipeline/orchestrate.py`, `scoring.py`, `mvp.py`, `habitat.py` (Task 4's structural test already covers this from Tasks 1-2). R, H, F, F_loc, `scores_{day}.json` fields do not change.
+- **(Plan-B addition)** `pipeline/conditions_timeline.py` must never import `pipeline.flush`'s disproven modeling names (`wave_intensity`, `wave_phase`, `peak_window`, `build_area_timeline`, `PHASE_LABELS`, `degree_days_after`, `timeline_summary`, `flush_series`) -- only the pure pulse-detection/date-formatting helpers (`FlushParams`, `detect_pulses`, `area_daily_weather`, `fmt_day_range`). Task 4 (renumbered) adds a structural test for this, same pattern as the R-boundary guard.
+- Do not change `fruiting.*`, `fruiting_classes`, `pressure.*`, `radar.*` profile values. (Plan-B reads `fruiting_classes`/`fruiting.*` from more days than before via `classify_fruiting_level`, but never changes their values.)
+- `conditions_{day}.json` / `conditions.json` is optional everywhere (sync, frontend, saved trips), same pattern as `regions`/`details`: missing = old „Warunki” text, malformed = loud error.
 - No personal data in the repo (station coordinates stay in `cache/stations/`).
 - User-facing text in Polish; Python prints ASCII-only Polish like the rest of `prepare_trip.py`; JSON/UI strings may use Polish diacritics.
 - Final task: full pytest + frontend test/tsc/build, new top note in `docs/CODEX-HANDOFF.md`.
 
 ## Review Focus
 
-- Open-Meteo `date` = UTC instant of local midnight — area aggregation must use `tz_convert("Europe/Warsaw")` before `.dt.date` (and accept naive dates from test fakes) — Task 2 test `test_area_daily_weather_uses_local_dates_and_median`.
-- Today missing from the weather frame (test fakes in `tests/test_search_area.py` return Aug 2026 data) must skip the timeline with a `UWAGA` line, not crash the whole analysis — Task 4 step 4 runs `tests/test_search_area.py`; Task 2 test `test_build_area_timeline_rejects_missing_today`.
-- A frost day must end a wave (intensity 0 from then on, phase not shown), not leave a stale "szczyt" — Task 1 test `test_frost_ends_the_wave`.
-- A stale `flush.json` from a previous day/sync must never sit next to fresh scores (sync removes it; saved trips drop it; prepare_trip deletes a same-day file before recomputing) — Task 5 tests.
-- Rain still falling today (pulse ends today, DD = NaN) must read "przed_fala" with a peak window of None rather than crash — Task 2 test `test_wave_phase_nan_is_przed_fala` and `test_peak_window_none_without_accumulated_days`.
+- Open-Meteo `date` = UTC instant of local midnight — area aggregation must use `tz_convert("Europe/Warsaw")` before `.dt.date` (and accept naive dates from test fakes) — already covered by Task 2's `test_area_daily_weather_uses_local_dates_and_median`; Plan-B's `pipeline/conditions_timeline.py` duplicates the same tz handling (`with_local_date`) for the raw multi-point frame it feeds `compute_weather_features` — Task 4 (renumbered) test `test_with_local_date_converts_utc_midnight_to_local_day`.
+- Today missing from the weather frame (test fakes in `tests/test_search_area.py` return Aug 2026 data) must skip the timeline with a `UWAGA` line, not crash the whole analysis — Task 5 (renumbered) step 4 runs `tests/test_search_area.py`; Task 4 (renumbered) test `test_build_conditions_timeline_rejects_missing_today`.
+- ~~A frost day must end a wave...~~ (Task 1's `test_frost_ends_the_wave` already covers this for the frozen experimental module; not applicable to Plan-B's production path, which never runs the thermal clock.)
+- A stale `conditions.json` from a previous day/sync must never sit next to fresh scores (sync removes it; saved trips drop it; prepare_trip deletes a same-day file before recomputing) — Task 6 (renumbered) tests.
+- ~~Rain still falling today...~~ (Task 2's tests already cover this for the frozen experimental module; not applicable to Plan-B, which has no phase/peak concept.)
+- **(Plan-B addition)** A rain pulse whose end is still in the future relative to `today` (forecast rain, not yet fallen) must not be reported as a "recent rain" fact — Task 4 (renumbered) test `test_recent_rains_excludes_a_pulse_not_yet_ended`.
+- **(Plan-B addition)** `classify_fruiting_level` must return the same class boundary semantics as the existing `classify_fruiting` label lookup (same `<` comparison against `cls["max"]`, same fallback to the last class) — Task 4 (renumbered) test `test_classify_fruiting_level_matches_classify_fruiting_label`.
 
 ---
 
 ## Task 0: Pre-flight (no code)
 
-- [ ] **Step 1:** `git status` — working tree should only show the long-standing `uv.lock`, `CLAUDE.md`, `frontend/public/`. If anything else is modified, ask before starting.
-- [ ] **Step 2:** Confirm E1–E4 with the user in one short message (quote them). Update this section if anything changes.
+- [x] **Step 1:** `git status` — working tree should only show the long-standing `uv.lock`, `CLAUDE.md`, `frontend/public/`. If anything else is modified, ask before starting. **Done 2026-09-27: matched.**
+- [x] **Step 2:** Confirm E1–E4 with the user in one short message (quote them). Update this section if anything changes. **Done 2026-09-27: user confirmed E1-E4 unchanged.**
 
 ---
 
 ## Task 1: `pipeline/flush.py` core — pulses, thermal clock, intensity
+
+**Status: complete, committed (`84d495d`).** Kept verbatim below for the historical record; do not re-run. `pipeline/flush.py` is now a **frozen experiment** per the Plan-B decision above — Tasks 4+ reuse only its pure pulse-detection/date-formatting exports, never its thermal-clock/Gaussian exports.
 
 **Files:**
 - Create: `pipeline/flush.py`
@@ -63,233 +82,13 @@ Decisions to confirm in Task 0 (E1–E4):
 **Interfaces:**
 - Produces: `FlushParams` (frozen dataclass: `wet_day_mm, pulse_min_mm, t_base_c, cold_night_c, cold_night_factor, frost_c, dd_peak, dd_sigma`), `flush_params(profile, rain_scale=1.0) -> FlushParams`, `Pulse` (frozen: `start:int, end:int, rain_mm:float, strength:float`), `detect_pulses(precip, params) -> list[Pulse]`, `degree_days_after(end, tmean, tmin, params) -> np.ndarray` (NaN ≤ end, +inf from first frost day), `wave_intensity(dd, strength, params) -> np.ndarray`, `flush_series(precip, tmean, tmin, params) -> tuple[np.ndarray, list[Pulse], list[np.ndarray]]`.
 
-- [ ] **Step 1: Write the failing tests**
-
-```python
-# tests/test_flush.py
-import math
-
-import numpy as np
-import pytest
-
-from pipeline.flush import (
-    FlushParams, Pulse, flush_params, detect_pulses, degree_days_after, wave_intensity, flush_series,
-)
-from pipeline.habitat import load_profile
-
-PROFILE = load_profile("profiles/boletus_edulis.yaml")
-P = FlushParams(wet_day_mm=1.0, pulse_min_mm=15.0, t_base_c=5.0, cold_night_c=5.0,
-                cold_night_factor=0.5, frost_c=-1.0, dd_peak=100.0, dd_sigma=20.0)
-
-
-def test_flush_params_scales_only_the_rain_threshold():
-    base = flush_params(PROFILE)
-    scaled = flush_params(PROFILE, rain_scale=0.5)
-    assert scaled.pulse_min_mm == pytest.approx(base.pulse_min_mm * 0.5)
-    assert scaled.dd_peak == base.dd_peak
-
-
-def test_detect_pulses_merges_across_one_dry_day_and_applies_threshold():
-    precip = [0, 5, 0, 12, 0, 0, 20, 0, 8, 0]
-    pulses = detect_pulses(precip, P)
-    assert pulses == [
-        Pulse(start=1, end=3, rain_mm=17.0, strength=pytest.approx(17 / 30)),
-        Pulse(start=6, end=8, rain_mm=28.0, strength=pytest.approx(28 / 30)),
-    ]
-
-
-def test_detect_pulses_does_not_merge_across_two_dry_days():
-    assert detect_pulses([10, 0, 0, 10], P) == []  # two 10 mm episodes, each below 15
-
-
-def test_degree_days_after_accumulates_from_the_day_after_the_pulse():
-    dd = degree_days_after(1, tmean=[15, 15, 15, 15], tmin=[10, 10, 10, 10], params=P)
-    assert math.isnan(dd[0]) and math.isnan(dd[1])
-    assert dd[2:].tolist() == [10.0, 20.0]
-
-
-def test_cold_night_halves_that_days_rate():
-    dd = degree_days_after(0, tmean=[15, 15, 15], tmin=[10, 3, 10], params=P)
-    assert dd[1:].tolist() == [5.0, 15.0]
-
-
-def test_frost_ends_the_wave():
-    dd = degree_days_after(0, tmean=[15, 15, 15, 15], tmin=[10, 10, -2, 10], params=P)
-    assert dd[1] == 10.0 and np.isinf(dd[2]) and np.isinf(dd[3])
-    assert wave_intensity(dd, 1.0, P)[2:].tolist() == [0.0, 0.0]
-
-
-def test_wave_intensity_peaks_at_dd_peak_and_is_zero_before_the_pulse_ends():
-    dd = np.array([np.nan, 100.0, 120.0])
-    out = wave_intensity(dd, 0.8, P)
-    assert out[0] == 0.0
-    assert out[1] == pytest.approx(0.8)
-    assert out[2] == pytest.approx(0.8 * math.exp(-0.5))
-
-
-def test_flush_series_takes_the_stronger_of_overlapping_waves():
-    precip = [20, 0, 0, 0, 30] + [0] * 15
-    tmean, tmin = [15.0] * 20, [10.0] * 20
-    index, pulses, dds = flush_series(precip, tmean, tmin, P)
-    assert len(pulses) == 2 and len(dds) == 2
-    expected = np.maximum(wave_intensity(dds[0], pulses[0].strength, P),
-                          wave_intensity(dds[1], pulses[1].strength, P))
-    assert index.tolist() == pytest.approx(expected.tolist())
-```
-
-- [ ] **Step 2: Run to verify they fail**
-
-Run: `.venv/Scripts/python.exe -m pytest tests/test_flush.py -q -p no:cacheprovider`
-Expected: FAIL — `ModuleNotFoundError: No module named 'pipeline.flush'`.
-
-- [ ] **Step 3: Implement**
-
-`profiles/boletus_edulis.yaml` — new top-level section after `radar:`:
-
-```yaml
-flush:
-  # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
-  # flush-timing model, pipeline/flush.py. NEVER feeds R. [E] values below
-  # are initial; pulse_min_mm/t_base_c/dd_peak/dd_sigma are calibrated in
-  # Task 3 on the GBIF backtest (ERA5 rain) -- record the result here.
-  wet_day_mm: 1.0
-  pulse_min_mm: 15.0          # [E] ERA5 mm; production multiplies by radar_rain_scale
-  radar_rain_scale: 0.848     # radar/ERA5 rain ratio, notebooks/05 (note (25))
-  t_base_c: 5.0               # [E]
-  cold_night_c: 5.0           # [E] tmin below this -> that day's rate * cold_night_factor
-  cold_night_factor: 0.5      # [E]
-  frost_c: -1.0               # [E] tmin below this ends the wave
-  dd_peak: 100.0              # [E] degree-days after the pulse at peak (~10 d at 15 C mean)
-  dd_sigma: 35.0              # [E]
-  lookback_days: 45
-  horizon_days: 7
-  max_waves: 2
-  level_thresholds: [0.1, 0.3, 0.6]
-```
-
-```python
-# pipeline/flush.py
-"""A2: flush (wysyp) timing model -- plan 2026-09-27
-(docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md).
-
-Rain pulse -> thermal clock (cold nights slow it, frost stops it) ->
-Gaussian flush curve in degree-days. Answers "kiedy", never "gdzie":
-this module is deliberately NOT imported by pipeline.orchestrate /
-scoring / mvp / habitat, so R cannot change because of it."""
-import math
-from dataclasses import dataclass
-
-import numpy as np
-
-
-@dataclass(frozen=True)
-class FlushParams:
-    wet_day_mm: float
-    pulse_min_mm: float
-    t_base_c: float
-    cold_night_c: float
-    cold_night_factor: float
-    frost_c: float
-    dd_peak: float
-    dd_sigma: float
-
-
-def flush_params(profile: dict, rain_scale: float = 1.0) -> FlushParams:
-    cfg = profile["flush"]
-    return FlushParams(
-        wet_day_mm=cfg["wet_day_mm"], pulse_min_mm=cfg["pulse_min_mm"] * rain_scale,
-        t_base_c=cfg["t_base_c"], cold_night_c=cfg["cold_night_c"],
-        cold_night_factor=cfg["cold_night_factor"], frost_c=cfg["frost_c"],
-        dd_peak=cfg["dd_peak"], dd_sigma=cfg["dd_sigma"],
-    )
-
-
-@dataclass(frozen=True)
-class Pulse:
-    start: int
-    end: int
-    rain_mm: float
-    strength: float
-
-
-def detect_pulses(precip, params: FlushParams) -> list[Pulse]:
-    """Episodes of wet days (a single dry day inside allowed) whose total
-    reaches pulse_min_mm. Strength 0.5 at the threshold, 1.0 at twice it."""
-    p = np.asarray(precip, dtype=float)
-    wet = p >= params.wet_day_mm
-    pulses, i, n = [], 0, len(p)
-    while i < n:
-        if not wet[i]:
-            i += 1
-            continue
-        start = end = i
-        j = i + 1
-        while j < n:
-            if wet[j]:
-                end = j
-                j += 1
-            elif j + 1 < n and wet[j + 1]:
-                j += 1
-            else:
-                break
-        total = float(p[start:end + 1].sum())
-        if total >= params.pulse_min_mm:
-            pulses.append(Pulse(start, end, total, min(1.0, total / (2.0 * params.pulse_min_mm))))
-        i = end + 1
-    return pulses
-
-
-def degree_days_after(end: int, tmean, tmin, params: FlushParams) -> np.ndarray:
-    """Thermal time accumulated on the days AFTER the pulse's last wet day:
-    NaN up to and including `end`, +inf from the first frost day on."""
-    tmean = np.asarray(tmean, dtype=float)
-    tmin = np.asarray(tmin, dtype=float)
-    dd = np.full(len(tmean), np.nan)
-    total = 0.0
-    for k in range(end + 1, len(tmean)):
-        if tmin[k] < params.frost_c:
-            dd[k:] = np.inf
-            break
-        rate = max(0.0, tmean[k] - params.t_base_c)
-        if tmin[k] < params.cold_night_c:
-            rate *= params.cold_night_factor
-        total += rate
-        dd[k] = total
-    return dd
-
-
-def wave_intensity(dd: np.ndarray, strength: float, params: FlushParams) -> np.ndarray:
-    z = (np.asarray(dd, dtype=float) - params.dd_peak) / params.dd_sigma
-    with np.errstate(invalid="ignore"):
-        out = strength * np.exp(-0.5 * z * z)
-    return np.nan_to_num(out, nan=0.0)
-
-
-def flush_series(precip, tmean, tmin, params: FlushParams):
-    """Daily flush index (max over waves) + the pulses and their thermal clocks."""
-    pulses = detect_pulses(precip, params)
-    dds = [degree_days_after(p.end, tmean, tmin, params) for p in pulses]
-    index = np.zeros(len(np.asarray(precip)))
-    for pulse, dd in zip(pulses, dds):
-        index = np.maximum(index, wave_intensity(dd, pulse.strength, params))
-    return index, pulses, dds
-```
-
-- [ ] **Step 4: Run to verify they pass**
-
-Run: `.venv/Scripts/python.exe -m pytest tests/test_flush.py -q -p no:cacheprovider`
-Expected: 8 passed.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add pipeline/flush.py profiles/boletus_edulis.yaml tests/test_flush.py
-git commit -m "feat: flush model core -- rain pulses, thermal clock, wave intensity (plan A2 task 1)"
-```
+- [x] **Step 1-5:** written, run RED then GREEN (8 passed), committed. See `git show 84d495d` for the exact diff (identical to the code this plan originally specified).
 
 ---
 
 ## Task 2: Phases, peak window, area timeline
+
+**Status: complete, committed (`4377beb`).** Kept verbatim below for the historical record; do not re-run. Same frozen-experiment note as Task 1 — `wave_phase`/`peak_window`/`timeline_summary`/`build_area_timeline`/`PHASE_LABELS` are NOT reused by Tasks 4+; only `area_daily_weather`/`fmt_day_range` (also defined here) are.
 
 **Files:**
 - Modify: `pipeline/flush.py` (append)
@@ -299,483 +98,407 @@ git commit -m "feat: flush model core -- rain pulses, thermal clock, wave intens
 - Consumes: Task 1.
 - Produces: `PHASE_LABELS: dict[str, str]`, `wave_phase(dd_today: float, params) -> str`, `peak_window(dd, dates: list[date], params) -> tuple[date, date] | None`, `fmt_day_range(a: date, b: date) -> str`, `area_daily_weather(daily: pd.DataFrame, points) -> pd.DataFrame` (index = local `date`, columns `precipitation_mm, tmean_c, tmin_c`), `timeline_summary(waves: list[dict], pulse_min_mm: float) -> str`, `build_area_timeline(area: pd.DataFrame, today: date, profile: dict, rain_scale: float = 1.0) -> dict` with keys `generated_for, horizon_days, pulse_min_mm, waves, days, summary` (raises `ValueError` when `today` is not in `area.index`).
 
+- [x] **Step 1-5:** written, run RED then GREEN (24 passed), committed. See `git show 4377beb` for the exact diff (identical to the code this plan originally specified).
+
+---
+
+## Task 3: Diagnoza i decyzja Plan-B (bramka E3 NIEZALICZONA)
+
+**Status: complete, run inline this session; nothing to implement — this task's outcome IS the Plan-B decision above.** Kept as a record of exactly what ran and why Tasks 4+ below look the way they do.
+
+**Files (all created, none committed yet — commit them as the first step of Task 4):**
+- `notebooks/06_backtest_flush.py` — calibration + LOYO CV grid search (as originally specified by this plan).
+- `notebooks/08_flush_pulse_timing_diagnostic.py`, `notebooks/09_flush_pulse_timing_season_controlled.py` — user-requested diagnostics, no production code.
+- `profiles/boletus_edulis.yaml`'s `flush:` section: NOT modified (gate failed, no calibrated values to write) — Task 4 adds a comment recording the failure.
+
+- [x] **Step 1: Fresh baseline.** `.venv/Scripts/python.exe notebooks/03_backtest_gbif.py` (cache-only, `MAX_YEAR=2023`, all cache hits, N=90). Result: **F_loc bez G_season: średnia=0.626 mediana=0.693** (the E3 baseline).
+- [x] **Step 2: Calibration.** `notebooks/06_backtest_flush.py` (144 combos × 90 finds, no network). Result:
+  - flush (LOYO held-out): średnia=0.548 mediana=0.552
+  - baseline: średnia=0.626 mediana=0.693
+  - Wilcoxon (flush − baseline) p=0.04095 (significant, wrong direction)
+  - best on full data: `pulse_min_mm=20.0, dd_peak=80.0, dd_sigma=20.0, t_base_c=6.0`, średnia=0.599 (still < baseline)
+- [x] **Step 3: Gate.** `heldout.mean() (0.548) > baseline.mean() (0.626)` is **False** → **BRAMKA E3: NIEZALICZONA.** Per the plan: stop, report, ask. Reported to the user; user chose not to widen the grid and instead requested the two diagnostics below before deciding what ships.
+- [x] **Step 4a: Diagnostic — pulse timing vs. random days, whole season.** `notebooks/08_flush_pulse_timing_diagnostic.py`. For `pulse_min_mm` ∈ {15, 20}, compared days/degree-days since the most recent rain pulse for the 90 finds against ALL candidate days (1 Jun–31 Oct) at the same point/year:
+  - pulse_min_mm=15: dni od pulsu KS p=0.244 (n.s.); **stopniodni od pulsu KS p=0.0064** (istotne, znaleziska niżej: śr 118.2 vs 174.4)
+  - pulse_min_mm=20: dni od pulsu KS p=0.068; **stopniodni od pulsu KS p=0.0008** (istotne, śr 145.3 vs 220.1)
+- [x] **Step 4b: Diagnostic — season-controlled.** `notebooks/09_flush_pulse_timing_season_controlled.py`. Same comparison, but candidates restricted to ±15 days around each find's own day-of-year (same point/year):
+  - pulse_min_mm=15: dni od pulsu KS p=0.8415; stopniodni KS p=0.2639 — **both n.s.**
+  - pulse_min_mm=20: dni od pulsu KS p=0.8229; stopniodni KS p=0.1191 — **both n.s.**
+  - **Conclusion: the Step 4a signal was a season confound, not a real rain-recency effect.** Confirms the gate result; no further calibration attempt is warranted on this model shape.
+- [x] **Step 5: Real-data sanity checks (ad hoc, not saved as notebooks).**
+  - 7-day F horizon, Będziemyśl 20km, radar, live: F 0.803 ("Bardzo dobre", dziś) → 0.324 ("Umiarkowane", +6d), crossing 2 class boundaries — enough variation to keep per-day tiles.
+  - Last two real rain pulses (radar, area median, unscaled): 21–22.09 28.5mm (5 days ago), 11–12.09 20.3mm (15 days ago). Confirms `detect_pulses`/`area_daily_weather` produce correct facts independent of the failed thermal-clock model.
+- [x] **Step 6: Decision.** Plan-B (recorded above). Proceed to Task 4.
+
+---
+
+## Task 4: `pipeline/conditions_timeline.py` core — fact-only rain summary + per-day F
+
+**Files:**
+- Modify: `pipeline/scoring.py` (add `classify_fruiting_level`), `profiles/boletus_edulis.yaml` (new `conditions:` section; comment on `flush:` recording the gate failure)
+- Create: `pipeline/conditions_timeline.py`
+- Test: `tests/test_scoring.py` (append), `tests/test_conditions_timeline.py`
+- Commit also: `notebooks/06_backtest_flush.py`, `notebooks/08_flush_pulse_timing_diagnostic.py`, `notebooks/09_flush_pulse_timing_season_controlled.py` (Task 3's outputs, not yet committed)
+
+**Interfaces:**
+- Produces (scoring.py): `classify_fruiting_level(f: float, profile: dict) -> int` (0-based index into `profile["fruiting_classes"]`, same boundary semantics as `classify_fruiting`).
+- Produces (conditions_timeline.py): `with_local_date(daily: pd.DataFrame) -> pd.DataFrame` (adds `local_date` column), `recent_rains(area: pd.DataFrame, today: date, profile: dict, rain_scale: float = 1.0) -> list[dict]` (keys `start, end, rain_mm, days_ago`, raises `ValueError` when `today not in area.index`), `rains_summary(rains: list[dict], pulse_min_mm: float) -> str`, `build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame, clim_points, today: date, profile: dict, rain_scale: float = 1.0) -> dict` with keys `generated_for, horizon_days, pulse_min_mm, rains, days, summary` (`days` entries: `date, F, level, forecast`).
+
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# tests/test_flush.py (append)
+# tests/test_scoring.py (append)
+@pytest.mark.parametrize("f,expected", [
+    (0.1, 0), (0.2, 1), (0.44, 1), (0.45, 2), (0.69, 2), (0.70, 3),
+])
+def test_classify_fruiting_level_matches_classify_fruiting_label(f, expected):
+    from pipeline.scoring import classify_fruiting_level
+    assert classify_fruiting_level(f, PROFILE) == expected
+    classes = PROFILE["fruiting_classes"]
+    assert classes[classify_fruiting_level(f, PROFILE)]["label"] == classify_fruiting(f, PROFILE)
+```
+
+```python
+# tests/test_conditions_timeline.py
+import pathlib
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
+import pytest
 
-from pipeline.flush import (
-    PHASE_LABELS, wave_phase, peak_window, fmt_day_range, area_daily_weather,
-    timeline_summary, build_area_timeline,
+from pipeline.habitat import load_profile
+from pipeline.phenology import compute_g_season
+from pipeline.scoring import classify_fruiting_level, compute_fruiting, score_frost, score_moisture, score_temperature
+from pipeline.weather import climatology_window_values, compute_weather_features, percentile_rank
+from pipeline.conditions_timeline import (
+    build_conditions_timeline, rains_summary, recent_rains, with_local_date,
 )
 
-
-@pytest.mark.parametrize("dd,phase", [
-    (50.0, "przed_fala"), (70.0, "poczatek"), (95.0, "szczyt"), (110.0, "szczyt"),
-    (125.0, "starzeje_sie"), (150.0, "po_fali"), (math.inf, "po_fali"),
-])
-def test_wave_phase_boundaries(dd, phase):
-    assert wave_phase(dd, P) == phase  # peak 100, sigma 20
-
-
-def test_wave_phase_nan_is_przed_fala():
-    assert wave_phase(float("nan"), P) == "przed_fala"
-
-
+PROFILE = load_profile("profiles/boletus_edulis.yaml")
 D0 = date(2026, 9, 20)
 
 
-def _dates(n):
-    return [D0 + timedelta(days=k) for k in range(n)]
-
-
-def test_peak_window_from_series_and_by_extrapolation():
-    tmean, tmin = [15.0] * 12, [10.0] * 12  # 10 DD/day from day 1
-    full = degree_days_after(0, tmean, tmin, P)
-    assert peak_window(full, _dates(12), P) == (D0 + timedelta(days=9), D0 + timedelta(days=11))
-    short = degree_days_after(0, tmean[:5], tmin[:5], P)
-    assert peak_window(short, _dates(5), P) == (D0 + timedelta(days=9), D0 + timedelta(days=11))
-
-
-def test_peak_window_none_without_accumulated_days_or_after_frost():
-    assert peak_window(np.array([np.nan, np.nan]), _dates(2), P) is None
-    frost = degree_days_after(0, [15, 15, 15], [10, -5, 10], P)
-    assert peak_window(frost, _dates(3), P) is None
-
-
-def test_fmt_day_range():
-    assert fmt_day_range(date(2026, 9, 21), date(2026, 9, 23)) == "21–23.09"
-    assert fmt_day_range(date(2026, 9, 30), date(2026, 10, 2)) == "30.09–2.10"
-    assert fmt_day_range(date(2026, 9, 11), date(2026, 9, 11)) == "11.09"
-
-
-def test_area_daily_weather_uses_local_dates_and_median():
+def test_with_local_date_converts_utc_midnight_to_local_day():
     utc_midnights = pd.to_datetime(["2026-09-20 22:00", "2026-09-21 22:00"], utc=True)  # local 21.09, 22.09
-    rows = []
-    for (lat, lon), mm in [((50.0, 21.0), 10.0), ((50.1, 21.1), 20.0), ((50.2, 21.2), 30.0), ((60.0, 10.0), 99.0)]:
-        for d in utc_midnights:
-            rows.append({"lat": lat, "lon": lon, "date": d, "precipitation_mm": mm, "tmean_c": 12.0, "tmin_c": 6.0})
-    area = area_daily_weather(pd.DataFrame(rows), [(50.0, 21.0), (50.1, 21.1), (50.2, 21.2)])
-    assert list(area.index) == [date(2026, 9, 21), date(2026, 9, 22)]
-    assert area["precipitation_mm"].tolist() == [20.0, 20.0]  # (60, 10) not in points -> excluded
+    daily = pd.DataFrame({"lat": [50.0, 50.0], "lon": [21.0, 21.0], "date": utc_midnights,
+                          "precipitation_mm": [1.0, 2.0]})
+    out = with_local_date(daily)
+    assert out["local_date"].tolist() == [date(2026, 9, 21), date(2026, 9, 22)]
 
 
-def _area(precip, tmean=15.0, tmin=10.0, start=D0):
+def _area(precip, start=D0):
     idx = [start + timedelta(days=k) for k in range(len(precip))]
-    return pd.DataFrame({"precipitation_mm": precip, "tmean_c": tmean, "tmin_c": tmin}, index=idx)
+    return pd.DataFrame({"precipitation_mm": precip}, index=idx)
 
 
-def _profile(**overrides):
-    flush = {**PROFILE["flush"], "pulse_min_mm": 15.0, "dd_peak": 100.0, "dd_sigma": 20.0,
-             "t_base_c": 5.0, "cold_night_c": 5.0, **overrides}
-    return {**PROFILE, "flush": flush}
+def test_recent_rains_excludes_a_pulse_not_yet_ended():
+    precip = [0, 0, 0, 0, 0, 20, 0, 0, 0, 25, 0, 0]  # pulse at idx5 (past), idx9 (future vs today)
+    today = D0 + timedelta(days=7)
+    rains = recent_rains(_area(precip), today, PROFILE)
+    assert rains == [{"start": "2026-09-25", "end": "2026-09-25", "rain_mm": 20.0, "days_ago": 2}]
 
 
-def test_build_area_timeline_reports_upcoming_wave_and_seven_tiles():
-    precip = [0.0] * 3 + [30.0] + [0.0] * 20   # pulse on 23.09, then 10 DD/day
-    today = date(2026, 9, 26)                   # 3 days after -> DD 30 -> przed_fala
-    out = build_area_timeline(_area(precip), today, _profile())
-    assert out["generated_for"] == "2026-09-26"
+def test_recent_rains_returns_up_to_max_rains_most_recent_first():
+    precip = [0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 0]
+    today = D0 + timedelta(days=14)
+    rains = recent_rains(_area(precip), today, PROFILE)
+    assert [r["start"] for r in rains] == ["2026-09-30", "2026-09-26"]  # 2 most recent, newest first
+
+
+def test_recent_rains_rejects_missing_today():
+    with pytest.raises(ValueError):
+        recent_rains(_area([0.0] * 5), date(2026, 12, 1), PROFILE)
+
+
+def test_rains_summary_formats_dates_mm_and_days_ago():
+    rains = [{"start": "2026-09-25", "end": "2026-09-25", "rain_mm": 20.0, "days_ago": 2},
+             {"start": "2026-09-11", "end": "2026-09-12", "rain_mm": 20.3, "days_ago": 15}]
+    assert rains_summary(rains, 15.0) == (
+        "Ostatni większy deszcz: 25.09 (20.0 mm), 2 dni temu"
+        " · wcześniejszy deszcz: 11–12.09 (20.3 mm), 15 dni temu")
+
+
+def test_rains_summary_without_rains_states_the_threshold():
+    assert rains_summary([], 15.0) == "Brak deszczu ≥ 15 mm w ostatnich dniach."
+
+
+def _daily_multi_point(points, start, days, precip=2.0, et0=1.0, tmean=13.0, tmin=6.0):
+    rows = []
+    for lat, lon in points:
+        for d in pd.date_range(start, periods=days, freq="D", tz="UTC"):
+            rows.append({"lat": lat, "lon": lon, "date": d, "precipitation_mm": precip,
+                         "et0_mm": et0, "tmean_c": tmean, "tmin_c": tmin})
+    return pd.DataFrame(rows)
+
+
+def _clim(points, cwb26=30.0):
+    rows = []
+    for lat, lon in points:
+        for d in pd.date_range("2000-01-01", periods=400, freq="D"):
+            rows.append({"lat": lat, "lon": lon, "date": d, "cwb26": cwb26})
+    return pd.DataFrame(rows)
+
+
+def test_build_conditions_timeline_rejects_missing_today():
+    points = [(50.0, 21.0)]
+    daily = _daily_multi_point(points, "2026-08-01", 10)
+    with pytest.raises(ValueError):
+        build_conditions_timeline(daily, points, _clim(points), points, date(2026, 12, 1), PROFILE)
+
+
+def test_build_conditions_timeline_seven_days_match_direct_recomputation():
+    points = [(50.0, 21.0), (50.1, 21.1)]
+    today = date(2026, 9, 27)
+    start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
+    daily = _daily_multi_point(points, start, 47)
+    clim_df = _clim(points)
+
+    out = build_conditions_timeline(daily, points, clim_df, points, today, PROFILE)
+
     assert [d["date"] for d in out["days"]] == [(today + timedelta(days=k)).isoformat() for k in range(7)]
     assert out["days"][0]["forecast"] is False and all(d["forecast"] for d in out["days"][1:])
-    assert all(0 <= d["level"] <= 3 for d in out["days"])
-    (wave,) = out["waves"]
-    assert wave["phase"] == "przed_fala" and wave["rain_start"] == wave["rain_end"] == "2026-09-23"
-    assert (wave["peak_from"], wave["peak_to"]) == ("2026-10-02", "2026-10-04")
-    assert out["summary"] == "Fala po deszczu 23.09: grzyby dopiero rosną, szczyt ok. 2–4.10"
+
+    with_ld = with_local_date(daily)
+    for k, entry in enumerate(out["days"]):
+        day_k = today + timedelta(days=k)
+        sub = with_ld[with_ld["local_date"] <= day_k]
+        feats = compute_weather_features(sub)
+        target_doy = day_k.timetuple().tm_yday
+        cwb_hist = np.concatenate([climatology_window_values(clim_df, lat, lon, target_doy, "cwb26")
+                                    for lat, lon in points])
+        pct_cwb26 = percentile_rank(float(feats["cwb26"].median()), cwb_hist)
+        m = score_moisture(pct_cwb26, 0.5, PROFILE)
+        t = score_temperature(float(feats["tmean20"].median()), float(feats["tmean5"].median()),
+                              float(feats["p5"].median()), PROFILE)
+        k_frost = score_frost(float(feats["tmin3"].median()), PROFILE)
+        g_season = compute_g_season(target_doy, PROFILE)
+        expected_f = compute_fruiting(m, t, k_frost, g_season=g_season)
+        assert entry["F"] == pytest.approx(round(expected_f, 3))
+        assert entry["level"] == classify_fruiting_level(expected_f, PROFILE)
 
 
-def test_build_area_timeline_without_pulses_says_so():
-    out = build_area_timeline(_area([0.0] * 20), date(2026, 9, 26), _profile())
-    assert out["waves"] == []
-    assert out["summary"].startswith("Brak świeżej fali po większym deszczu")
-    assert all(d["level"] == 0 for d in out["days"])
-
-
-def test_build_area_timeline_rejects_missing_today():
-    with pytest.raises(ValueError):
-        build_area_timeline(_area([0.0] * 5), date(2026, 12, 1), _profile())
-
-
-def test_timeline_summary_lists_the_older_wave_second():
-    waves = [
-        {"rain_start": "2026-09-21", "rain_end": "2026-09-23", "phase": "poczatek",
-         "phase_label": PHASE_LABELS["poczatek"], "peak_from": "2026-10-01", "peak_to": "2026-10-03"},
-        {"rain_start": "2026-09-11", "rain_end": "2026-09-12", "phase": "starzeje_sie",
-         "phase_label": PHASE_LABELS["starzeje_sie"], "peak_from": "2026-09-22", "peak_to": "2026-09-24"},
-    ]
-    assert timeline_summary(waves, 12.7) == (
-        "Fala po deszczu 21–23.09: początek wysypu, szczyt ok. 1–3.10"
-        " · starsza fala po deszczu 11–12.09: fala się starzeje")
+def test_conditions_timeline_does_not_use_the_disproven_wave_model():
+    # Structural guarantee (Plan-B): production reuses only pulse DETECTION
+    # from pipeline.flush, never its thermal-clock/Gaussian model.
+    src = pathlib.Path("pipeline/conditions_timeline.py").read_text(encoding="utf-8")
+    for name in ["wave_intensity", "wave_phase", "peak_window", "build_area_timeline",
+                 "PHASE_LABELS", "degree_days_after", "timeline_summary", "flush_series"]:
+        assert name not in src, name
 ```
-
-(Check of the expected peak in `test_build_area_timeline_reports_upcoming_wave_and_seven_tiles`: pulse ends 23.09, 10 DD/day → DD 90 (= peak−0.5σ) on 2.10 and DD 110 on 4.10.)
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `.venv/Scripts/python.exe -m pytest tests/test_flush.py -q -p no:cacheprovider`
-Expected: FAIL — `ImportError: cannot import name 'PHASE_LABELS'`.
+Run: `.venv/Scripts/python.exe -m pytest tests/test_scoring.py tests/test_conditions_timeline.py -q -p no:cacheprovider`
+Expected: FAIL — `ImportError: cannot import name 'classify_fruiting_level'` / `ModuleNotFoundError: No module named 'pipeline.conditions_timeline'`.
 
-- [ ] **Step 3: Implement (append to `pipeline/flush.py`; add `from datetime import date, timedelta`, `import pandas as pd` and `from pipeline.phenology import compute_g_season` to the imports)**
+- [ ] **Step 3: Implement**
+
+`pipeline/scoring.py` (after `classify_fruiting`):
 
 ```python
-PHASE_LABELS = {
-    "przed_fala": "grzyby dopiero rosną",
-    "poczatek": "początek wysypu",
-    "szczyt": "szczyt wysypu",
-    "starzeje_sie": "fala się starzeje",
-    "po_fali": "po fali",
-}
+def classify_fruiting_level(f: float, profile: dict) -> int:
+    """Same boundary semantics as classify_fruiting, as a 0-based index
+    (plan A2 Plan-B: this is the flush timeline's per-day tile `level`,
+    replacing a separate threshold table)."""
+    classes = profile["fruiting_classes"]
+    for i, cls in enumerate(classes):
+        if f < cls["max"]:
+            return i
+    return len(classes) - 1
+```
+
+`profiles/boletus_edulis.yaml` — update the `flush:` section's header comment (values unchanged) and add a new `conditions:` section after it:
+
+```yaml
+flush:
+  # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # flush-timing model, pipeline/flush.py. NEVER feeds R.
+  # SHIP GATE FAILED 2026-09-27 (Task 3: LOYO held-out mean 0.548 <
+  # baseline F_loc bez G_season 0.626; notebooks 08/09 traced the earlier
+  # apparent rain-recency signal to a season confound). Frozen as an
+  # uncalibrated experiment -- NOT imported by prepare_trip/frontend.
+  # See pipeline/conditions_timeline.py for what shipped instead (Plan-B).
+  wet_day_mm: 1.0
+  pulse_min_mm: 15.0
+  radar_rain_scale: 0.848
+  t_base_c: 5.0
+  cold_night_c: 5.0
+  cold_night_factor: 0.5
+  frost_c: -1.0
+  dd_peak: 100.0
+  dd_sigma: 35.0
+  lookback_days: 45
+  horizon_days: 7
+  max_waves: 2
+  level_thresholds: [0.1, 0.3, 0.6]
+
+conditions:
+  # Plan 2026-09-27 A2 "Plan-B" (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # pipeline/conditions_timeline.py. Real F per horizon day (already
+  # validated in the GBIF backtest, 0.626) + a fact-only rain summary,
+  # reusing only flush.py's pulse DETECTION (not its thermal clock/peak
+  # model -- see the flush: section's comment above for why).
+  wet_day_mm: 1.0
+  pulse_min_mm: 15.0          # "big enough to mention" cutoff, not calibrated
+  radar_rain_scale: 0.848     # radar/ERA5 rain ratio, notebooks/05 (note (25))
+  lookback_days: 45
+  horizon_days: 7
+  max_rains: 2
+```
+
+`pipeline/conditions_timeline.py`:
+
+```python
+"""A2 Plan-B: fact-only conditions timeline -- plan 2026-09-27
+(docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md, "Decyzja
+2026-09-27: Plan-B" section).
+
+Reuses only pipeline.flush's pulse DETECTION (never its thermal-clock/
+Gaussian model, which failed its GBIF ship gate) for a fact-only rain
+summary, plus real F -- already validated at 0.626 in the GBIF backtest --
+computed once per horizon day instead of once per search. Still answers
+"kiedy", never "gdzie": R is untouched."""
+from datetime import date, timedelta
+
+import numpy as np
+import pandas as pd
+
+from pipeline.flush import FlushParams, area_daily_weather, detect_pulses, fmt_day_range
+from pipeline.phenology import compute_g_season
+from pipeline.scoring import (
+    classify_fruiting_level, compute_fruiting, score_frost, score_moisture, score_temperature,
+)
+from pipeline.weather import climatology_window_values, compute_weather_features, percentile_rank
 
 
-def wave_phase(dd_today: float, params: FlushParams) -> str:
-    if math.isnan(dd_today):
-        return "przed_fala"  # rain still falling today: the clock has not started
-    peak, sigma = params.dd_peak, params.dd_sigma
-    if dd_today < peak - 2 * sigma:
-        return "przed_fala"
-    if dd_today < peak - 0.5 * sigma:
-        return "poczatek"
-    if dd_today <= peak + 0.5 * sigma:
-        return "szczyt"
-    if dd_today <= peak + 2 * sigma:
-        return "starzeje_sie"
-    return "po_fali"  # also +inf after frost
-
-
-def peak_window(dd: np.ndarray, dates: list, params: FlushParams):
-    """Dates when thermal time crosses peak -/+ 0.5 sigma. Past the end of
-    the series: extrapolated with the mean daily rate of the last <=7
-    accumulated days. None after frost or before any day accumulated."""
-    dd = np.asarray(dd, dtype=float)
-    if np.isinf(dd).any():
-        return None
-    finite = np.flatnonzero(np.isfinite(dd))
-    if len(finite) == 0:
-        return None
-    last = finite[-1]
-    k = min(7, len(finite))
-    base = dd[finite[-k - 1]] if len(finite) > k else 0.0
-    rate = (dd[last] - base) / k
-
-    def crossing(threshold):
-        hits = finite[dd[finite] >= threshold]
-        if len(hits):
-            return dates[hits[0]]
-        if rate <= 0:
-            return None
-        return dates[last] + timedelta(days=math.ceil((threshold - dd[last]) / rate))
-
-    lo = crossing(params.dd_peak - 0.5 * params.dd_sigma)
-    hi = crossing(params.dd_peak + 0.5 * params.dd_sigma)
-    return (lo, hi) if lo is not None and hi is not None else None
-
-
-def fmt_day_range(a: date, b: date) -> str:
-    if a == b:
-        return f"{a.day}.{a.month:02d}"
-    if a.month == b.month:
-        return f"{a.day}–{b.day}.{b.month:02d}"
-    return f"{a.day}.{a.month:02d}–{b.day}.{b.month:02d}"
-
-
-def area_daily_weather(daily: pd.DataFrame, points) -> pd.DataFrame:
-    """Per-LOCAL-day median over `points` (Open-Meteo `date` is the UTC
-    instant of local midnight; naive dates from test fakes are taken as-is)."""
-    wanted = set(points)
-    sel = daily[[(la, lo) in wanted for la, lo in zip(daily["lat"], daily["lon"])]]
-    dates = sel["date"]
+def with_local_date(daily: pd.DataFrame) -> pd.DataFrame:
+    """Adds a `local_date` column (Open-Meteo `date` is the UTC instant of
+    local midnight; naive dates from test fakes are taken as-is) -- same
+    tz handling as pipeline.flush.area_daily_weather, duplicated here
+    because this module needs the per-point rows (for
+    compute_weather_features' rolling windows), not the area median."""
+    dates = daily["date"]
     local = (dates.dt.tz_convert("Europe/Warsaw") if dates.dt.tz is not None else dates).dt.date
-    return (sel.assign(local_date=local)
-            .groupby("local_date")[["precipitation_mm", "tmean_c", "tmin_c"]].median()
-            .sort_index()
-            .rename_axis("date"))
+    return daily.assign(local_date=local)
 
 
-def timeline_summary(waves: list[dict], pulse_min_mm: float) -> str:
-    if not waves:
-        return (f"Brak świeżej fali po większym deszczu (≥ {pulse_min_mm:.0f} mm) "
-                "— wysyp mało prawdopodobny")
-    parts = []
-    for i, w in enumerate(waves):
-        rain = fmt_day_range(date.fromisoformat(w["rain_start"]), date.fromisoformat(w["rain_end"]))
-        text = f"{'Fala' if i == 0 else 'starsza fala'} po deszczu {rain}: {w['phase_label']}"
-        if w["phase"] in ("przed_fala", "poczatek") and w["peak_from"]:
-            peak = fmt_day_range(date.fromisoformat(w["peak_from"]), date.fromisoformat(w["peak_to"]))
-            text += f", szczyt ok. {peak}"
-        parts.append(text)
-    return " · ".join(parts)
+def _pulse_params(profile: dict, rain_scale: float) -> FlushParams:
+    """detect_pulses only reads wet_day_mm/pulse_min_mm -- the thermal-
+    clock fields are unused placeholders, kept only so pipeline.flush's
+    (frozen) FlushParams shape doesn't need touching."""
+    cfg = profile["conditions"]
+    return FlushParams(wet_day_mm=cfg["wet_day_mm"], pulse_min_mm=cfg["pulse_min_mm"] * rain_scale,
+                        t_base_c=0.0, cold_night_c=-1e9, cold_night_factor=1.0, frost_c=-1e9,
+                        dd_peak=0.0, dd_sigma=1.0)
 
 
-def build_area_timeline(area: pd.DataFrame, today: date, profile: dict, rain_scale: float = 1.0) -> dict:
-    cfg = profile["flush"]
-    params = flush_params(profile, rain_scale)
-    horizon = cfg["horizon_days"]
-    area = area[area.index <= today + timedelta(days=horizon - 1)]
+def recent_rains(area: pd.DataFrame, today: date, profile: dict, rain_scale: float = 1.0) -> list[dict]:
+    """Up to conditions.max_rains most recent qualifying pulses that have
+    already ended by `today`, newest first, within conditions.lookback_days."""
+    cfg = profile["conditions"]
+    params = _pulse_params(profile, rain_scale)
     dates = list(area.index)
     if today not in dates:
         raise ValueError(f"brak danych pogodowych dla {today.isoformat()}")
     t = dates.index(today)
-    index, pulses, dds = flush_series(area["precipitation_mm"].to_numpy(), area["tmean_c"].to_numpy(),
-                                      area["tmin_c"].to_numpy(), params)
-    seasonal = index * np.array([compute_g_season(d.timetuple().tm_yday, profile) for d in dates])
-    days = []
-    for k in range(t, min(t + horizon, len(dates))):
-        value = float(seasonal[k])
-        days.append({"date": dates[k].isoformat(), "index": round(value, 3),
-                     "level": int(sum(value >= th for th in cfg["level_thresholds"])), "forecast": k > t})
-    waves = []
-    for pulse, dd in sorted(zip(pulses, dds), key=lambda x: -x[0].end):
+    pulses = detect_pulses(area["precipitation_mm"].to_numpy(), params)
+    out = []
+    for pulse in sorted(pulses, key=lambda p: -p.end):
         if pulse.end > t or (today - dates[pulse.end]).days > cfg["lookback_days"]:
             continue
-        phase = wave_phase(float(dd[t]), params)
-        if phase == "po_fali":
-            continue
-        window = peak_window(dd, dates, params)
-        waves.append({
-            "rain_start": dates[pulse.start].isoformat(), "rain_end": dates[pulse.end].isoformat(),
-            "rain_mm": round(pulse.rain_mm, 1), "strength": round(pulse.strength, 2),
-            "phase": phase, "phase_label": PHASE_LABELS[phase],
-            "peak_from": window[0].isoformat() if window else None,
-            "peak_to": window[1].isoformat() if window else None,
-        })
-        if len(waves) == cfg["max_waves"]:
+        out.append({"start": dates[pulse.start].isoformat(), "end": dates[pulse.end].isoformat(),
+                    "rain_mm": round(pulse.rain_mm, 1), "days_ago": (today - dates[pulse.end]).days})
+        if len(out) == cfg["max_rains"]:
             break
-    return {"generated_for": today.isoformat(), "horizon_days": horizon,
-            "pulse_min_mm": round(params.pulse_min_mm, 1), "waves": waves, "days": days,
-            "summary": timeline_summary(waves, params.pulse_min_mm)}
+    return out
+
+
+def rains_summary(rains: list[dict], pulse_min_mm: float) -> str:
+    if not rains:
+        return f"Brak deszczu ≥ {pulse_min_mm:.0f} mm w ostatnich dniach."
+    labels = ["Ostatni większy deszcz", "wcześniejszy deszcz"]
+    parts = []
+    for i, r in enumerate(rains):
+        rng = fmt_day_range(date.fromisoformat(r["start"]), date.fromisoformat(r["end"]))
+        parts.append(f"{labels[min(i, 1)]}: {rng} ({r['rain_mm']:.1f} mm), {r['days_ago']} dni temu")
+    return " · ".join(parts)
+
+
+def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame, clim_points,
+                               today: date, profile: dict, rain_scale: float = 1.0) -> dict:
+    cfg = profile["conditions"]
+    params = _pulse_params(profile, rain_scale)
+    area = area_daily_weather(daily, points)
+    rains = recent_rains(area, today, profile, rain_scale)  # raises ValueError if today missing
+
+    with_ld = with_local_date(daily)
+    all_dates = set(with_ld["local_date"])
+    days = []
+    for k in range(cfg["horizon_days"]):
+        day_k = today + timedelta(days=k)
+        if day_k not in all_dates:
+            break
+        sub = with_ld[with_ld["local_date"] <= day_k]
+        feats = compute_weather_features(sub)
+        target_doy = day_k.timetuple().tm_yday
+        cwb_hist = np.concatenate([climatology_window_values(clim_df, lat, lon, target_doy, "cwb26")
+                                    for lat, lon in clim_points]) if clim_points else np.array([])
+        pct_cwb26 = percentile_rank(float(feats["cwb26"].median()), cwb_hist)
+        m = score_moisture(pct_cwb26, 0.5, profile)  # pct_sm ignored: fruiting.soil_moisture_weight == 0.0
+        t = score_temperature(float(feats["tmean20"].median()), float(feats["tmean5"].median()),
+                              float(feats["p5"].median()), profile)
+        k_frost = score_frost(float(feats["tmin3"].median()), profile)
+        g_season = compute_g_season(target_doy, profile)
+        f = compute_fruiting(m, t, k_frost, g_season=g_season)
+        days.append({"date": day_k.isoformat(), "F": round(f, 3),
+                     "level": classify_fruiting_level(f, profile), "forecast": k > 0})
+    return {"generated_for": today.isoformat(), "horizon_days": cfg["horizon_days"],
+            "pulse_min_mm": round(params.pulse_min_mm, 1), "rains": rains, "days": days,
+            "summary": rains_summary(rains, params.pulse_min_mm)}
 ```
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `.venv/Scripts/python.exe -m pytest tests/test_flush.py -q -p no:cacheprovider`
-Expected: 24 passed (8 from Task 1 + 7 parametrized + 9).
+Run: `.venv/Scripts/python.exe -m pytest tests/test_scoring.py tests/test_conditions_timeline.py tests/test_flush.py -q -p no:cacheprovider`
+Expected: all pass (6 new in test_scoring.py's parametrize + 9 new in test_conditions_timeline.py; test_flush.py's 24 unaffected).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pipeline/flush.py tests/test_flush.py
-git commit -m "feat: flush phases, peak window and area timeline (plan A2 task 2)"
+git add pipeline/scoring.py pipeline/conditions_timeline.py profiles/boletus_edulis.yaml \
+        tests/test_scoring.py tests/test_conditions_timeline.py \
+        notebooks/06_backtest_flush.py notebooks/08_flush_pulse_timing_diagnostic.py \
+        notebooks/09_flush_pulse_timing_season_controlled.py
+git commit -m "feat: conditions_timeline core (fact rains + per-day F); record failed flush ship gate (plan A2 task 4, Plan-B)"
 ```
 
 ---
 
-## Task 3: Calibration on GBIF + field check (SHIP GATE)
-
-**Files:**
-- Create: `notebooks/06_backtest_flush.py`, `notebooks/07_flush_field_check.py`
-- Modify: `profiles/boletus_edulis.yaml` (`flush:` calibrated values), `notebooks/output/backtest_gbif_results.csv` is regenerated (gitignored)
-
-- [ ] **Step 1: Fresh baseline with the current profile**
-
-Run: `.venv/Scripts/python.exe notebooks/03_backtest_gbif.py` (cache-only; `MAX_YEAR` caps it to cached years — if it tries the network and fails, stop and report). Record "F_loc bez G_season" mean/median from its printed report — this is the E3 baseline (the old 0.620 was computed before `soil_moisture_weight: 0.0`).
-Known caveat, do not fix in this plan: notebook 03 takes day-of-year from the UTC timestamp of local midnight (22:00 UTC the previous day), so its F series is shifted by one day relative to the find date; notebook 06 below uses local dates. F varies smoothly day to day, so the baseline is barely affected — mention it in the handoff note next to the numbers.
-
-- [ ] **Step 2: Calibration notebook**
-
-```python
-# notebooks/06_backtest_flush.py
-"""Plan A2 Task 3: calibrate + validate pipeline.flush on the same GBIF
-Boletus edulis finds as notebooks/03_backtest_gbif.py (its results CSV
-defines the sample; its cached Open-Meteo archive weather is reused --
-this notebook never touches the network). Statistic: percentile rank of
-the find's day among the candidate days (1 Jun - 31 Oct) at the same
-point and year (0.5 = no signal). Leave-one-year-out CV over a small grid.
-Run: .venv/Scripts/python.exe notebooks/06_backtest_flush.py"""
-import itertools
-import math
-import pathlib
-
-import numpy as np
-import pandas as pd
-from pyproj import Transformer
-from scipy import stats
-
-from pipeline.flush import FlushParams, flush_series
-from pipeline.weather import fetch_archive_daily
-
-RESULTS_03 = pathlib.Path("notebooks/output/backtest_gbif_results.csv")
-CACHE_DIR = pathlib.Path("cache")
-WEATHER_GRID_SPACING_M = 5000.0          # same as notebooks/03_backtest_gbif.py
-CANDIDATE_DOYS = list(range(152, 305))   # same as notebooks/03_backtest_gbif.py
-GRID = {
-    "pulse_min_mm": [10.0, 15.0, 20.0, 25.0],
-    "dd_peak": [60.0, 80.0, 100.0, 130.0, 160.0, 200.0],
-    "dd_sigma": [20.0, 35.0, 50.0],
-    "t_base_c": [4.0, 6.0],
-}
-FIXED = {"wet_day_mm": 1.0, "cold_night_c": 5.0, "cold_night_factor": 0.5, "frost_c": -1.0}
-
-_TO_2180 = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
-_TO_4326 = Transformer.from_crs("EPSG:2180", "EPSG:4326", always_xy=True)
-
-
-def _snap(lat: float, lon: float, spacing_m: float) -> tuple[float, float]:
-    # Identical to notebooks/03_backtest_gbif.py::_snap -- must stay so, or the cache misses.
-    e, n = _TO_2180.transform(lon, lat)
-    e_s = math.floor(e / spacing_m) * spacing_m + spacing_m / 2
-    n_s = math.floor(n / spacing_m) * spacing_m + spacing_m / 2
-    lon_s, lat_s = _TO_4326.transform(e_s, n_s)
-    return round(lat_s, 6), round(lon_s, 6)
-
-
-def _no_network(*args, **kwargs):
-    raise RuntimeError("cache miss -- run notebooks/03_backtest_gbif.py first")
-
-
-def load_obs() -> pd.DataFrame:
-    obs = pd.read_csv(RESULTS_03)
-    obs["date"] = pd.to_datetime(obs["date"])
-    obs["year"] = obs["date"].dt.year
-    obs["doy"] = obs["date"].dt.dayofyear
-    return obs
-
-
-def load_series(obs: pd.DataFrame) -> dict:
-    series = {}
-    for row in obs.itertuples():
-        wp = _snap(row.lat, row.lon, WEATHER_GRID_SPACING_M)
-        key = (wp, row.year)
-        if key in series:
-            continue
-        df = fetch_archive_daily([wp], f"{row.year}-01-01", f"{row.year}-12-31",
-                                 call_api=_no_network, cache_dir=CACHE_DIR).sort_values("date")
-        local = df["date"].dt.tz_convert("Europe/Warsaw")
-        series[key] = (local.dt.dayofyear.to_numpy(), df["precipitation_mm"].to_numpy(),
-                       df["tmean_c"].to_numpy(), df["tmin_c"].to_numpy())
-    return series
-
-
-def rank_of(obs_row, series, params: FlushParams) -> float:
-    doys, precip, tmean, tmin = series[(_snap(obs_row.lat, obs_row.lon, WEATHER_GRID_SPACING_M), obs_row.year)]
-    index, _, _ = flush_series(precip, tmean, tmin, params)
-    by_doy = dict(zip(doys.tolist(), index.tolist()))
-    cands = sorted({d for d in CANDIDATE_DOYS + [obs_row.doy] if d in by_doy})
-    values = np.array([by_doy[d] for d in cands])
-    v = by_doy[obs_row.doy]
-    return float((values < v).mean() + 0.5 * (values == v).mean())
-
-
-def main():
-    obs = load_obs()
-    series = load_series(obs)
-    combos = list(itertools.product(*GRID.values()))
-    ranks = {}
-    for combo in combos:
-        params = FlushParams(**FIXED, **dict(zip(GRID.keys(), combo)))
-        ranks[combo] = np.array([rank_of(row, series, params) for row in obs.itertuples()])
-    years = sorted(obs["year"].unique())
-    heldout = np.empty(len(obs))
-    for year in years:
-        train = (obs["year"] != year).to_numpy()
-        best = max(combos, key=lambda c: ranks[c][train].mean())
-        heldout[~train] = ranks[best][~train]
-        print(f"rok {year}: n={int((~train).sum())} najlepsze na pozostalych = {dict(zip(GRID.keys(), best))}")
-    full_best = max(combos, key=lambda c: ranks[c].mean())
-    baseline = obs["rank_F_loc_no_gseason"].to_numpy()
-    p = stats.wilcoxon(heldout - baseline).pvalue
-    print(f"\nN={len(obs)}  flush (CV, held-out) srednia={heldout.mean():.3f} mediana={np.median(heldout):.3f}")
-    print(f"baseline F_loc bez G_season srednia={baseline.mean():.3f} mediana={np.median(baseline):.3f}")
-    print(f"Wilcoxon (flush - baseline) p={p:.4g}")
-    print(f"najlepsze na calosci: {dict(zip(GRID.keys(), full_best))} srednia={ranks[full_best].mean():.3f}")
-    gate = heldout.mean() > baseline.mean() and p < 0.10
-    print("BRAMKA E3:", "ZALICZONA" if gate else "NIEZALICZONA -- zatrzymaj sie i zapytaj uzytkownika")
-
-
-if __name__ == "__main__":
-    main()
-```
-
-Run: `.venv/Scripts/python.exe notebooks/06_backtest_flush.py` (144 combos × 90 finds; a few minutes, no network).
-
-- [ ] **Step 3: Apply the gate (E3)**
-
-If the last line says `NIEZALICZONA`: **stop**, report the printed table to the user and ask (options: widen the grid, add a moisture-state condition to pulses, or keep A2 as an experimental notebook only). Do not start Task 4.
-If `ZALICZONA`: write the "najlepsze na calosci" values into `profiles/boletus_edulis.yaml` `flush:` (`pulse_min_mm`, `dd_peak`, `dd_sigma`, `t_base_c`), replacing their `[E]` comments with `# calibrated plan A2 Task 3 (GBIF, LOYO held-out mean X.XXX vs baseline Y.YYY, p=Z)`.
-
-- [ ] **Step 4: Field check against the 2026-09-26 observation**
-
-```python
-# notebooks/07_flush_field_check.py
-"""Plan A2 Task 3: does the calibrated model agree with the 2026-09-26
-field visit near rejon 1 (old mushrooms from the ~11.09 wave, a few small
-ones after 21-23.09)? Uses the production path (radar + Open-Meteo, cache).
-Run: .venv/Scripts/python.exe notebooks/07_flush_field_check.py"""
-import functools
-import json
-import pathlib
-from datetime import date
-
-from pipeline.flush import area_daily_weather, build_area_timeline
-from pipeline.habitat import load_profile
-from pipeline.orchestrate import WEATHER_GRID_SPACING_M
-from pipeline.prepare_trip import _radius_scaled_spacing, build_weather_fetcher, points_within_radius
-from pipeline.tiles import tile_bbox_2180
-from pipeline.weather import fetch_weather_raw, make_grid
-
-LAT, LON, RADIUS_KM = 50.0555, 21.7889, 20.0
-
-
-def main():
-    profile = load_profile("profiles/boletus_edulis.yaml")
-    spacing = _radius_scaled_spacing(WEATHER_GRID_SPACING_M, RADIUS_KM)
-    grid = make_grid(tile_bbox_2180(LAT, LON, size_km=2 * RADIUS_KM), spacing_m=spacing)
-    points = points_within_radius(grid, LAT, LON, RADIUS_KM)
-    fetcher = build_weather_fetcher(functools.partial(fetch_weather_raw, cache_dir=pathlib.Path("cache")),
-                                    use_radar=True, profile=profile, grid_spacing_m=spacing,
-                                    cache_dir=pathlib.Path("cache"))
-    daily = fetcher(points, 92, forecast_days=profile["flush"]["horizon_days"])
-    area = area_daily_weather(daily, points)
-    for day in [date(2026, 9, 20), date(2026, 9, 26), date.today()]:
-        out = build_area_timeline(area, day, profile, rain_scale=profile["flush"]["radar_rain_scale"])
-        print(day, "|", out["summary"])
-        print("   ", json.dumps(out["waves"], ensure_ascii=False))
-
-
-if __name__ == "__main__":
-    main()
-```
-
-This notebook depends on `points_within_radius` from Task 4 — run it right after Task 4 Step 3, then come back here. Accept when, for 2026-09-26, the wave with rain around 11–12.09 is `szczyt` or `starzeje_sie` (user found old mushrooms) and the 21–23.09 wave is `przed_fala` or `poczatek`. If not, report both lines to the user before continuing (the GBIF gate is the primary criterion; this is a sanity check, not a second optimisation target — do not re-tune to fit one visit).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add notebooks/06_backtest_flush.py notebooks/07_flush_field_check.py profiles/boletus_edulis.yaml
-git commit -m "feat: calibrate flush model on GBIF backtest (plan A2 task 3)"
-```
-
----
-
-## Task 4: Export + `prepare_trip` wiring
+## Task 5: Export + `prepare_trip` wiring
 
 **Files:**
 - Modify: `pipeline/export.py`, `pipeline/prepare_trip.py`
-- Test: `tests/test_export.py`, `tests/test_prepare_trip.py`, `tests/test_flush.py` (structural test)
+- Test: `tests/test_export.py`, `tests/test_prepare_trip.py`
 
 **Interfaces:**
-- Consumes: `build_area_timeline`, `area_daily_weather` (Task 2), `build_weather_fetcher` (existing, `pipeline/prepare_trip.py`).
-- Produces: `write_flush_json(timeline: dict, day: str, out_path) -> pathlib.Path` (adds `"day"`), `points_within_radius(points, lat, lon, radius_km) -> list[tuple[float, float]]`, `summary["flush_path"]` (str or None).
+- Consumes: `build_conditions_timeline` (Task 4).
+- Produces: `write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path` (adds `"day"`), `points_within_radius(points, lat, lon, radius_km) -> list[tuple[float, float]]`, `summary["conditions_path"]` (str or None).
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_export.py (append)
-import json
-
-from pipeline.export import write_flush_json
+from pipeline.export import write_conditions_json
 
 
-def test_write_flush_json_adds_day_and_writes_strict_json(tmp_path):
-    timeline = {"generated_for": "2026-09-27", "horizon_days": 7, "pulse_min_mm": 12.7,
-                "waves": [], "days": [{"date": "2026-09-27", "index": 0.1, "level": 1, "forecast": False}],
-                "summary": "Brak świeżej fali"}
-    path = write_flush_json(timeline, "2026-09-27", tmp_path / "flush_2026-09-27.json")
+def test_write_conditions_json_adds_day_and_writes_strict_json(tmp_path):
+    timeline = {"generated_for": "2026-09-27", "horizon_days": 7, "pulse_min_mm": 15.0,
+                "rains": [], "days": [{"date": "2026-09-27", "F": 0.5, "level": 2, "forecast": False}],
+                "summary": "Brak deszczu ≥ 15 mm w ostatnich dniach."}
+    path = write_conditions_json(timeline, "2026-09-27", tmp_path / "conditions_2026-09-27.json")
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["day"] == "2026-09-27" and data["summary"] == "Brak świeżej fali"
+    assert data["day"] == "2026-09-27" and data["summary"] == timeline["summary"]
 ```
 
 ```python
@@ -788,31 +511,20 @@ def test_points_within_radius_keeps_only_points_inside_the_circle():
     assert trip.points_within_radius([near, far], *center, 20.0) == [near]
 ```
 
-```python
-# tests/test_flush.py (append)
-import pathlib
-
-
-def test_flush_is_never_imported_by_the_scoring_path():
-    # Structural guarantee that the flush model cannot change R (plan A2).
-    for name in ["orchestrate", "scoring", "mvp", "habitat"]:
-        src = pathlib.Path(f"pipeline/{name}.py").read_text(encoding="utf-8")
-        assert "pipeline.flush" not in src and "from pipeline import flush" not in src, name
-```
-
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `.venv/Scripts/python.exe -m pytest tests/test_export.py tests/test_prepare_trip.py tests/test_flush.py -q -p no:cacheprovider`
-Expected: FAIL — `ImportError: cannot import name 'write_flush_json'` / `AttributeError: points_within_radius` (the structural test passes already; it is a guard, keep it).
+Run: `.venv/Scripts/python.exe -m pytest tests/test_export.py tests/test_prepare_trip.py -q -p no:cacheprovider`
+Expected: FAIL — `ImportError: cannot import name 'write_conditions_json'` / `AttributeError: points_within_radius`.
 
 - [ ] **Step 3: Implement**
 
 `pipeline/export.py` (after `write_regions_json`):
 
 ```python
-def write_flush_json(timeline: dict, day: str, out_path) -> pathlib.Path:
-    """Plan A2: area flush timeline (pipeline.flush.build_area_timeline),
-    optional on the frontend like regions/details."""
+def write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path:
+    """Plan A2 Plan-B: area conditions timeline
+    (pipeline.conditions_timeline.build_conditions_timeline), optional on
+    the frontend like regions/details."""
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({"day": day, **timeline}, ensure_ascii=False, indent=2, allow_nan=False),
@@ -821,7 +533,7 @@ def write_flush_json(timeline: dict, day: str, out_path) -> pathlib.Path:
 ```
 
 `pipeline/prepare_trip.py`:
-- imports: `from pyproj import Transformer`, `from pipeline.flush import area_daily_weather, build_area_timeline`, and add `write_flush_json` to the existing `from pipeline.export import (...)`.
+- imports: `from pyproj import Transformer`, `from pipeline.conditions_timeline import build_conditions_timeline`, and add `write_conditions_json` to the existing `from pipeline.export import (...)`.
 - module level (next to `build_weather_fetcher`):
 
 ```python
@@ -829,8 +541,9 @@ _WGS84_TO_2180 = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
 
 
 def points_within_radius(points, lat: float, lon: float, radius_km: float) -> list[tuple[float, float]]:
-    """Weather grid points inside the search circle (plan A2: the area
-    timeline is the median over exactly these points)."""
+    """Weather/climatology grid points inside the search circle (plan A2:
+    the conditions timeline is the median/percentile over exactly these
+    points)."""
     cx, cy = _WGS84_TO_2180.transform(lon, lat)
     out = []
     for p_lat, p_lon in points:
@@ -840,143 +553,148 @@ def points_within_radius(points, lat: float, lon: float, radius_km: float) -> li
     return out
 ```
 
-- in `run_trip_preparation`: build the fetcher once and reuse it —
+- in `run_trip_preparation`: pull the weather AND climatology fetchers out into named variables (currently the climatology one is built inline inside the `run_poc(...)` call) and reuse both —
 
 ```python
     weather_fetcher = build_weather_fetcher(
         functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
         use_radar=use_radar, profile=profile, grid_spacing_m=grid_spacing_m, cache_dir=cache_dir,
     )
+    climatology_fetcher = functools.partial(
+        fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
+    )
 ```
 
-and pass `weather_fetcher=weather_fetcher` to `run_poc` (replacing the inline `build_weather_fetcher(...)` call). Right after the `run_poc` result prints, add:
+and pass `weather_fetcher=weather_fetcher, climatology_fetcher=climatology_fetcher` to `run_poc` (replacing both inline calls). Right after the `run_poc` result prints, add:
 
 ```python
-    # Plan A2: one area-wide flush timeline (today..today+6). Never feeds R.
-    flush_out = out_dir / f"flush_{day}.json"
-    flush_out.unlink(missing_ok=True)
-    flush_path = None
-    flush_points = points_within_radius(make_grid(bbox, spacing_m=grid_spacing_m), lat, lon, radius_km)
-    flush_daily = weather_fetcher(flush_points, 92, forecast_days=profile["flush"]["horizon_days"])
-    rain_scale = profile["flush"]["radar_rain_scale"] if use_radar and profile["radar"]["enabled"] else 1.0
+    # Plan A2 Plan-B: real F per horizon day (today..today+6) + fact-only
+    # rain summary. Never uses pipeline.flush's disproven Gaussian model.
+    conditions_out = out_dir / f"conditions_{day}.json"
+    conditions_out.unlink(missing_ok=True)
+    conditions_path = None
+    conditions_points = points_within_radius(make_grid(bbox, spacing_m=grid_spacing_m), lat, lon, radius_km)
+    conditions_clim_points = points_within_radius(
+        make_grid(bbox, spacing_m=climatology_grid_spacing_m), lat, lon, radius_km)
+    conditions_daily = weather_fetcher(conditions_points, 92, forecast_days=profile["conditions"]["horizon_days"])
+    conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
+    rain_scale = profile["conditions"]["radar_rain_scale"] if use_radar and profile["radar"]["enabled"] else 1.0
     try:
-        timeline = build_area_timeline(area_daily_weather(flush_daily, flush_points), date.today(), profile,
-                                       rain_scale=rain_scale)
+        timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
+                                             conditions_clim_points, date.today(), profile, rain_scale=rain_scale)
     except ValueError as exc:
-        print(f"UWAGA: os wysypu pominieta ({exc}).", flush=True)
+        print(f"UWAGA: warunki na kolejne dni pominiete ({exc}).", flush=True)
     else:
-        flush_path = write_flush_json(timeline, day, flush_out)
-        print(f"Wysyp: {timeline['summary']}", flush=True)
+        conditions_path = write_conditions_json(timeline, day, conditions_out)
+        print(f"Warunki: {timeline['summary']}", flush=True)
 ```
 
-(`out_dir`, `bbox`, `grid_spacing_m`, `day`, `lat`, `lon`, `radius_km` already exist in `run_trip_preparation`; check the exact variable name used there for the output directory — the function parameter is `out_dir` — and that `date` is imported from `datetime` at the top, which it is.) Add `"flush_path": str(flush_path) if flush_path else None,` to the summary dict.
+(`out_dir`, `bbox`, `grid_spacing_m`, `climatology_grid_spacing_m`, `day`, `lat`, `lon`, `radius_km` already exist in `run_trip_preparation`; `date` is already imported from `datetime` at the top.) Add `"conditions_path": str(conditions_path) if conditions_path else None,` to the summary dict.
 
 - [ ] **Step 4: Run tests**
 
 Run: `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider`
-Expected: all pass. `tests/test_search_area.py`'s fakes return August data, so their runs must take the `UWAGA: os wysypu pominieta` path and still pass; if they fail instead, fix the code path (not the fakes).
-
-Then run the field-check notebook from Task 3 Step 4 and finish that step.
+Expected: all pass. `tests/test_search_area.py`'s fakes return August data, so their runs must take the `UWAGA: warunki na kolejne dni pominiete` path and still pass; if they fail instead, fix the code path (not the fakes).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pipeline/export.py pipeline/prepare_trip.py tests/test_export.py tests/test_prepare_trip.py tests/test_flush.py
-git commit -m "feat: export area flush timeline from prepare_trip (plan A2 task 4)"
+git add pipeline/export.py pipeline/prepare_trip.py tests/test_export.py tests/test_prepare_trip.py
+git commit -m "feat: export conditions timeline from prepare_trip (plan A2 task 5, Plan-B)"
 ```
 
 ---
 
-## Task 5: `sync-data` + saved trips carry `flush.json`
+## Task 6: `sync-data` + saved trips carry `conditions.json`
 
 **Files:**
 - Modify: `frontend/scripts/sync-data.mjs`, `frontend/scripts/sync-data.test.mjs`, `launcher/trip_archive.py`, `tests/test_trip_archive.py`
 
 **Interfaces:**
-- Produces: `syncData(...)` result gains `flush: 0 | 1`; `flush_{day}.json` → `public/data/flush.json` (validated: JSON object, `day === day`, `Array.isArray(days)`); stale `flush.json` removed; `TRIP_FILES` includes `"flush.json"`.
+- Produces: `syncData(...)` result gains `conditions: 0 | 1`; `conditions_{day}.json` → `public/data/conditions.json` (validated: JSON object, `day === day`, `Array.isArray(days)`); stale `conditions.json` removed; `TRIP_FILES` includes `"conditions.json"`.
 
 - [ ] **Step 1: Write the failing tests**
 
-In `frontend/scripts/sync-data.test.mjs`, change the expected object of `"copies one complete same-day bundle"` to include `flush: 0`, and append:
+In `frontend/scripts/sync-data.test.mjs`, change the expected object of `"copies one complete same-day bundle"` to include `conditions: 0`, and append:
 
 ```js
-// Plan A2: flush_{day}.json -> flush.json, optional like regions/details.
-const flushFile = (day = "2026-09-24") =>
-  JSON.stringify({ day, summary: "Fala po deszczu 21–23.09: początek wysypu", days: [], waves: [] });
+// Plan A2 Plan-B: conditions_{day}.json -> conditions.json, optional like regions/details.
+const conditionsFile = (day = "2026-09-24") =>
+  JSON.stringify({ day, summary: "Ostatni większy deszcz: 21–22.09 (28.5 mm), 5 dni temu", days: [] });
 
-it("syncs a same-day flush file alongside scores and geometries", async () => {
+it("syncs a same-day conditions file alongside scores and geometries", async () => {
   const { source, target } = await fixture();
-  await writeFile(path.join(source, "flush_2026-09-24.json"), flushFile());
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile());
   const result = await syncData(source, target);
-  expect(result.flush).toBe(1);
-  expect(JSON.parse(await readFile(path.join(target, "flush.json"), "utf8")).summary).toContain("Fala");
+  expect(result.conditions).toBe(1);
+  expect(JSON.parse(await readFile(path.join(target, "conditions.json"), "utf8")).summary).toContain("deszcz");
 });
 
-it("rejects a same-day flush file from another day or malformed", async () => {
+it("rejects a same-day conditions file from another day or malformed", async () => {
   const { source, target } = await fixture();
-  await writeFile(path.join(source, "flush_2026-09-24.json"), flushFile("2026-09-23"));
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile("2026-09-23"));
   await expect(syncData(source, target)).rejects.toThrow();
-  await writeFile(path.join(source, "flush_2026-09-24.json"), "not json");
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), "not json");
   await expect(syncData(source, target)).rejects.toThrow();
 });
 
-it("removes a stale flush.json from a previous sync when the new day has none", async () => {
+it("removes a stale conditions.json from a previous sync when the new day has none", async () => {
   const { source, target } = await fixture();
-  await writeFile(path.join(source, "flush_2026-09-24.json"), flushFile());
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile());
   await syncData(source, target);
-  await rm(path.join(source, "flush_2026-09-24.json"));
+  await rm(path.join(source, "conditions_2026-09-24.json"));
   const result = await syncData(source, target);
-  expect(result.flush).toBe(0);
-  await expect(readFile(path.join(target, "flush.json"), "utf8")).rejects.toThrow();
+  expect(result.conditions).toBe(0);
+  await expect(readFile(path.join(target, "conditions.json"), "utf8")).rejects.toThrow();
 });
 ```
 
 ```python
 # tests/test_trip_archive.py (append)
-def test_resave_without_flush_removes_old_flush_snapshot(tmp_path):
+def test_resave_without_conditions_removes_old_conditions_snapshot(tmp_path):
     data, dest = tmp_path / "data", tmp_path / "trip"
     data.mkdir()
     for name in ["scores.json", "stands.geojson"]:
         (data / name).write_text("{}", encoding="utf-8")
     dest.mkdir()
-    (dest / "flush.json").write_text("old-flush", encoding="utf-8")
+    (dest / "conditions.json").write_text("old-conditions", encoding="utf-8")
     copied = copy_trip_files(data, dest)
-    assert "flush.json" not in copied
-    assert not (dest / "flush.json").exists()
+    assert "conditions.json" not in copied
+    assert not (dest / "conditions.json").exists()
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `cd frontend && npm test` and `.venv/Scripts/python.exe -m pytest tests/test_trip_archive.py -q -p no:cacheprovider`
-Expected: FAIL (no `flush` in result; old `flush.json` not removed).
+Expected: FAIL (no `conditions` in result; old `conditions.json` not removed).
 
 - [ ] **Step 3: Implement**
 
 `frontend/scripts/sync-data.mjs` — after the details block, before `await mkdir(target, ...)`:
 
 ```js
-  // Plan A2: flush_{day}.json is optional too (area flush timeline).
-  let flushRaw = null;
+  // Plan A2 Plan-B: conditions_{day}.json is optional too (fact-only rain + per-day F).
+  let conditionsRaw = null;
   try {
-    flushRaw = await readFile(path.join(source, `flush_${day}.json`), "utf8");
+    conditionsRaw = await readFile(path.join(source, `conditions_${day}.json`), "utf8");
   } catch {
-    flushRaw = null;
+    conditionsRaw = null;
   }
-  let flush = null;
-  if (flushRaw !== null) {
+  let conditions = null;
+  if (conditionsRaw !== null) {
     try {
-      flush = JSON.parse(flushRaw);
+      conditions = JSON.parse(conditionsRaw);
     } catch {
-      throw new Error(`Plik flush_${day}.json jest uszkodzony.`);
+      throw new Error(`Plik conditions_${day}.json jest uszkodzony.`);
     }
-    if (!flush || typeof flush !== "object" || flush.day !== day || !Array.isArray(flush.days))
-      throw new Error(`Niepoprawny format flush_${day}.json.`);
+    if (!conditions || typeof conditions !== "object" || conditions.day !== day || !Array.isArray(conditions.days))
+      throw new Error(`Niepoprawny format conditions_${day}.json.`);
   }
 ```
 
-then next to the details push: `if (flush !== null) { targets.push("flush.json"); allContents.push(flushRaw); }`, next to the details `rm`: `if (flush === null) await rm(path.join(target, "flush.json"), { force: true });`, and add `flush: flush === null ? 0 : 1,` to the returned object.
+then next to the details push: `if (conditions !== null) { targets.push("conditions.json"); allContents.push(conditionsRaw); }`, next to the details `rm`: `if (conditions === null) await rm(path.join(target, "conditions.json"), { force: true });`, and add `conditions: conditions === null ? 0 : 1,` to the returned object.
 
-`launcher/trip_archive.py`: `TRIP_FILES = ["scores.json", "stands.geojson", "regions.json", "details.json", "flush.json"]`.
+`launcher/trip_archive.py`: `TRIP_FILES = ["scores.json", "stands.geojson", "regions.json", "details.json", "conditions.json"]`.
 
 - [ ] **Step 4: Run to verify they pass**
 
@@ -987,43 +705,44 @@ Expected: all pass.
 
 ```bash
 git add frontend/scripts/sync-data.mjs frontend/scripts/sync-data.test.mjs launcher/trip_archive.py tests/test_trip_archive.py
-git commit -m "feat: sync and archive optional flush.json (plan A2 task 5)"
+git commit -m "feat: sync and archive optional conditions.json (plan A2 task 6, Plan-B)"
 ```
 
 ---
 
-## Task 6: Frontend — timeline in „Warunki”
+## Task 7: Frontend — timeline in „Warunki”
 
 **Files:**
 - Modify: `frontend/src/model.ts`, `frontend/src/model.test.ts`, `frontend/src/main.ts`, `frontend/src/style.css`
 
 **Interfaces:**
-- Produces: types `FlushDay`, `FlushWave`, `FlushTimeline`; `parseFlush(raw: unknown, day: string | undefined): FlushTimeline | null`; `dayLabel(dateIso: string, position: number): string`; `loadData()` result gains `flush: FlushTimeline | null`.
+- Produces: types `ConditionsDay`, `ConditionsRain`, `ConditionsTimeline`; `parseConditions(raw: unknown, day: string | undefined): ConditionsTimeline | null`; `dayLabel(dateIso: string, position: number): string`; `loadData()` result gains `conditions: ConditionsTimeline | null`.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-// frontend/src/model.test.ts (append; add parseFlush, dayLabel to the import from "./model")
-describe("flush timeline", () => {
-  const flush = (over: Record<string, unknown> = {}) => ({
+// frontend/src/model.test.ts (append; add parseConditions, dayLabel to the import from "./model")
+describe("conditions timeline", () => {
+  const conditions = (over: Record<string, unknown> = {}) => ({
     day: "2026-09-27",
     generated_for: "2026-09-27",
     horizon_days: 7,
-    summary: "Fala po deszczu 21–23.09: początek wysypu, szczyt ok. 1–3.10",
-    waves: [],
-    days: [{ date: "2026-09-27", index: 0.2, level: 1, forecast: false }],
+    pulse_min_mm: 15.0,
+    rains: [],
+    summary: "Ostatni większy deszcz: 21–22.09 (28.5 mm), 5 dni temu",
+    days: [{ date: "2026-09-27", F: 0.803, level: 3, forecast: false }],
     ...over,
   });
-  it("returns null when flush.json is absent", () => {
-    expect(parseFlush(undefined, "2026-09-27")).toBeNull();
+  it("returns null when conditions.json is absent", () => {
+    expect(parseConditions(undefined, "2026-09-27")).toBeNull();
   });
   it("accepts a valid same-day timeline", () => {
-    expect(parseFlush(flush(), "2026-09-27")?.summary).toContain("początek");
+    expect(parseConditions(conditions(), "2026-09-27")?.summary).toContain("deszcz");
   });
   it("rejects another day's timeline or malformed tiles", () => {
-    expect(() => parseFlush(flush(), "2026-09-26")).toThrow();
+    expect(() => parseConditions(conditions(), "2026-09-26")).toThrow();
     expect(() =>
-      parseFlush(flush({ days: [{ date: "2026-09-27", index: 0.2, level: 7, forecast: false }] }), "2026-09-27"),
+      parseConditions(conditions({ days: [{ date: "2026-09-27", F: 0.8, level: 7, forecast: false }] }), "2026-09-27"),
     ).toThrow();
   });
   it("labels today and Polish weekdays", () => {
@@ -1039,58 +758,51 @@ describe("flush timeline", () => {
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `cd frontend && npm test`
-Expected: FAIL — `parseFlush` / `dayLabel` not exported.
+Expected: FAIL — `parseConditions` / `dayLabel` not exported.
 
 - [ ] **Step 3: Implement**
 
 `frontend/src/model.ts` (near the other exported types/parsers):
 
 ```ts
-export type FlushDay = { date: string; index: number; level: 0 | 1 | 2 | 3; forecast: boolean };
-export type FlushWave = {
-  rain_start: string;
-  rain_end: string;
-  rain_mm: number;
-  phase: string;
-  phase_label: string;
-  peak_from: string | null;
-  peak_to: string | null;
-};
-export type FlushTimeline = {
+export type ConditionsDay = { date: string; F: number; level: 0 | 1 | 2 | 3; forecast: boolean };
+export type ConditionsRain = { start: string; end: string; rain_mm: number; days_ago: number };
+export type ConditionsTimeline = {
   day: string;
   generated_for: string;
   horizon_days: number;
+  pulse_min_mm: number;
+  rains: ConditionsRain[];
   summary: string;
-  waves: FlushWave[];
-  days: FlushDay[];
+  days: ConditionsDay[];
 };
 
-function isFlushDay(value: unknown): value is FlushDay {
+function isConditionsDay(value: unknown): value is ConditionsDay {
   const d = value as Record<string, unknown> | null;
   return (
     !!d &&
     typeof d.date === "string" &&
-    typeof d.index === "number" &&
-    Number.isFinite(d.index) &&
+    typeof d.F === "number" &&
+    Number.isFinite(d.F) &&
     [0, 1, 2, 3].includes(d.level as number) &&
     typeof d.forecast === "boolean"
   );
 }
 
-export function parseFlush(raw: unknown, day: string | undefined): FlushTimeline | null {
+export function parseConditions(raw: unknown, day: string | undefined): ConditionsTimeline | null {
   if (raw === undefined) return null;
-  const f = raw as Record<string, unknown> | null;
+  const c = raw as Record<string, unknown> | null;
   if (
-    !f ||
-    typeof f !== "object" ||
-    f.day !== day ||
-    typeof f.summary !== "string" ||
-    !Array.isArray(f.waves) ||
-    !Array.isArray(f.days) ||
-    !f.days.every(isFlushDay)
+    !c ||
+    typeof c !== "object" ||
+    c.day !== day ||
+    typeof c.summary !== "string" ||
+    !Array.isArray(c.rains) ||
+    !Array.isArray(c.days) ||
+    !c.days.every(isConditionsDay)
   )
-    throw new Error("Plik flush.json jest niepoprawny. Uruchom synchronizację danych.");
-  return f as unknown as FlushTimeline;
+    throw new Error("Plik conditions.json jest niepoprawny. Uruchom synchronizację danych.");
+  return c as unknown as ConditionsTimeline;
 }
 
 const WEEKDAYS = ["nd", "pn", "wt", "śr", "cz", "pt", "sb"];
@@ -1100,41 +812,41 @@ export function dayLabel(dateIso: string, position: number): string {
 }
 ```
 
-In `loadData`, after the details block, fetch `flush.json` with the same optional pattern (`flushResponse?.ok` → `response.json()`, parse error → `throw new Error("Plik flush.json jest niedostępny lub niepoprawny. Uruchom synchronizację danych.")`), then replace the final return with:
+In `loadData`, after the details block, fetch `conditions.json` with the same optional pattern (`conditionsResponse?.ok` → `response.json()`, parse error → `throw new Error("Plik conditions.json jest niedostępny lub niepoprawny. Uruchom synchronizację danych.")`), then replace the final return with:
 
 ```ts
   const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
-  return { ...parsed, flush: parseFlush(flushRaw, parsed.scores[0]?.day) };
+  return { ...parsed, conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day) };
 ```
 
-`frontend/src/main.ts`: add the `FlushTimeline` type and `dayLabel` to the existing import from `./model`; add
+`frontend/src/main.ts`: add the `ConditionsTimeline` type and `dayLabel` to the existing import from `./model`; add
 
 ```ts
-function conditionsHtml(median: number | null, flush: FlushTimeline | null): string {
+function conditionsHtml(median: number | null, conditions: ConditionsTimeline | null): string {
   const moisture = fruitingClass(median).toLocaleLowerCase("pl");
-  if (!flush)
+  if (!conditions)
     return `<span class="condition-symbol">${icon("leaf")}</span><div><strong>Warunki w obszarze: ${moisture}</strong><p>Ocena pogody z analizy · mediana dla wydzieleń przechodzących filtry</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
-  const tiles = flush.days
+  const tiles = conditions.days
     .map(
       (d, i) =>
-        `<li class="flush-day level-${d.level}${d.forecast ? " forecast" : ""}" title="${escape(formatDate(d.date))}: ${Math.round(d.index * 100)}/100"><span>${dayLabel(d.date, i)}</span><b aria-label="poziom ${d.level} z 3">${"●".repeat(d.level)}${"○".repeat(3 - d.level)}</b></li>`,
+        `<li class="conditions-day level-${d.level}${d.forecast ? " forecast" : ""}" title="${escape(formatDate(d.date))}: ${Math.round(d.F * 100)}/100"><span>${dayLabel(d.date, i)}</span><b aria-label="poziom ${d.level} z 3">${"●".repeat(d.level)}${"○".repeat(3 - d.level)}</b></li>`,
     )
     .join("");
-  return `<span class="condition-symbol">${icon("mushroom")}</span><div><strong>${escape(flush.summary)}</strong><p>Warunki wilgotności: ${moisture} · wysyp liczony od opadów z radaru i temperatur (także nocnych), kolejne dni z prognozy</p><ol class="flush-days" aria-label="Szansa na wysyp w kolejnych dniach">${tiles}</ol></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
+  return `<span class="condition-symbol">${icon("mushroom")}</span><div><strong>${escape(conditions.summary)}</strong><p>Warunki wilgotności: ${moisture} · prognoza F na kolejne dni z pogody (radar/model), bez przewidywania szczytu wysypu</p><ol class="conditions-days" aria-label="Warunki wzrostu w kolejnych dniach">${tiles}</ol></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
 }
 ```
 
-and replace the success-path `$("#conditions").innerHTML = ...` (currently ~line 615) with `$("#conditions").innerHTML = conditionsHtml(median, data.flush);`. (`escape`, `formatDate`, `icon`, `fruitingClass` already exist in `main.ts`.)
+and replace the success-path `$("#conditions").innerHTML = ...` (currently ~line 615) with `$("#conditions").innerHTML = conditionsHtml(median, data.conditions);`. (`escape`, `formatDate`, `icon`, `fruitingClass` already exist in `main.ts`.)
 
 `frontend/src/style.css` (append):
 
 ```css
-.flush-days { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 8px 0 0; padding: 0; }
-.flush-day { display: flex; flex-direction: column; align-items: center; min-width: 40px; padding: 4px 6px; border-radius: 8px; background: rgba(127, 127, 127, 0.08); font-size: 12px; }
-.flush-day b { font-weight: 400; letter-spacing: 1px; }
-.flush-day.level-2 { background: rgba(46, 125, 50, 0.12); }
-.flush-day.level-3 { background: rgba(46, 125, 50, 0.22); }
-.flush-day.forecast span { font-style: italic; }
+.conditions-days { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 8px 0 0; padding: 0; }
+.conditions-day { display: flex; flex-direction: column; align-items: center; min-width: 40px; padding: 4px 6px; border-radius: 8px; background: rgba(127, 127, 127, 0.08); font-size: 12px; }
+.conditions-day b { font-weight: 400; letter-spacing: 1px; }
+.conditions-day.level-2 { background: rgba(46, 125, 50, 0.12); }
+.conditions-day.level-3 { background: rgba(46, 125, 50, 0.22); }
+.conditions-day.forecast span { font-style: italic; }
 ```
 
 - [ ] **Step 4: Run to verify they pass**
@@ -1146,12 +858,12 @@ Expected: all green.
 
 ```bash
 git add frontend/src/model.ts frontend/src/model.test.ts frontend/src/main.ts frontend/src/style.css
-git commit -m "feat: flush timeline in the conditions bar (plan A2 task 6)"
+git commit -m "feat: conditions timeline in the conditions bar (plan A2 task 7, Plan-B)"
 ```
 
 ---
 
-## Task 7: Real run, visual check, docs, final verification
+## Task 8: Real run, visual check, docs, final verification
 
 **Files:**
 - Modify: `docs/CODEX-HANDOFF.md`, `frontend/README.md`
@@ -1163,16 +875,16 @@ git commit -m "feat: flush timeline in the conditions bar (plan A2 task 6)"
 cd frontend && npm run sync-data
 ```
 
-Expected: a `Wysyp: ...` line, `notebooks/output/flush_{today}.json` written, sync prints success and `public/data/flush.json` exists. Record the summary sentence and the 7 levels.
+Expected: a `Warunki: ...` line, `notebooks/output/conditions_{today}.json` written, sync prints success and `public/data/conditions.json` exists. Record the summary sentence and the 7 F/level values.
 
 - [ ] **Step 2: Visual check**
 
-`npm run dev` in `frontend/`, open the page, check: summary sentence in the „Warunki” bar, 7 tiles (first "dziś", weekday labels, dots), no layout break on a narrow window (~375 px). If the browser tool cannot reach localhost (seen before, note (21)), say so in the handoff and rely on `vite build` + tests.
+`npm run dev` in `frontend/`, open the page, check: fact-only rain sentence in the „Warunki” bar (no phase/peak language), 7 tiles (first "dziś", weekday labels, dots reflecting `fruiting_classes` level), no layout break on a narrow window (~375 px). If the browser tool cannot reach localhost (seen before, note (21)), say so in the handoff and rely on `vite build` + tests.
 
 - [ ] **Step 3: Docs**
 
-`frontend/README.md`: one paragraph "Oś wysypu" — what the tiles mean (poziom 0–3 szansy na wysyp z modelu fazy fali, nie prawdopodobieństwo zbioru), that the first day is today, later days use the temperature forecast, and that `flush.json` is optional.
-`docs/CODEX-HANDOFF.md`: new top note "(27): A2 — model fazy wysypu" — model, calibrated parameters and the GBIF table (held-out mean vs baseline, p, per-year chosen params), field-check lines for 20.09/26.09/today, real-run summary, test counts, open items (per-region timelines — E1; soil-water state as a pulse condition; B pressure from forest tracks still pending).
+`frontend/README.md`: one paragraph "Warunki na kolejne dni" — what the tiles mean (poziom 0–3 = klasa F z `fruiting_classes`, nie model fazy wysypu), that the first day is today, later days use the temperature/rain forecast, that the sentence only reports facts about the last rain(s) (no peak prediction), and that `conditions.json` is optional.
+`docs/CODEX-HANDOFF.md`: new top note "(27): A2 -- flush model failed its GBIF ship gate; Plan-B shipped instead" -- the original model (pulse -> thermal clock -> Gaussian), the E3 gate numbers, the two diagnostics and why the apparent signal was a season confound, what Plan-B ships (per-day F + fact-only rain summary), real-run summary/sentence, test counts, open items (per-region timelines -- E1; a possible revisit of the pulse model with a moisture-state precondition, if ever revisited; B pressure from forest tracks still pending).
 
 - [ ] **Step 4: Final verification**
 
@@ -1188,5 +900,5 @@ Expected: all green; put exact counts in the handoff note.
 
 ```bash
 git add docs/CODEX-HANDOFF.md frontend/README.md
-git commit -m "docs: record A2 flush model, calibration and real-run results"
+git commit -m "docs: record A2 Plan-B (flush model failed gate, per-day F + fact rain summary shipped instead)"
 ```
