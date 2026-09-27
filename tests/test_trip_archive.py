@@ -264,3 +264,15 @@ def test_slugify_truncates_very_long_names(tmp_path):
     long_name = "a" * 300
     slug = slugify(long_name)
     assert len(slug) <= 60
+
+
+def test_resave_without_conditions_removes_old_conditions_snapshot(tmp_path):
+    data, dest = tmp_path / "data", tmp_path / "trip"
+    data.mkdir()
+    for name in ["scores.json", "stands.geojson"]:
+        (data / name).write_text("{}", encoding="utf-8")
+    dest.mkdir()
+    (dest / "conditions.json").write_text("old-conditions", encoding="utf-8")
+    copied = copy_trip_files(data, dest)
+    assert "conditions.json" not in copied
+    assert not (dest / "conditions.json").exists()

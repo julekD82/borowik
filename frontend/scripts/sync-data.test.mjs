@@ -34,6 +34,7 @@ it("copies one complete same-day bundle", async () => {
     stands: 1,
     regions: 0,
     details: 0,
+    conditions: 0,
   });
   expect(
     JSON.parse(await readFile(path.join(target, "scores.json"), "utf8"))[0]
@@ -158,4 +159,34 @@ it("removes a stale details.json from a previous sync when the new day has none"
   await expect(
     readFile(path.join(target, "details.json"), "utf8"),
   ).rejects.toThrow();
+});
+
+// Plan A2 Plan-B: conditions_{day}.json -> conditions.json, optional like regions/details.
+const conditionsFile = (day = "2026-09-24") =>
+  JSON.stringify({ day, summary: "Ostatni większy deszcz: 21–22.09 (28.5 mm), 5 dni temu", days: [] });
+
+it("syncs a same-day conditions file alongside scores and geometries", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile());
+  const result = await syncData(source, target);
+  expect(result.conditions).toBe(1);
+  expect(JSON.parse(await readFile(path.join(target, "conditions.json"), "utf8")).summary).toContain("deszcz");
+});
+
+it("rejects a same-day conditions file from another day or malformed", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile("2026-09-23"));
+  await expect(syncData(source, target)).rejects.toThrow();
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), "not json");
+  await expect(syncData(source, target)).rejects.toThrow();
+});
+
+it("removes a stale conditions.json from a previous sync when the new day has none", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile());
+  await syncData(source, target);
+  await rm(path.join(source, "conditions_2026-09-24.json"));
+  const result = await syncData(source, target);
+  expect(result.conditions).toBe(0);
+  await expect(readFile(path.join(target, "conditions.json"), "utf8")).rejects.toThrow();
 });

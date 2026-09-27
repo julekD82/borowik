@@ -119,6 +119,24 @@ export async function syncData(source, target) {
     }
   }
 
+  // Plan A2 Plan-B: conditions_{day}.json is optional too (fact-only rain + per-day F).
+  let conditionsRaw = null;
+  try {
+    conditionsRaw = await readFile(path.join(source, `conditions_${day}.json`), "utf8");
+  } catch {
+    conditionsRaw = null;
+  }
+  let conditions = null;
+  if (conditionsRaw !== null) {
+    try {
+      conditions = JSON.parse(conditionsRaw);
+    } catch {
+      throw new Error(`Plik conditions_${day}.json jest uszkodzony.`);
+    }
+    if (!conditions || typeof conditions !== "object" || conditions.day !== day || !Array.isArray(conditions.days))
+      throw new Error(`Niepoprawny format conditions_${day}.json.`);
+  }
+
   await mkdir(target, { recursive: true });
   const targets = ["scores.json", "stands.geojson"];
   const allContents = [...contents];
@@ -129,6 +147,10 @@ export async function syncData(source, target) {
   if (details !== null) {
     targets.push("details.json");
     allContents.push(detailsRaw);
+  }
+  if (conditions !== null) {
+    targets.push("conditions.json");
+    allContents.push(conditionsRaw);
   }
   // Validate the entire bundle before replacing any existing public file.
   for (let i = 0; i < targets.length; i++)
@@ -146,11 +168,14 @@ export async function syncData(source, target) {
     await rm(path.join(target, "regions.json"), { force: true });
   if (details === null)
     await rm(path.join(target, "details.json"), { force: true });
+  if (conditions === null)
+    await rm(path.join(target, "conditions.json"), { force: true });
   return {
     day,
     stands: scores.length,
     regions: regions?.length ?? 0,
     details: details?.length ?? 0,
+    conditions: conditions === null ? 0 : 1,
   };
 }
 
