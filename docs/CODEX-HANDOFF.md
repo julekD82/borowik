@@ -1,5 +1,7 @@
 # Notatki przekazania dla Claude Code
 
+**Następna sesja (od 2026-09-27):** wykonać `docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md` (A2 — model fazy wysypu, oś 7 dni w pasku „Warunki”), zaczynając od Task 0 (potwierdzenie E1–E4). Decyzje użytkownika: osobny wskaźnik (R bez zmian), jedna oś dla obszaru w `#conditions`, horyzont 7 dni; projekt modelu zaakceptowany. Twarda bramka E3 w Task 3: bez przewagi nad obecnym F w backteście GBIF — stop i pytanie. **Tryb wykonania wybrany przez użytkownika: Native** (`superpowers:executing-plans`).
+
 ## 2026-09-27 — aktualne (26): dwa błędy w M znalezione po A1 — percentyle per komórka klimatologii + wilgotność gleby z innego modelu
 
 Porównanie eksportów 26.09 (Open-Meteo) / 27.09 (radar) i dodatkowy bieg `--no-radar` z 27.09 (katalog roboczy, poza repo) pokazały, że M miało tylko ~9 różnych wartości na 3656 wydzieleń mimo 71 używanych punktów pogodowych.
