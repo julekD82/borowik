@@ -296,6 +296,12 @@ export type StandDetail = {
   // frontend/public/data/details.json failed to load without this.
   veg_cover?: string | null;
   standdensity_index?: number | null;
+  // Plan 1.6.5: short practical note built from podszyt/podrost presence +
+  // DRZEW zwarcie (pipeline.searchability) -- presentation only, same
+  // optional-field caveat as veg_cover/standdensity_index above (a
+  // details_{day}.json written before this field existed has no key for
+  // it at all).
+  searchability_hint?: string | null;
 };
 
 export type Region = {
@@ -499,7 +505,8 @@ export function parseData(
           nullableString(d.stand_stru) &&
           nullableString(d.prot_categ) &&
           (d.veg_cover === undefined || nullableString(d.veg_cover)) &&
-          (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)),
+          (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)) &&
+          (d.searchability_hint === undefined || nullableString(d.searchability_hint)),
       )
     )
       throw new Error("Niepoprawny plik szczegółów wydzieleń.");

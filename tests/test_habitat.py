@@ -3,7 +3,7 @@ import pytest
 
 from pipeline.habitat import (
     load_profile, host_affinity, score_host, score_host_composition,
-    score_site, score_age, compute_habitat, passes_mask,
+    score_site, score_age, compute_habitat, passes_mask, blend_host_with_lower_storeys,
 )
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
@@ -104,6 +104,46 @@ def test_score_host_composition_empty_list():
     s_host, unknown = score_host_composition([], PROFILE)
     assert s_host == 0.0
     assert unknown == 0
+
+
+# --- Plan 1.6.3: S_host blended with lower-storey composition -----------
+
+def test_blend_host_with_lower_storeys_zero_weight_is_a_no_op():
+    s_host, unknown = blend_host_with_lower_storeys(0.8, [("BRZ", 1.0)], 0.0, PROFILE)
+    assert s_host == pytest.approx(0.8)
+    assert unknown == 0
+
+
+def test_blend_host_with_lower_storeys_no_lower_composition_falls_back_to_drzew():
+    # Plan text: "gdy brak nizszych pieter -- S_host_nizsze = S_host_drzew",
+    # so the blend is a no-op at ANY weight when species_lower is empty.
+    s_host, unknown = blend_host_with_lower_storeys(0.8, [], 0.5, PROFILE)
+    assert s_host == pytest.approx(0.8)
+    assert unknown == 0
+
+
+def test_blend_host_with_lower_storeys_normalizes_shares_not_summing_to_one():
+    # Pooled PODSZ (SO 0.6) + PRZES (BK 0.6) sums to 1.2 -- S_host_nizsze is
+    # the SHARE-WEIGHTED AVERAGE affinity (1.2*... / 1.2), not the raw
+    # weighted sum, so it stays a comparable 0-1 score like S_host_drzew.
+    s_host_lower_expected = (0.6 * 1.0 + 0.6 * 0.9) / 1.2  # SO=1.0, BK=0.9
+    s_host, unknown = blend_host_with_lower_storeys(
+        0.5, [("SO", 0.6), ("BK", 0.6)], 1.0, PROFILE,
+    )
+    assert s_host == pytest.approx(s_host_lower_expected)
+    assert unknown == 0
+
+
+def test_blend_host_with_lower_storeys_blends_at_intermediate_weight():
+    s_host_lower = 1.0  # pure SO understory
+    s_host, unknown = blend_host_with_lower_storeys(0.4, [("SO", 1.0)], 0.25, PROFILE)
+    assert s_host == pytest.approx((1 - 0.25) * 0.4 + 0.25 * s_host_lower)
+    assert unknown == 0
+
+
+def test_blend_host_with_lower_storeys_counts_unknown_species():
+    _, unknown = blend_host_with_lower_storeys(0.5, [("ZZZ", 1.0)], 0.5, PROFILE)
+    assert unknown == 1
 
 
 def test_compute_habitat_uses_s_host_override_when_given():

@@ -16,6 +16,7 @@ from pipeline.prepare_trip import (
     rain_episode_radar_coverage,
 )
 from pipeline.bdl_dictionaries import load_dictionaries
+from pipeline.bdl_extra_features import load_extra_features, ExtraStandFeatures
 from pipeline.bdl_package_details import load_package_details
 from pipeline.neighbors import find_neighbor_labels
 from pipeline.export import write_details_json
@@ -278,6 +279,38 @@ def test_tie_break_step_does_not_change_r_or_h(tmp_path):
     assert enriched["tie_break"].tolist() == [0.5, 0.5]  # neutral -- no package data
 
 
+def test_extra_features_step_does_not_change_r_or_h(tmp_path):
+    # Plan 1.6.4 acceptance ("R niezmienione przez 1.6.4 i 1.6.5"): attaching
+    # the diagnostics-only BDL features (pipeline.bdl_extra_features) must
+    # have zero effect on R_final/H, same pattern as the B3/tie_break
+    # regression tests above.
+    enriched = _enriched_for_b3_regression()
+    r_before = enriched["R_final"].copy()
+    h_before = enriched["H"].copy()
+
+    empty_packages_dir = tmp_path / "bdl_packages"  # no packages cached -- the common case
+    extra_features_index = load_extra_features(empty_packages_dir)
+    empty_extra = ExtraStandFeatures(
+        veg_cover_cd=None, site_class_cd=None, density_cd=None, soil_subtype_cd=None,
+        degradation_cd=None, stand_struct_cd=None, podszyt_species=[], podrost_species=[],
+        zabiegi_planowane=[], rok_wskazan=None, dist_do_granicy_oddzialu_m=None,
+        dlugosc_granicy_z_oddzialem_m=None, source_name=None, package_date=None,
+    )
+    for field_name in (
+        "veg_cover_cd", "site_class_cd", "density_cd", "soil_subtype_cd", "degradation_cd",
+        "stand_struct_cd", "podszyt_species", "podrost_species", "zabiegi_planowane",
+        "rok_wskazan", "dist_do_granicy_oddzialu_m", "dlugosc_granicy_z_oddzialem_m",
+    ):
+        enriched[field_name] = [
+            getattr(extra_features_index.get(adr_for, empty_extra), field_name)
+            for adr_for in enriched["adr_for"]
+        ]
+
+    pd.testing.assert_series_equal(enriched["R_final"], r_before)
+    pd.testing.assert_series_equal(enriched["H"], h_before)
+    assert enriched["veg_cover_cd"].tolist() == [None, None]  # neutral -- no package data
+
+
 def test_parse_args_no_radar_flag():
     import pipeline.prepare_trip as trip
     assert trip.parse_args(["--lat", "50.0", "--lon", "21.0"]).no_radar is False
@@ -427,7 +460,11 @@ def test_build_manifest_has_every_field_the_spec_lists(tmp_path):
     # Count fields (spec: total/mask/package/wfs/unknown-code stands).
     for field in ("stand_count", "mask_passing_count", "region_count", "package_stand_count",
                   "wfs_stand_count", "unknown_site_count", "unknown_species_count",
-                  "incomplete_composition_count"):
+                  "incomplete_composition_count",
+                  # Plan 1.6.2
+                  "age_update_enabled", "age_update_missing_year_count",
+                  # Plan 1.6.3
+                  "host_lower_storeys_weight"):
         assert field in manifest["counts"], f"missing counts.{field}"
     assert manifest["counts"]["wfs_stand_count"] == 100 - 40
     assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is False

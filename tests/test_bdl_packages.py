@@ -54,6 +54,36 @@ def test_load_packages_joins_by_adr_for_and_sums_numeric_shares(tmp_path):
     assert comp.source_name == "PKG_ONE"
 
 
+def test_load_packages_captures_lower_storey_species_separately_from_drzew(tmp_path):
+    # Plan 1.6.3: species_lower pools numeric-share rows from every storey
+    # OTHER than DRZEW (PODSZ/PODR/PRZES/... -- "nizsze pietra"), kept apart
+    # from `species` (DRZEW only, unaffected by 1.6.3).
+    _write_package(
+        tmp_path / "PKG_LOWER",
+        [{"a_i_num": "3003", "adr_for": "BB-22"}],
+        _SPECIES_HEADER +
+        "3003\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n"
+        "3003\t2026\tPODSZ\t1\tBRZ\t20\t6\t\t\t\t\n"
+        "3003\t2026\tPRZES\t1\tDB\t80\t4\t\t\t\t\n"
+        # trace codes excluded here too, same rule as DRZEW.
+        "3003\t2026\tPODR\t1\tBK\t10\tMJS\t\t\t\t\n",
+    )
+    index = load_packages(tmp_path)
+    comp = index["BB-22"]
+    assert comp.species == [("SO", 1.0)]
+    assert sorted(comp.species_lower) == [("BRZ", 0.6), ("DB", 0.4)]
+
+
+def test_load_packages_lower_storey_species_empty_when_only_drzew_present(tmp_path):
+    _write_package(
+        tmp_path / "PKG_NOLOWER",
+        [{"a_i_num": "4004", "adr_for": "CC-33"}],
+        _SPECIES_HEADER + "4004\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n",
+    )
+    comp = load_packages(tmp_path)["CC-33"]
+    assert comp.species_lower == []
+
+
 def test_load_packages_excludes_mjs_and_pjd_trace_rows(tmp_path):
     # f_part_dic: MJS = "below 5%, in patches", PJD = "below 5%, single
     # trees" -- neither is a quantified share and both must be excluded,

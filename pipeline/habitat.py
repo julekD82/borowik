@@ -51,6 +51,36 @@ def score_host_composition(composition: list[tuple[str, float]], profile: dict) 
     return total, unknown
 
 
+def blend_host_with_lower_storeys(
+    s_host_drzew: float, species_lower: list[tuple[str, float]], weight: float, profile: dict,
+) -> tuple[float, int]:
+    """Plan 1.6.3: `S_host = (1-w)*S_host_drzew + w*S_host_nizsze`, where
+    `S_host_nizsze` is the share-weighted-average affinity over
+    `species_lower` (pooled PODSZ/PODR/PRZES/... rows, see
+    pipeline.bdl_packages.PackageComposition.species_lower).
+
+    Unlike DRZEW's own shares (guaranteed to sum to ~1 by construction, see
+    pipeline.bdl_packages module docstring), pooled shares across several
+    lower storeys can sum above or below 1 (e.g. PODSZ and PRZES both
+    present) -- dividing by their actual total keeps S_host_nizsze a
+    comparable 0-1 score instead of double-counting stands with more than
+    one lower storey.
+
+    `weight <= 0` or an empty `species_lower` (no lower storey at all) is a
+    no-op: returns `s_host_drzew` unchanged, `unknown=0` -- matches the
+    plan's explicit fallback ("gdy brak nizszych pieter -- S_host_nizsze =
+    S_host_drzew") and keeps the pre-1.6.3 default (`weight=0`) byte-for-
+    byte unchanged."""
+    if weight <= 0 or not species_lower:
+        return s_host_drzew, 0
+    total_share = sum(share for _, share in species_lower)
+    if total_share <= 0:
+        return s_host_drzew, 0
+    weighted_sum, unknown = score_host_composition(species_lower, profile)
+    s_host_lower = weighted_sum / total_share
+    return (1 - weight) * s_host_drzew + weight * s_host_lower, unknown
+
+
 def score_site(site_type: str, profile: dict) -> tuple[float, int]:
     entry = profile["site_scores"].get(site_type)
     if entry is None:

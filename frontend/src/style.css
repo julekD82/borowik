@@ -927,6 +927,15 @@ select {
   line-height: 1.8;
   color: #8b947f;
 }
+.searchability-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #5c6b4a;
+  background: #eef2e6;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 0 0 12px;
+}
 .stand-panel h3 {
   font-size: 14px;
   font-weight: 600;

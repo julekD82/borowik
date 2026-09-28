@@ -389,6 +389,31 @@ describe("data and classification", () => {
       ]),
     ).toThrow();
   });
+  it("parseData accepts a details entry from an older export missing searchability_hint (plan 1.6.5)", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    const older = detail("A") as Partial<StandDetail>;
+    delete older.searchability_hint;
+    const result = parseData(scores, stands, undefined, [older]);
+    expect(result.details[0].searchability_hint).toBeUndefined();
+  });
+  it("parseData round-trips searchability_hint, null included", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    const withHint = detail("A", { searchability_hint: "Obecny podszyt — może utrudniać poruszanie się." });
+    const result = parseData(scores, stands, undefined, [withHint]);
+    expect(result.details[0].searchability_hint).toBe("Obecny podszyt — może utrudniać poruszanie się.");
+
+    const withoutHint = detail("B", { searchability_hint: null });
+    const result2 = parseData(scores, stands, undefined, [withoutHint]);
+    expect(result2.details[0].searchability_hint).toBeNull();
+  });
+  it("parseData rejects a malformed searchability_hint", () => {
+    const scores = [score("A", 40), score("B", 30)];
+    expect(() =>
+      parseData(scores, stands, undefined, [
+        { ...detail("A"), searchability_hint: 42 },
+      ]),
+    ).toThrow();
+  });
   it("parseData accepts scores without area_ha (older exports) and validates it when present", () => {
     const scores = [score("A", 40), score("B", 30)];
     expect(parseData(scores, stands).scores[0].area_ha).toBeUndefined();

@@ -585,3 +585,135 @@ def test_run_poc_stand_precip_daily_none_reproduces_pre_1_5_behaviour():
     )
     assert baseline["R"].tolist() == pytest.approx(explicit_none["R"].tolist())
     assert explicit_none.attrs["diagnostics"]["stand_precip_used_count"] == 0
+
+
+# --- Plan 1.6.2: age shifted to the analysis year -----------------------
+
+def fake_bdl_fetcher_young_stand_old_description(layer, bbox):
+    # A-1 was 9 years old (below age_breakpoints.mask_below=12) as of its
+    # 2020 description -- by target_date 2026 it should be 15, old enough to
+    # pass the mask, IF the correction is wired end-to-end (not just unit-
+    # tested on pipeline.age_update.update_age in isolation).
+    return gpd.GeoDataFrame({
+        "adr_for": ["A-1", "A-2"],
+        "a_year": [2020, 2026],
+        "area_type": ["D-STAN", "D-STAN"],
+        "site_type": ["BMSW", "BS"],
+        "species_cd": ["SO", "SO"],
+        "part_cd": [10, 10],
+        "spec_age": [9, 60],
+        "geometry": [box(380100, 486100, 380200, 486200), box(380300, 486300, 380400, 486400)],
+    }, crs="EPSG:2180")
+
+
+def test_run_poc_age_correction_lets_a_now_older_stand_pass_the_mask():
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher_young_stand_old_description,
+        weather_fetcher=fake_weather_fetcher, climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0, past_days=30, target_date=date(2026, 1, 20),
+    )
+    by_id = result.set_index("stand_id")
+    assert by_id.loc["A-1@2020", "mask"] is bool(True) or by_id.loc["A-1@2020", "mask"] == True  # noqa: E712
+    assert by_id.loc["A-1@2020", "S_age"] is not None
+    assert by_id.loc["A-1@2020", "age_update_status"] == "skorygowano"
+    assert result.attrs["diagnostics"]["age_update_enabled"] is True
+    assert result.attrs["diagnostics"]["age_update_missing_year_count"] == 0
+
+
+def test_run_poc_age_correction_disabled_reproduces_pre_1_6_2_behaviour():
+    profile_disabled = {**PROFILE, "age": {"update_to_analysis_year": False}}
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=profile_disabled,
+        bdl_fetcher=fake_bdl_fetcher_young_stand_old_description,
+        weather_fetcher=fake_weather_fetcher, climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0, past_days=30, target_date=date(2026, 1, 20),
+    )
+    by_id = result.set_index("stand_id")
+    assert by_id.loc["A-1@2020", "mask"] == False  # noqa: E712 -- still 9 years old, uncorrected
+    assert by_id.loc["A-1@2020", "age_update_status"] == "wylaczona"
+    assert result.attrs["diagnostics"]["age_update_enabled"] is False
+
+
+def fake_bdl_fetcher_missing_a_year(layer, bbox):
+    return gpd.GeoDataFrame({
+        "adr_for": ["A-1", "A-2"],
+        "a_year": [float("nan"), 2026],
+        "area_type": ["D-STAN", "D-STAN"],
+        "site_type": ["BMSW", "BS"],
+        "species_cd": ["SO", "SO"],
+        "part_cd": [10, 10],
+        "spec_age": [60, 60],
+        "geometry": [box(380100, 486100, 380200, 486200), box(380300, 486300, 380400, 486400)],
+    }, crs="EPSG:2180")
+
+
+def test_run_poc_missing_a_year_is_flagged_and_not_crashed():
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher_missing_a_year,
+        weather_fetcher=fake_weather_fetcher, climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0, past_days=30, target_date=date(2026, 1, 20),
+    )
+    row_a1 = result[result["adr_for"] == "A-1"].iloc[0]
+    assert row_a1["age_update_status"] == "brak_roku_stanu"
+    row_a2 = result[result["adr_for"] == "A-2"].iloc[0]
+    assert row_a2["age_update_status"] == "skorygowano"
+    assert result.attrs["diagnostics"]["age_update_missing_year_count"] == 1
+
+
+# --- Plan 1.6.3: S_host blended with lower-storey composition -----------
+
+def test_run_poc_default_weight_leaves_s_host_drzew_only():
+    package_index = {
+        "A-1": PackageComposition(
+            species=[("SO", 0.6), ("BK", 0.4)], species_lower=[("BRZ", 1.0)],
+            source_name="PKG", package_date=None,
+        ),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    expected_drzew_only, _ = score_host_composition([("SO", 0.6), ("BK", 0.4)], PROFILE)
+    assert a1["S_host"] == pytest.approx(expected_drzew_only)
+    assert result.attrs["diagnostics"]["host_lower_storeys_weight"] == pytest.approx(0.0)
+
+
+def test_run_poc_nonzero_weight_blends_lower_storey_composition():
+    profile_weighted = {**PROFILE, "host": {"lower_storeys_weight": 0.5}}
+    package_index = {
+        # DRZEW pure SO (affinity 1.0); lower storey pure OL (affinity 0.0)
+        # -- blend at w=0.5 should land exactly halfway.
+        "A-1": PackageComposition(
+            species=[("SO", 1.0)], species_lower=[("OL", 1.0)],
+            source_name="PKG", package_date=None,
+        ),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=profile_weighted,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    assert a1["S_host"] == pytest.approx(0.5)
+    assert result.attrs["diagnostics"]["host_lower_storeys_weight"] == pytest.approx(0.5)
+
+
+def test_run_poc_nonzero_weight_falls_back_when_no_lower_storey_present():
+    profile_weighted = {**PROFILE, "host": {"lower_storeys_weight": 0.5}}
+    package_index = {
+        "A-1": PackageComposition(species=[("SO", 1.0)], species_lower=[], source_name="PKG", package_date=None),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=profile_weighted,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    assert a1["S_host"] == pytest.approx(1.0)  # unchanged: no species_lower to blend with
