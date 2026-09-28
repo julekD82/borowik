@@ -17,6 +17,7 @@ from pyproj import Transformer
 
 from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
+from pipeline.bdl_extra_features import load_extra_features, ExtraStandFeatures
 from pipeline.bdl_package_details import load_package_details
 from pipeline.bdl_packages import load_packages, coverage_report
 from pipeline.conditions_timeline import build_conditions_timeline
@@ -675,6 +676,33 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         row["adr_for"]: find_neighbor_labels(row, context_stands, dictionaries)
         for _, row in enriched.iterrows()
     }
+
+    # Plan 1.6.4: diagnostics-only BDL package features (bonitacja gatunku
+    # panujacego, stan/wariant siedliska, budowa pionowa, podszyt/podrost,
+    # zabiegi planowane, granica oddzialu) -- attached as columns on
+    # `enriched` so write_diagnostics' existing row -> DIAGNOSTICS_FIELDS
+    # pattern picks them up unchanged. A stand without package coverage
+    # gets None/[] for every field (pipeline.bdl_extra_features' own "no
+    # package data never breaks the run" guarantee) -- never read by
+    # anything that feeds H/F/R (structural, same as pipeline.tie_break/
+    # pipeline.bdl_package_details).
+    print("Doliczanie cech diagnostycznych 1.6.4 (BDL)...")
+    extra_features_index = load_extra_features(bdl_packages_dir)
+    _EMPTY_EXTRA = ExtraStandFeatures(
+        veg_cover_cd=None, site_class_cd=None, density_cd=None, soil_subtype_cd=None,
+        degradation_cd=None, stand_struct_cd=None, podszyt_species=[], podrost_species=[],
+        zabiegi_planowane=[], rok_wskazan=None, dist_do_granicy_oddzialu_m=None,
+        dlugosc_granicy_z_oddzialem_m=None, source_name=None, package_date=None,
+    )
+    for field_name in (
+        "veg_cover_cd", "site_class_cd", "density_cd", "soil_subtype_cd", "degradation_cd",
+        "stand_struct_cd", "podszyt_species", "podrost_species", "zabiegi_planowane",
+        "rok_wskazan", "dist_do_granicy_oddzialu_m", "dlugosc_granicy_z_oddzialem_m",
+    ):
+        enriched[field_name] = [
+            getattr(extra_features_index.get(adr_for, _EMPTY_EXTRA), field_name)
+            for adr_for in enriched["adr_for"]
+        ]
 
     out_dir = pathlib.Path(out_dir)
     scores_path = write_scores_json(enriched, day=day, out_path=out_dir / f"scores_{day}.json")

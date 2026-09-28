@@ -10,7 +10,7 @@ Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/PLAN_WDROZENIA.
 | 1.6.1 Inwentaryzacja paczek | DONE | `docs/BDL_slownik_pol.md` |
 | 1.6.2 Aktualizacja wieku (korekta, za flagą) | DONE | `pipeline/age_update.py`, wpięte w `pipeline/orchestrate.py` |
 | 1.6.3 Skład z niższych pięter (korekta, za flagą) | DONE | `host.lower_storeys_weight`, domyślnie 0 |
-| 1.6.4 Cechy do diagnostyki (bez wagi w R) | w toku | |
+| 1.6.4 Cechy do diagnostyki (bez wagi w R) | DONE | `pipeline/bdl_extra_features.py`, `pipeline/compartment_boundary.py` |
 | 1.6.5 Łatwość szukania w karcie | w toku | |
 | 1.6.6 Przebieg i raport | w toku | |
 
@@ -74,7 +74,67 @@ no-op przy braku danych, normalizacja sumy != 1, blend przy w pośrednim,
 zliczanie nieznanych gatunków) + `tests/test_orchestrate.py` (integracja
 end-to-end przez `run_poc`).
 
+## 1.6.4 Cechy do diagnostyki
+
+Nowe moduły, oba czytane WYŁĄCZNIE przez `pipeline/prepare_trip.py`
+(nigdy przez `orchestrate`/`habitat`/`scoring`/`mvp` -- ta sama strukturalna
+gwarancja co `pipeline.tie_break`/`pipeline.bdl_package_details`):
+
+- `pipeline/compartment_boundary.py::compartment_boundary_features` --
+  odległość centroidu wydzielenia od granicy oddziału (`G_COMPARTMENT`) i
+  długość części granicy wydzielenia leżącej na granicy oddziału. Join
+  wydzielenie→oddział po prefiksie `adr_for` (pierwsze 5 segmentów rozdzielonych
+  `-`), zweryfikowany bajt-w-bajt na realnej paczce Kędzierzyn (3301/3301
+  wydzieleń D-STAN trafiło do jakiegoś oddziału) -- szybszy i pewniejszy niż
+  join przestrzenny.
+- `pipeline/bdl_extra_features.py::load_extra_features` -- pola z
+  `docs/BDL_slownik_pol.md` z ≥ 50% wypełnienia: `veg_cover_cd`,
+  `site_class_cd` (bonitacja gat. panującego, z wiersza `sp_rank_order_act=1`
+  warstwy `DRZEW`), `density_cd` (zwarcie `DRZEW`), `soil_subtype_cd`,
+  `degradation_cd` (stan siedliska), `stand_struct_cd` (budowa pionowa),
+  `podszyt_species`/`podrost_species` (gatunki, bez zagęszczenia -- 0%
+  wypełnienia, patrz słownik), `zabiegi_planowane` + `rok_wskazan` (z
+  `f_arod_cue`, jawnie tylko planowane, bez dokładnej daty), plus granica
+  oddziału z modułu wyżej. Zweryfikowane na wszystkich 9 realnych paczkach
+  (56197 wydzieleń, bez błędów, ~40 s).
+
+Cechy dopięte jako kolumny na `enriched` w `pipeline/prepare_trip.py` (po
+`enrich_with_mvp_layers`, przed eksportem) i trafiają do
+`diagnostics_{day}.json` (`pipeline/export.py::DIAGNOSTICS_FIELDS`); żadna
+nie trafia do `scores_{day}.json` ani nie ma wagi w R.
+
+Testy: `tests/test_compartment_boundary.py` (geometria syntetyczna: styk
+granicy, wnętrze, brak dopasowanego oddziału, pusta warstwa) +
+`tests/test_bdl_extra_features.py` (syntetyczna paczka: pola skalarne,
+bonitacja z gatunku panującego, zwarcie, podszyt/podrost osobno, zabiegi
+planowane, granica oddziału z warstwą i bez) +
+`tests/test_prepare_trip.py::test_extra_features_step_does_not_change_r_or_h`
+(regresja R/H, ten sam wzorzec co testy B3/tie_break) +
+`tests/test_export.py` (pola w `DIAGNOSTICS_FIELDS`).
+
+## 1.6.5 Łatwość szukania w karcie
+
+Zaplanowane po 1.6.6 (frontend), patrz status w tabeli wyżej.
+
 ## Rulingi (decyzje bez pytania właściciela, zgodnie z zasadą 0.8)
+
+- **1.6.4 pola pominięte:** `plant_comm_cd` (zbiorowisko roślinne),
+  `tree_stock_cd` (zadrzewienie) i zagęszczenie warstw `PODSZ`/`PODR` NIE
+  weszły do eksportu mimo że plan je wymienia wprost -- wszystkie ~0%
+  wypełnienia w 9 sprawdzonych paczkach (`docs/BDL_slownik_pol.md`), a plan
+  1.6.1 każe oznaczać pola poniżej 50% jako niezdatne. Koszt błędu: gdyby
+  inne nadleśnictwo miało te pola wypełnione, funkcja i tak zwróciłaby dla
+  niego `None` (brak parsowania) -- do rozszerzenia, jeśli 1.6.1 dla innego
+  RDLP pokaże inny wynik.
+- **1.6.4 "zabiegi z datami":** paczka nie ma dokładnej daty zabiegu, tylko
+  rok całej paczki (`rok_wskazan`). Zapisane wprost jako ograniczenie
+  (`docs/BDL_slownik_pol.md`), zamiast pomijać pole milczeniem lub zmyślać
+  precyzję, której dane nie mają.
+- **1.6.4 join z granicą oddziału po prefiksie `adr_for`, nie przestrzenny:**
+  szybszy, deterministyczny, zweryfikowany na realnych danych (patrz wyżej).
+  Koszt błędu: gdyby jakieś RDLP miało inny format `adr_for` (np. inną
+  liczbę segmentów), join zwróciłby `(None, None)` dla tych wydzieleń
+  zamiast błędnego dopasowania -- bezpieczny kierunek awarii.
 
 - **1.6.3 normalizacja `S_host_nizsze`:** plan mówi "tym samym wzorem" co
   `S_host_drzew` (`Σ udział_i × powinowactwo_i`, bez normalizacji -- DRZEW

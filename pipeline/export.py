@@ -254,6 +254,12 @@ DIAGNOSTICS_FIELDS = [
     # this stand's age was shifted to the analysis year, and why not when it
     # wasn't (pipeline.age_update.update_age).
     "age_update_status",
+    # Plan 1.6.4: BDL package fields with no ranking weight (>=50% filled per
+    # docs/BDL_slownik_pol.md) -- None/[] for a stand without package
+    # coverage, never blended into H/F/R (pipeline.bdl_extra_features).
+    "veg_cover_cd", "site_class_cd", "density_cd", "soil_subtype_cd", "degradation_cd",
+    "stand_struct_cd", "podszyt_species", "podrost_species", "zabiegi_planowane",
+    "rok_wskazan", "dist_do_granicy_oddzialu_m", "dlugosc_granicy_z_oddzialem_m",
 ]
 
 
