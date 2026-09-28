@@ -16,3 +16,16 @@ def wfs_bbox_param(bbox: tuple[float, float, float, float]) -> str:
     BBOX parameter. Axis order N,E is required for urn:ogc:def:crs:EPSG::2180."""
     n_min, e_min, n_max, e_max = bbox
     return f"{n_min},{e_min},{n_max},{e_max},urn:ogc:def:crs:EPSG::2180"
+
+
+def point_in_any_bbox(centroid, bboxes: list) -> bool:
+    """True when `centroid` (an EPSG:2180 point, e.g. a stand's geometry
+    centroid) falls inside any of `bboxes` (n_min, e_min, n_max, e_max
+    tuples -- the same shape pipeline.search_area's tile lists and failed-
+    tile lists use). Shared by pipeline.gdos.gdos_status (plan 1.6) and
+    pipeline.mvp's OSM tile-skip confidence check (plan 1.7), so both agree
+    on what "this stand's tile" means."""
+    for n_min, e_min, n_max, e_max in bboxes or []:
+        if n_min <= centroid.y <= n_max and e_min <= centroid.x <= e_max:
+            return True
+    return False

@@ -534,6 +534,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         top_n_for_routing=profile["entrances"]["top_n_for_routing"],
         population_points_gdf=population_points_gdf,
         gdos_failed_tiles=gdos_failed_tiles,
+        osm_failed_tiles=osm_failed_tiles,
     )
 
     # Plan 2.1 "Zmiana 4": must run before group_into_regions below --

@@ -279,3 +279,23 @@ def test_enrich_gdos_status_brak_when_no_failed_tiles_given():
         zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
     )
     assert result["gdos_status"].tolist() == ["brak", "brak"]
+
+
+def test_enrich_osm_tile_skipped_for_a_stand_in_a_failed_tile():
+    failed_tiles = [(486000.0, 380000.0, 486300.0, 380300.0)]  # covers stand A only
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
+        osm_failed_tiles=failed_tiles,
+    )
+    by_id = dict(zip(result["stand_id"], result["osm_tile_skipped"]))
+    assert by_id["A"] is True
+    assert by_id["B"] is False
+
+
+def test_enrich_osm_tile_skipped_false_when_no_failed_tiles_given():
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
+    )
+    assert result["osm_tile_skipped"].tolist() == [False, False]

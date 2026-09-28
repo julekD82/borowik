@@ -10,6 +10,7 @@ from pipeline.weather import (
     compute_weather_features,
     climatology_window_values,
     percentile_rank,
+    climatology_window_insufficient,
 )
 
 
@@ -257,6 +258,40 @@ def test_percentile_rank_of_median_like_value():
     assert percentile_rank(30.0, historical) == pytest.approx(0.5, abs=0.15)
     assert percentile_rank(5.0, historical) == pytest.approx(0.0, abs=0.05)
     assert percentile_rank(55.0, historical) == pytest.approx(1.0, abs=0.05)
+
+
+def test_percentile_rank_ignores_nan_entries():
+    # Plan 1.8d: a real but incomplete window (NaN gaps) must rank against
+    # only the valid entries, not let scipy see the NaNs at all.
+    with_gaps = np.array([10.0, np.nan, 20.0, 30.0, np.nan, 40.0, 50.0])
+    clean = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    assert percentile_rank(30.0, with_gaps) == pytest.approx(percentile_rank(30.0, clean))
+
+
+def test_percentile_rank_all_nan_falls_back_to_neutral():
+    assert percentile_rank(30.0, np.array([np.nan, np.nan])) == 0.5
+
+
+# --- Plan 1.7/1.8d: climatology_window_insufficient -------------------------
+
+def test_climatology_window_insufficient_true_when_empty():
+    assert climatology_window_insufficient(np.array([])) is True
+
+
+def test_climatology_window_insufficient_true_below_half_valid():
+    # 2 valid out of 5 = 40% < 50%.
+    window = np.array([1.0, 2.0, np.nan, np.nan, np.nan])
+    assert climatology_window_insufficient(window) is True
+
+
+def test_climatology_window_insufficient_false_at_or_above_half_valid():
+    # 3 valid out of 5 = 60% >= 50%.
+    window = np.array([1.0, 2.0, 3.0, np.nan, np.nan])
+    assert climatology_window_insufficient(window) is False
+
+
+def test_climatology_window_insufficient_false_when_fully_populated():
+    assert climatology_window_insufficient(np.array([1.0, 2.0, 3.0])) is False
 
 
 def test_climatology_window_values_filters_by_point_and_doy_window():

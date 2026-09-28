@@ -463,6 +463,31 @@ def climatology_window_values(clim_df: pd.DataFrame, lat: float, lon: float, day
 
 
 def percentile_rank(value: float, historical_values: np.ndarray) -> float:
-    if len(historical_values) == 0:
+    """Plan 1.8d: NaN entries in `historical_values` (a real but incomplete
+    climatology window, distinct from a genuinely empty one) are dropped
+    before ranking -- scipy's percentileofscore has no defined "ignore NaN"
+    behaviour, so leaving them in silently corrupts the rank. A window that
+    is empty either originally or after dropping NaNs falls back to the
+    same neutral 0.5 either way."""
+    valid = historical_values[~np.isnan(historical_values)]
+    if len(valid) == 0:
         return 0.5
-    return float(stats.percentileofscore(historical_values, value, kind="mean") / 100.0)
+    return float(stats.percentileofscore(valid, value, kind="mean") / 100.0)
+
+
+# Plan wdrozenia 1.7: "mniej niz 50% waznych wartosci w oknie" (spec:
+# empty_or_thin_climatology confidence reason) -- shared threshold so
+# pipeline.orchestrate's per-point cache and any direct caller agree on
+# what "thin" means.
+MIN_VALID_FRACTION = 0.5
+
+
+def climatology_window_insufficient(historical_values: np.ndarray) -> bool:
+    """True when the window is empty, or fewer than MIN_VALID_FRACTION of
+    its entries are non-NaN -- the trigger for plan 1.7's
+    empty_or_thin_climatology confidence reason (percentile_rank's own 0.5
+    fallback happens either way; this is only about whether to say so)."""
+    if len(historical_values) == 0:
+        return True
+    valid_fraction = np.count_nonzero(~np.isnan(historical_values)) / len(historical_values)
+    return bool(valid_fraction < MIN_VALID_FRACTION)

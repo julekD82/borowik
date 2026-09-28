@@ -5,6 +5,7 @@ import pandas as pd
 from pipeline.confidence import compute_confidence
 from pipeline.explain import compute_log_contributions, generate_explanation, g_season_note
 from pipeline.gdos import mark_gdos_blocked, gdos_status as _gdos_status
+from pipeline.tiles import point_in_any_bbox
 from pipeline.habitat import host_affinity
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
 from pipeline.population_grid import impute_osm_population
@@ -25,7 +26,8 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                               entrances_gdf: gpd.GeoDataFrame | None = None,
                               top_n_for_routing: int = 0,
                               population_points_gdf: gpd.GeoDataFrame | None = None,
-                              gdos_failed_tiles: list | None = None) -> gpd.GeoDataFrame:
+                              gdos_failed_tiles: list | None = None,
+                              osm_failed_tiles: list | None = None) -> gpd.GeoDataFrame:
     stands = stands.copy()
     alpha = profile["pressure"]["alpha_default"] if alpha is None else alpha
 
@@ -40,6 +42,12 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
     centroids_for_status = stands.geometry.centroid
     stands["gdos_status"] = [
         _gdos_status(b, c, gdos_failed_tiles) for b, c in zip(gdos_blocked, centroids_for_status)
+    ]
+    # Plan 1.7: confidence-only signal (not a full status enum like
+    # gdos_status/zakaz_status -- OSM affects pressure/entrances, not a
+    # legal mask, so there's no equivalent "blocked" state to report here).
+    stands["osm_tile_skipped"] = [
+        point_in_any_bbox(c, osm_failed_tiles) for c in centroids_for_status
     ]
 
     parking = osm_features.get("parking")

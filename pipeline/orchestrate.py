@@ -13,6 +13,7 @@ from pipeline.scoring import (
 )
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
+    climatology_window_insufficient,
 )
 from pipeline.phenology import compute_g_season
 
@@ -157,6 +158,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # stand was scored against, so scores.json's H/F/P/R aren't the only
     # auditable trail.
     pct_cwb26_values, pct_sm_values, pct_m_values, q_values = [], [], [], []
+    insufficient_climatology_values = []
     weather_lat_values, weather_lon_values = [], []
     climatology_lat_values, climatology_lon_values = [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
@@ -226,8 +228,11 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
                 percentile_rank(wrow["cwb26"], cwb26_hist),
                 percentile_rank(wrow["soil_moisture"], sm_hist),
                 len(cwb26_hist) == 0 or len(sm_hist) == 0,
+                # Plan 1.7/1.8d: empty OR <50% valid (non-NaN) -- a real but
+                # thin window is a confidence gap even when it's not empty.
+                climatology_window_insufficient(cwb26_hist) or climatology_window_insufficient(sm_hist),
             )
-        pct_cwb26, pct_sm, empty_window = percentiles_by_point[point]
+        pct_cwb26, pct_sm, empty_window, insufficient_climatology = percentiles_by_point[point]
         if empty_window:
             # percentile_rank falls back to a neutral 0.5 on an empty window.
             empty_climatology_count += 1
@@ -243,6 +248,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         r = compute_ranking(mask, h, f_loc)
 
         pct_cwb26_values.append(pct_cwb26)
+        insufficient_climatology_values.append(insufficient_climatology)
         pct_sm_values.append(pct_sm)
         pct_m_values.append(pct_m)
         q_values.append(q)
@@ -282,6 +288,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["K_frost"] = k_frost_values
     stands["rain_radar_coverage"] = rain_radar_coverage_values
     stands["pct_CWB26"] = pct_cwb26_values
+    stands["insufficient_climatology"] = insufficient_climatology_values
     stands["pct_SM"] = pct_sm_values
     stands["pct_m"] = pct_m_values
     stands["q"] = q_values

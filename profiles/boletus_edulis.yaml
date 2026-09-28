@@ -300,6 +300,11 @@ confidence:
     - {max: 0.70, label: "SREDNIA"}
     - {max: 1.01, label: "WYSOKA"}
   model_confidence_cap: "SREDNIA"          # spec §10: "faza 1-4: maks. SREDNIA"
+  # Plan wdrozenia 1.7: real radar coverage below this (with radar enabled)
+  # is a NISKA-forcing gap, separate from data_quality_factors.pogoda_radar_1km
+  # above (which only chooses which weather DQ multiplier applies, not
+  # whether radar effectively failed for this stand).
+  radar_low_coverage_threshold: 0.5
   reasons:
     model_uncalibrated: 'model nieskalibrowany na danych terenowych (limit do "średniej")'
     weather_nwp: "pogoda z modelu ~2 km (brak radaru w archiwum)"
@@ -307,6 +312,15 @@ confidence:
     species_dominant_only: "skład gatunkowy: tylko gatunek panujący"
     species_unknown: "gatunek panujący nierozpoznany w profilu gatunku"
     species_full_composition: "skład gatunkowy: pełny (paczka BDL)"  # plan 2.1 step B2
+    # Plan wdrozenia 1.7: each forces final class down to NISKA (spec: obniz
+    # do NISKA, gdy wystapi ktorykolwiek z realnych brakow), unlike the
+    # reasons above which only explain the SREDNIA-level data quality score.
+    empty_or_thin_climatology: "pusta klimatologia lub mało (<50%) ważnych wartości w oknie"
+    radar_low_coverage: "rzeczywiste pokrycie radaru w oknie poniżej 50% (częściowy fallback na Open-Meteo)"
+    osm_tile_skipped: "kafel OSM w otoczeniu wydzielenia pominięty (błąd sieci)"
+    gdos_tile_skipped: "kafel GDOŚ w otoczeniu wydzielenia pominięty (błąd sieci)"
+    unknown_site_type: "typ siedliskowy nierozpoznany w profilu"
+    incomplete_composition: "skład gatunkowy z paczki niepełny (suma udziałów < 0,9)"
 
 explanation:
   max_positive: 2   # spec §9: "generujemy zdania z szablonów (2 plusy i 1-2 minusy)"

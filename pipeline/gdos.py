@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 import requests
 
-from pipeline.tiles import wfs_bbox_param
+from pipeline.tiles import wfs_bbox_param, point_in_any_bbox
 
 DEFAULT_GDOS_WFS_URL = "https://sdi.gdos.gov.pl/wfs"
 DEFAULT_GDOS_LAYERS = ("GDOS:Rezerwaty", "GDOS:ParkiNarodowe")
@@ -60,7 +60,6 @@ def gdos_status(blocked: bool, centroid, failed_tiles: list) -> str:
     skipped tile as not-blocked (see prepare_trip.py's own warning when this
     happens), this only makes that tradeoff visible per stand instead of
     only as a run-wide count."""
-    for n_min, e_min, n_max, e_max in (failed_tiles or []):
-        if n_min <= centroid.y <= n_max and e_min <= centroid.x <= e_max:
-            return "kafel_pominiety"
+    if point_in_any_bbox(centroid, failed_tiles):
+        return "kafel_pominiety"
     return "blokada" if blocked else "brak"

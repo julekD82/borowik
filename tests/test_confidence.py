@@ -98,6 +98,102 @@ def test_score_data_quality_uses_radar_factor_when_coverage_high():
     assert radar / nwp == pytest.approx(f["pogoda_radar_1km"] / f["pogoda_nwp_2km"])
 
 
+# --- Plan wdrozenia 1.7: real-gap reasons force NISKA -----------------------
+
+def test_compute_confidence_niska_when_climatology_insufficient():
+    row = {"species_cd": "SO", "insufficient_climatology": True}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["empty_or_thin_climatology"] in reasons
+
+
+def test_compute_confidence_niska_when_radar_coverage_low_and_radar_enabled():
+    assert PROFILE["radar"]["enabled"] is True
+    row = {"species_cd": "SO", "rain_radar_coverage": 0.3}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["radar_low_coverage"] in reasons
+
+
+def test_compute_confidence_not_niska_for_low_radar_coverage_when_radar_disabled():
+    no_radar_profile = {**PROFILE, "radar": {**PROFILE["radar"], "enabled": False}}
+    row = {"species_cd": "SO", "rain_radar_coverage": 0.1}
+    final, reasons = compute_confidence(row, no_radar_profile)
+    assert final == "SREDNIA"
+    assert no_radar_profile["confidence"]["reasons"]["radar_low_coverage"] not in reasons
+
+
+def test_compute_confidence_niska_when_osm_tile_skipped():
+    row = {"species_cd": "SO", "osm_tile_skipped": True}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["osm_tile_skipped"] in reasons
+
+
+def test_compute_confidence_niska_when_gdos_tile_skipped():
+    row = {"species_cd": "SO", "gdos_status": "kafel_pominiety"}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["gdos_tile_skipped"] in reasons
+
+
+def test_compute_confidence_not_niska_for_gdos_status_brak_or_blokada():
+    for status in ("brak", "blokada"):
+        final, reasons = compute_confidence({"species_cd": "SO", "gdos_status": status}, PROFILE)
+        assert final == "SREDNIA"
+        assert PROFILE["confidence"]["reasons"]["gdos_tile_skipped"] not in reasons
+
+
+def test_compute_confidence_niska_when_site_type_unknown():
+    row = {"species_cd": "SO", "site_type": "NIEZNANY_KOD"}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["unknown_site_type"] in reasons
+
+
+def test_compute_confidence_not_niska_for_known_site_type():
+    row = {"species_cd": "SO", "site_type": "BMSW"}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "SREDNIA"
+    assert PROFILE["confidence"]["reasons"]["unknown_site_type"] not in reasons
+
+
+def test_compute_confidence_niska_when_species_unknown_now_a_real_gap():
+    # Plan 1.7 promotes "gatunek panujacy nierozpoznany" from a DQ-score
+    # input (already capped at SREDNIA either way) to an explicit real-gap
+    # trigger -- unlike pre-1.7, this now forces NISKA, not just SREDNIA.
+    row = {"species_cd": "ZZZ"}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["species_unknown"] in reasons
+
+
+def test_compute_confidence_niska_when_package_composition_incomplete():
+    row = {"species_cd": "SO", "s_host_source": "paczka", "sklad_niepelny": True}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "NISKA"
+    assert PROFILE["confidence"]["reasons"]["incomplete_composition"] in reasons
+
+
+def test_compute_confidence_not_niska_for_complete_package_composition():
+    row = {"species_cd": "SO", "s_host_source": "paczka", "sklad_niepelny": False}
+    final, reasons = compute_confidence(row, PROFILE)
+    assert final == "SREDNIA"
+    assert PROFILE["confidence"]["reasons"]["incomplete_composition"] not in reasons
+
+
+def test_compute_confidence_no_false_positive_gaps_on_a_clean_row():
+    # A row with none of the plan-1.7 columns set at all (the pre-1.7
+    # fixture shape used throughout the rest of this file) must not be
+    # spuriously forced to NISKA -- absence of a column means "not
+    # applicable here", not "this gap occurred".
+    final, reasons = compute_confidence({"species_cd": "SO"}, PROFILE)
+    assert final == "SREDNIA"
+    for key in ("empty_or_thin_climatology", "radar_low_coverage", "osm_tile_skipped",
+                "gdos_tile_skipped", "unknown_site_type", "incomplete_composition"):
+        assert PROFILE["confidence"]["reasons"][key] not in reasons
+
+
 def test_compute_confidence_reason_names_radar_only_above_threshold():
     reasons_cfg = PROFILE["confidence"]["reasons"]
     _, low = compute_confidence({"species_cd": "SO", "rain_radar_coverage": 0.5}, PROFILE)
