@@ -299,3 +299,51 @@ def test_enrich_osm_tile_skipped_false_when_no_failed_tiles_given():
         zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
     )
     assert result["osm_tile_skipped"].tolist() == [False, False]
+
+
+# --- Faza 3: pressure.model ---------------------------------------------------
+
+def _access_model_near_stand_a():
+    import numpy as np
+    from pipeline.access_points import AccessSet
+    from pipeline.access_pressure import build_access_model
+    cfg = PROFILE["pressure"]["access_points"]
+    points = gpd.GeoDataFrame(
+        {"point_id": ["pk-1"], "type": ["parking"], "source": ["bdl"], "subtype": [""], "name": ["P1"],
+         "weight_pop": [float("nan")]},
+        geometry=[Point(380150, 486150)], crs="EPSG:2180")  # przy wydzieleniu A, daleko od B
+    roads = gpd.GeoDataFrame({"kind": [], "surface_class": [], "source": [], "fire_no": [], "highway": []},
+                             geometry=[], crs="EPSG:2180")
+    return build_access_model(AccessSet(points=points, roads=roads), np.array([[380150.0, 486150.0]]),
+                              np.array([50000.0]), cfg)
+
+
+def _enrich(profile, access_model):
+    return enrich_with_mvp_layers(
+        _scored_stands(), profile, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0, access_model=access_model,
+    )
+
+
+def test_access_points_model_drives_P_and_reports_which_model():
+    result = _enrich(PROFILE, _access_model_near_stand_a())
+    assert result["pressure_model"].tolist() == ["access_points"] * 2
+    assert result["P"].iloc[0] > 0.0 and result["P"].iloc[1] == 0.0      # B jest > 3 km od punktu
+    assert result["top_point_id"].iloc[0] == "pk-1"
+    assert result["distance_method"].iloc[0] == "access_points"
+    assert "P_gravity" in result.columns and (result["P_gravity"] == 0.0).all()  # brak ludnosci OSM w tym tescie
+
+
+def test_gravity_model_still_available_by_profile_switch():
+    import copy
+    profile = copy.deepcopy(PROFILE)
+    profile["pressure"]["model"] = "gravity"
+    result = _enrich(profile, _access_model_near_stand_a())
+    assert result["pressure_model"].tolist() == ["gravity"] * 2
+    assert result["distance_method"].tolist() == ["euclidean"] * 2
+    assert (result["P"] == result["P_gravity"]).all()
+
+
+def test_access_points_profile_without_access_data_falls_back_to_gravity_visibly():
+    result = _enrich(PROFILE, None)
+    assert result["pressure_model"].tolist() == ["gravity"] * 2

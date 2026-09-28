@@ -10,11 +10,16 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 from pyproj import Transformer
 
+from pipeline.access_data import load_access_sources, _default_bdl_get
+from pipeline.access_export import write_access_points_geojson, write_forest_roads_geojson
+from pipeline.access_points import build_access_set
+from pipeline.access_pressure import build_access_model
 from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_extra_features import load_extra_features, ExtraStandFeatures
@@ -34,7 +39,7 @@ from pipeline.neighbors import find_neighbor_labels
 from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M, DEFAULT_PAST_DAYS
 from pipeline.radar import make_radar_weather_fetcher, stand_radar_precip_daily
 from pipeline.osm import fetch_osm_features, _default_overpass_call
-from pipeline.population_grid import load_population_points
+from pipeline.population_grid import impute_osm_population, load_population_points
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
@@ -311,7 +316,9 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
                     radar_mode_value: str | None = None,
                     radar_smoothing_km: float | None = None,
                     radar_stand_spatial_coverage_mean: float | None = None,
-                    radar_stand_precip_used_count: int | None = None) -> dict:
+                    radar_stand_precip_used_count: int | None = None,
+                    pressure_model_used: str | None = None,
+                    access_points: dict | None = None) -> dict:
     """Plan wdrozenia 1.1 (spec S18.1 "Manifest analizy"): one dict with
     every field the acceptance test checks for, assembled from values the
     caller (run_trip_preparation) already computed -- this function does no
@@ -378,6 +385,11 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
         "wfs_only_share_of_masked": wfs_only_share_of_masked,
         "population_source": population_source,
         "pressure_normalization": pressure_normalization,
+        # Plan Faza 3: ktory model presji zadecydowal ("access_points" albo
+        # "gravity") oraz liczniki punktow dostepu (typ/zrodlo), kafli
+        # z fallbackiem bez wjazdow i kafli z bledem pobrania.
+        "pressure_model_used": pressure_model_used,
+        "access_points": access_points,
     }
 
 
@@ -393,6 +405,55 @@ def rain_episode_radar_coverage(conditions_daily, today: date, lookback_days: in
     cutoff = pd.Timestamp(today - timedelta(days=lookback_days), tz=conditions_daily["date"].dt.tz)
     recent = conditions_daily[conditions_daily["date"] >= cutoff]
     return float(recent["radar_frac"].mean()) if len(recent) else 0.0
+
+
+def _build_access_model(*, profile, tiles, cache_dir, context_stands, forest_boundary, osm_features,
+                         population_points_gdf, osm_call_api):
+    """Faza 3: pobiera (albo czyta z cache) zrodla punktow dostepu, sklada
+    punkty/drogi i liczy atrakcyjnosc. Zwraca (AccessModel | None, manifest).
+    Gdy nie ma ani jednego punktu dostepu (np. wszystkie zrodla zawiodly),
+    zwraca None -- pipeline.mvp wraca wtedy do modelu gravity i manifest to
+    zapisuje; brak danych nie moze cicho oznaczac \"brak presji\"."""
+    cfg = profile["pressure"]["access_points"]
+    print("Punkty dostepu (Faza 3): BDL turystyczny + dojazdy pozarowe + OSM drogi/szlabany...", flush=True)
+    bdl_get = lambda *a: _rate_limited(  # noqa: E731
+        _default_bdl_get, *a, should_retry=_is_transient_network_error, max_attempts=3, backoff_s=5, pace_s=0.3)
+    sources = load_access_sources(tiles, cache_dir, cfg, osm_call_api, bdl_get=bdl_get)
+    failed = sources["failed"]
+    if failed["bdl"] or failed["osm"]:
+        print(
+            f"UWAGA: dane punktow dostepu niedostepne: BDL {len(failed['bdl'])}/{len(tiles)} kafli, "
+            f"OSM {len(failed['osm'])}/{len(tiles)} kafli -- presja w tych kaflach jest niedoszacowana.",
+            flush=True,
+        )
+    pop = population_points_gdf
+    if pop is None:
+        pop = impute_osm_population(osm_features.get("places"), profile)
+    access_set = build_access_set(
+        forest_boundary=forest_boundary, sources=sources, osm_parking=osm_features.get("parking"),
+        pop_points=population_points_gdf, tiles=tiles, cfg=cfg,
+    )
+    if not len(access_set.points):
+        print("UWAGA: brak jakichkolwiek punktow dostepu -- presja z modelu gravity.", flush=True)
+        return None, {"used": False, "reason": "brak_punktow_dostepu", "failed_tiles": {k: len(v) for k, v in failed.items()}}
+    if pop is not None and len(pop):
+        pop_xy = np.array([(g.x, g.y) for g in pop.geometry], dtype=float)
+        pop_values = pop["population"].fillna(0.0).astype(float).values
+    else:
+        pop_xy, pop_values = np.empty((0, 2)), np.empty(0)
+    model = build_access_model(access_set, pop_xy, pop_values, cfg)
+    print(
+        f"  punkty: {model.counts['points_by_type_source']}; drogi: {model.counts['roads_by_kind']}; "
+        f"kafle z fallbackiem: {model.counts['fallback_tile_count']}",
+        flush=True,
+    )
+    manifest = {
+        "used": True, **model.counts,
+        "failed_tiles": {k: len(v) for k, v in failed.items()},
+        "cache_hits": sources["cache_hits"], "tile_count": sources["tile_count"],
+        "params": {k: cfg[k] for k in ("types", "network_half_km", "surface_multiplier", "saturation_s")},
+    }
+    return model, manifest
 
 
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
@@ -639,6 +700,15 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         else:
             print(f"UWAGA: plik siatki GUS nie istnieje ({population_grid_path}) -- populacja z OSM.", flush=True)
 
+    access_model = None
+    access_manifest = None
+    if profile["pressure"].get("model", "gravity") == "access_points":
+        access_model, access_manifest = _build_access_model(
+            profile=profile, tiles=tiles, cache_dir=cache_dir, context_stands=context_stands,
+            forest_boundary=forest_boundary, osm_features=osm_features,
+            population_points_gdf=population_points_gdf, osm_call_api=_osm_call_api,
+        )
+
     print("Enriching with legal mask + presja + confidence + explanations...")
     enriched = enrich_with_mvp_layers(
         scored, profile, gdos_gdf, osm_features,
@@ -648,7 +718,14 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         population_points_gdf=population_points_gdf,
         gdos_failed_tiles=gdos_failed_tiles,
         osm_failed_tiles=osm_failed_tiles,
+        access_model=access_model,
     )
+    if access_model is not None:
+        # nazwa/zrodlo elementu o najwiekszym wkladzie w presje (karta wydzielenia)
+        lookup = {r["point_id"]: (r["source"], r["name"]) for _, r in access_model.points.iterrows()}
+        lookup.update({r["road_id"]: (r["source"], r["fire_no"]) for _, r in access_model.roads.iterrows()})
+        enriched["top_point_source"] = [lookup.get(i, (None, None))[0] for i in enriched["top_point_id"]]
+        enriched["top_point_name"] = [lookup.get(i, (None, None))[1] for i in enriched["top_point_id"]]
 
     # Plan 2.1 "Zmiana 4": must run before group_into_regions below --
     # pipeline.regions._summarize_cluster uses tie_break as a secondary
@@ -718,6 +795,13 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         extra_features_index=extra_features_index,
     )
     print(f"  {len(regions)} region(s)")
+    access_points_path = forest_roads_path = None
+    if access_model is not None:
+        access_points_path = write_access_points_geojson(access_model, out_dir / f"access_points_{day}.geojson")
+        forest_roads_path, road_tolerance_m = write_forest_roads_geojson(
+            access_model, out_dir / f"forest_roads_{day}.geojson")
+        access_manifest["forest_roads_simplify_tolerance_m"] = road_tolerance_m
+        print(f"  warstwy dostepu: {access_points_path.name}, {forest_roads_path.name}", flush=True)
 
     # Plan 1.2: per-stand intermediate values (JSON, or parquet over ~20 MB).
     diagnostics_path = write_diagnostics(enriched, day=day, out_dir=out_dir)
@@ -760,6 +844,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         radar_smoothing_km=profile["radar"].get("smoothing_km") if mode == "stand" else None,
         radar_stand_spatial_coverage_mean=radar_stand_spatial_coverage_mean,
         radar_stand_precip_used_count=scored.attrs["diagnostics"].get("stand_precip_used_count"),
+        pressure_model_used=str(enriched["pressure_model"].iloc[0]) if len(enriched) else None,
+        access_points=access_manifest,
     )
     manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
 
@@ -774,6 +860,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "conditions_path": str(conditions_path) if conditions_path else None,
         "diagnostics_path": diagnostics_path,
         "manifest_path": manifest_path,
+        "access_points_path": access_points_path, "forest_roads_path": forest_roads_path,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
         "forecast_days": scored.attrs["diagnostics"]["forecast_days"],

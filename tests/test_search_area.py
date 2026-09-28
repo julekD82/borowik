@@ -302,6 +302,9 @@ def configure_sources(monkeypatch):
     monkeypatch.setattr(trip, 'fetch_protected_areas', gdos)
     monkeypatch.setattr(trip, 'fetch_osm_features', osm)
     monkeypatch.setattr(trip, 'check_periodic_ban', lambda *a: False)
+    # Faza 3: zrodla punktow dostepu (BDL ArcGIS + Overpass) tez bez sieci
+    monkeypatch.setattr(trip, '_default_bdl_get', lambda *a: {'features': []})
+    monkeypatch.setattr(trip, '_default_overpass_call', lambda query: {'elements': []})
     return gd_calls, osm_calls
 
 
