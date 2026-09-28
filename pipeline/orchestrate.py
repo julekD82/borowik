@@ -9,7 +9,7 @@ from pipeline.habitat import (
 )
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
-    apply_moisture_modulation, compute_ranking, moisture_percentile,
+    apply_moisture_modulation, compute_ranking, moisture_percentile, moisture_multiplier,
 )
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
@@ -151,6 +151,13 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     s_host_source_values, s_host_package_date_values = [], []
     m_values, t_values, k_frost_values = [], [], []
     rain_radar_coverage_values = []
+    # Plan wdrozenia 1.2 (diagnostics export): percentile/multiplier
+    # intermediates and the weather-point/climatology-cell identity each
+    # stand was scored against, so scores.json's H/F/P/R aren't the only
+    # auditable trail.
+    pct_cwb26_values, pct_sm_values, pct_m_values, q_values = [], [], [], []
+    weather_lat_values, weather_lon_values = [], []
+    climatology_lat_values, climatology_lon_values = [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
     # a plausible-looking number (see spec review: 59% of stands were hitting
     # the unknown-code fallback unnoticed).
@@ -196,8 +203,12 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         rain_radar_coverage_values.append(float(wrow.get("rain_radar_coverage", 0.0)))
 
         point = (wrow["lat"], wrow["lon"])
+        # Looked up unconditionally (not just on a percentiles_by_point cache
+        # miss) -- plan 1.2's diagnostics export needs this stand's actual
+        # climatology cell every time, not whichever cell the last cache-miss
+        # iteration happened to leave in this loop-local variable.
+        cell = weather_to_clim_cell[point]
         if point not in percentiles_by_point:
-            cell = weather_to_clim_cell[point]
             if cell not in history_by_cell:
                 history = climate_cells.get(cell, clim_df.iloc[:0])
                 history_by_cell[cell] = (
@@ -221,8 +232,18 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         k_frost = score_frost(wrow["tmin3"], profile)
         f = compute_fruiting(m, t, k_frost, g_season=g_season)
         pct_m = moisture_percentile(pct_cwb26, pct_sm, profile)
+        q = moisture_multiplier(pct_m, moisture_cls, profile)
         f_loc = apply_moisture_modulation(f, moisture_cls, pct_m, profile)
         r = compute_ranking(mask, h, f_loc)
+
+        pct_cwb26_values.append(pct_cwb26)
+        pct_sm_values.append(pct_sm)
+        pct_m_values.append(pct_m)
+        q_values.append(q)
+        weather_lat_values.append(point[0])
+        weather_lon_values.append(point[1])
+        climatology_lat_values.append(cell[0])
+        climatology_lon_values.append(cell[1])
 
         mask_values.append(mask)
         h_values.append(h)
@@ -252,6 +273,14 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["T"] = t_values
     stands["K_frost"] = k_frost_values
     stands["rain_radar_coverage"] = rain_radar_coverage_values
+    stands["pct_CWB26"] = pct_cwb26_values
+    stands["pct_SM"] = pct_sm_values
+    stands["pct_m"] = pct_m_values
+    stands["q"] = q_values
+    stands["weather_point_lat"] = weather_lat_values
+    stands["weather_point_lon"] = weather_lon_values
+    stands["climatology_cell_lat"] = climatology_lat_values
+    stands["climatology_cell_lon"] = climatology_lon_values
     # Same forecast_days for every stand in the run (one weather fetch, one
     # target_date) -- exported per stand anyway (spec §3.3: "Oznaczyć w UI,
     # ile dni okna pochodzi z prognozy"), matching how every other weather-

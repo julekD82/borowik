@@ -23,6 +23,7 @@ from pipeline.entrances import compute_forest_boundary, find_entrance_points, cl
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
     write_regions_json, write_details_json, write_conditions_json, write_manifest_json,
+    write_diagnostics,
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
@@ -525,6 +526,9 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     )
     print(f"  {len(regions)} region(s)")
 
+    # Plan 1.2: per-stand intermediate values (JSON, or parquet over ~20 MB).
+    diagnostics_path = write_diagnostics(enriched, day=day, out_dir=out_dir)
+
     # Plan 1.1: one run_manifest_{day}.json alongside the other exports.
     # zakaz_checked_count mirrors pipeline.mvp.enrich_with_mvp_layers'own
     # top_n_for_ban_check=50 slicing (that count isn't itself returned by
@@ -550,6 +554,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "geojson_path": geojson_path, "regions_path": regions_path,
         "details_path": details_path,
         "conditions_path": str(conditions_path) if conditions_path else None,
+        "diagnostics_path": diagnostics_path,
         "manifest_path": manifest_path,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),

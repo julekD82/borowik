@@ -41,14 +41,21 @@ def compute_fruiting(m: float, t: float, k_frost: float, g_season: float = 1.0) 
     return g_season * (m ** 0.6) * (t ** 0.4) * k_frost
 
 
-def apply_moisture_modulation(f: float, moisture_cls: int, pct_m: float, profile: dict) -> float:
+def moisture_multiplier(pct_m: float, moisture_cls: int, profile: dict) -> float:
+    """The habitat-moisture multiplier `q` (spec §4.4's F_loc = min[1; F*q]),
+    factored out of apply_moisture_modulation so plan 1.2's diagnostics
+    export can report it directly instead of trying to back it out of a
+    clipped F_loc/F ratio."""
     cfg = profile["fruiting"]
     if pct_m < cfg["dry_pct_threshold"]:
-        multiplier = cfg["dry_multiplier_by_moisture"][moisture_cls]
-    elif pct_m > cfg["wet_pct_threshold"]:
-        multiplier = cfg["wet_multiplier_by_moisture"][moisture_cls]
-    else:
-        multiplier = 1.0
+        return cfg["dry_multiplier_by_moisture"][moisture_cls]
+    if pct_m > cfg["wet_pct_threshold"]:
+        return cfg["wet_multiplier_by_moisture"][moisture_cls]
+    return 1.0
+
+
+def apply_moisture_modulation(f: float, moisture_cls: int, pct_m: float, profile: dict) -> float:
+    multiplier = moisture_multiplier(pct_m, moisture_cls, profile)
     return max(0.0, min(1.0, f * multiplier))
 
 

@@ -3,6 +3,7 @@ import math
 import pathlib
 
 import geopandas as gpd
+import pandas as pd
 
 from pipeline.tie_break import veg_cover_label
 
@@ -225,6 +226,76 @@ def write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path:
     out_path.write_text(json.dumps({"day": day, **timeline}, ensure_ascii=False, indent=2, allow_nan=False),
                         encoding="utf-8")
     return out_path
+
+
+# Plan wdrozenia 1.2: per-stand intermediate values behind H/F/P/R, so a
+# ranking can be audited (or R_final reconstructed, see the acceptance test
+# in tests/test_export.py) without re-fetching any network source. Field
+# names follow the plan's own spec §13.2 wording, not the DataFrame's
+# internal column names, where the two differ (e.g. "Demand" -> "demand").
+DIAGNOSTICS_FIELDS = [
+    "S_host", "S_site", "S_age", "H", "pct_CWB26", "M", "T", "K_frost", "G_season", "F", "q", "F_loc",
+    "P", "distance_method", "s_host_source", "s_host_package_date",
+]
+
+
+def _zakaz_status(row) -> str:
+    """Plan 1.6 will add a real "blad" (source failure) branch once
+    run_poc's zakaz_checker call is wrapped in a try/except -- today an
+    exception there propagates and aborts the run, so "blad" can never
+    reach an export and isn't produced here yet."""
+    if not row["periodic_ban_checked"]:
+        return "nie_sprawdzono"
+    return "zakaz" if row["periodic_ban_active"] else "brak"
+
+
+def build_diagnostics_record(row, day: str) -> dict:
+    record = {field: _json_safe(row[field]) for field in DIAGNOSTICS_FIELDS}
+    record["day"] = day
+    record["stand_id"] = row["stand_id"]
+    record["mask"] = bool(row["mask"])
+    record["Demand"] = _json_safe(row["demand"])
+    record["d_park_m"] = _json_safe(row["d_park_m"])
+    record["weather_point"] = {"lat": _json_safe(row["weather_point_lat"]),
+                               "lon": _json_safe(row["weather_point_lon"])}
+    record["climatology_cell"] = {"lat": _json_safe(row["climatology_cell_lat"]),
+                                  "lon": _json_safe(row["climatology_cell_lon"])}
+    # Plan 1.6 will replace this boolean with the richer
+    # gdos_status in {brak, blokada, kafel_pominiety} once that task lands;
+    # today's mvp.gdos_blocked only distinguishes blocked/not.
+    record["gdos_status"] = "blokada" if bool(row["gdos_blocked"]) else "brak"
+    record["zakaz_status"] = _zakaz_status(row)
+    return record
+
+
+def write_diagnostics_json(stands: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    records = [build_diagnostics_record(row, day) for _, row in stands.iterrows()]
+    out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return out_path
+
+
+_DIAGNOSTICS_SIZE_LIMIT_BYTES = 20 * 1024 * 1024
+
+
+def write_diagnostics(stands: gpd.GeoDataFrame, day: str, out_dir) -> pathlib.Path:
+    """Plan 1.2: JSON normally, parquet when that would exceed ~20 MB (spec
+    §13.2's own "lub parquet, jesli rozmiar > 20 MB"). Writes JSON first and
+    only switches format if it's actually too big, rather than guessing from
+    row count -- record size varies enough (nested weather_point/
+    climatology_cell dicts, nullable fields) that a byte-count check on the
+    real output is more honest than a row-count heuristic."""
+    out_dir = pathlib.Path(out_dir)
+    json_path = out_dir / f"diagnostics_{day}.json"
+    write_diagnostics_json(stands, day, json_path)
+    if json_path.stat().st_size <= _DIAGNOSTICS_SIZE_LIMIT_BYTES:
+        return json_path
+    json_path.unlink()
+    records = [build_diagnostics_record(row, day) for _, row in stands.iterrows()]
+    parquet_path = out_dir / f"diagnostics_{day}.parquet"
+    pd.DataFrame(records).to_parquet(parquet_path)
+    return parquet_path
 
 
 # Plan wdrozenia 1.1: one run_manifest_YYYY-MM-DD.json per run_trip_preparation

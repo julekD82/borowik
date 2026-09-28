@@ -10,7 +10,9 @@ from pipeline.export import (
     build_region_record, write_regions_json,
     build_details_record, write_details_json,
     write_manifest_json,
+    build_diagnostics_record, write_diagnostics_json, write_diagnostics, DIAGNOSTICS_FIELDS,
 )
+from pipeline.scoring import compute_ranking
 from pipeline.bdl_package_details import PackageStandDetails
 from pipeline.tie_break import TieBreakRaw
 
@@ -341,3 +343,94 @@ def test_write_manifest_json_round_trips_the_whole_dict(tmp_path):
     path = write_manifest_json(manifest, tmp_path / "run_manifest_2026-09-28.json")
     assert path == tmp_path / "run_manifest_2026-09-28.json"
     assert json.loads(path.read_text(encoding="utf-8")) == manifest
+
+
+def _diagnostics_stands():
+    # Row A: structural mask true, no GDOS/zakaz exclusion -> mask_full true,
+    # R_final follows the normal formula. Row B: structural mask true, but
+    # GDOS-blocked -> mask_full false, R_final = 0 (spec §9.3), the case the
+    # reconstruction test must also get right, not just the "everything
+    # passes" happy path.
+    return gpd.GeoDataFrame({
+        "stand_id": ["A", "B"],
+        "S_host": [0.9, 0.7], "S_site": [1.0, 0.85], "S_age": [1.0, 1.0],
+        "H": [0.9, 0.5], "pct_CWB26": [0.66, 0.4], "M": [0.62, 0.3],
+        "T": [0.8, 0.5], "K_frost": [1.0, 1.0], "G_season": [0.91, 0.91],
+        "F": [0.6, 0.3], "q": [1.0, 0.9], "F_loc": [0.6, 0.27],
+        "P": [0.4, 0.2], "distance_method": ["network", "euclidean"],
+        "s_host_source": ["paczka", "wfs"], "s_host_package_date": ["2026-06-23", None],
+        "demand": [1234.5, 0.0], "d_park_m": [500.0, float("nan")],
+        "weather_point_lat": [50.5, 50.6], "weather_point_lon": [18.6, 18.7],
+        "climatology_cell_lat": [50.4, 50.4], "climatology_cell_lon": [18.5, 18.5],
+        "gdos_blocked": [False, True],
+        "periodic_ban_checked": [True, False],
+        "periodic_ban_active": [False, False],
+        "mask": [True, True],
+        "mask_full": [True, False],
+        "R_final": [
+            compute_ranking(True, 0.9, 0.6, p=0.4, alpha=0.3),
+            0.0,
+        ],
+    }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
+
+
+def test_build_diagnostics_record_has_every_field_the_spec_lists():
+    stands = _diagnostics_stands()
+    record = build_diagnostics_record(stands.iloc[0], "2026-09-28")
+    for field in DIAGNOSTICS_FIELDS:
+        assert field in record, f"missing {field}"
+    for field in ("day", "stand_id", "mask", "Demand", "d_park_m", "weather_point",
+                  "climatology_cell", "gdos_status", "zakaz_status"):
+        assert field in record, f"missing {field}"
+    assert record["weather_point"] == {"lat": 50.5, "lon": 18.6}
+    assert record["gdos_status"] == "brak"
+    assert record["zakaz_status"] == "brak"
+
+
+def test_build_diagnostics_record_zakaz_and_gdos_status_variants():
+    stands = _diagnostics_stands()
+    blocked = build_diagnostics_record(stands.iloc[1], "2026-09-28")
+    assert blocked["gdos_status"] == "blokada"
+    assert blocked["zakaz_status"] == "nie_sprawdzono"  # periodic_ban_checked=False
+
+
+def test_reconstruct_r_final_from_diagnostics_matches_scores_within_1e9(tmp_path):
+    # Plan 1.2 acceptance: R_final must be reconstructable from the
+    # diagnostics export alone (plus scores.json's own mask/R), without any
+    # network call, tolerance 1e-9 -- same check the technical review already
+    # ran once by hand (docs/Borowik_opis_techniczny_i_walidacja.md §17.2).
+    stands = _diagnostics_stands()
+    alpha = 0.3
+    for _, row in stands.iterrows():
+        diag = build_diagnostics_record(row, "2026-09-28")
+        mask_full = diag["mask"] and diag["gdos_status"] != "blokada" and diag["zakaz_status"] != "zakaz"
+        reconstructed = compute_ranking(mask_full, diag["H"], diag["F_loc"], p=diag["P"], alpha=alpha)
+        assert reconstructed == pytest.approx(float(row["R_final"]), abs=1e-9)
+
+
+def test_write_diagnostics_json_writes_one_record_per_stand(tmp_path):
+    stands = _diagnostics_stands()
+    path = write_diagnostics_json(stands, "2026-09-28", tmp_path / "diagnostics_2026-09-28.json")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert len(data) == 2
+    assert {r["stand_id"] for r in data} == {"A", "B"}
+
+
+def test_write_diagnostics_picks_json_when_under_the_size_limit(tmp_path):
+    stands = _diagnostics_stands()
+    path = write_diagnostics(stands, "2026-09-28", tmp_path)
+    assert path == tmp_path / "diagnostics_2026-09-28.json"
+    assert path.exists()
+
+
+def test_write_diagnostics_switches_to_parquet_over_the_size_limit(tmp_path, monkeypatch):
+    import pipeline.export as export_mod
+    monkeypatch.setattr(export_mod, "_DIAGNOSTICS_SIZE_LIMIT_BYTES", 10)  # force the switch
+    stands = _diagnostics_stands()
+    path = write_diagnostics(stands, "2026-09-28", tmp_path)
+    assert path == tmp_path / "diagnostics_2026-09-28.parquet"
+    assert path.exists()
+    assert not (tmp_path / "diagnostics_2026-09-28.json").exists()
+    df = pd.read_parquet(path)
+    assert len(df) == 2
+    assert set(df["stand_id"]) == {"A", "B"}
