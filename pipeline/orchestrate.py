@@ -7,6 +7,7 @@ import pandas as pd
 from pipeline.age_update import update_age
 from pipeline.habitat import (
     compute_habitat, passes_mask, score_site, score_host, score_age, score_host_composition,
+    blend_host_with_lower_storeys,
 )
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
@@ -212,6 +213,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # doesn't vary per stand), config-gated (default on) in profile["age"].
     age_update_enabled = bool(profile.get("age", {}).get("update_to_analysis_year", True))
     analysis_year = target_date.year
+    # Plan 1.6.3: default 0.0 (DRZEW-only S_host, pre-1.6.3 behaviour).
+    host_lower_storeys_weight = float(profile.get("host", {}).get("lower_storeys_weight", 0.0))
     age_update_status_values = []
     age_update_missing_year_count = 0
     for _, row in stands.iterrows():
@@ -244,6 +247,13 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         package = package_index.get(row.get("adr_for"))
         if package is not None:
             s_host, unk = score_host_composition(package.species, profile)
+            # Plan 1.6.3: default weight 0 makes this an exact no-op (see
+            # blend_host_with_lower_storeys' own docstring) -- S_host stays
+            # DRZEW-only unless a profile opts in.
+            s_host, lower_unk = blend_host_with_lower_storeys(
+                s_host, package.species_lower, host_lower_storeys_weight, profile,
+            )
+            unk += lower_unk
             s_host_source, s_host_package_date = "paczka", package.package_date
             package_stand_count += 1
             package_unknown_species_count += unk
@@ -396,5 +406,9 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         # was attempted.
         "age_update_enabled": age_update_enabled,
         "age_update_missing_year_count": age_update_missing_year_count,
+        # Plan 1.6.3: the weight actually used this run -- 0.0 unless the
+        # profile opts in, surfaced for the manifest/report same as every
+        # other config-that-can-change-R value above.
+        "host_lower_storeys_weight": host_lower_storeys_weight,
     }
     return stands

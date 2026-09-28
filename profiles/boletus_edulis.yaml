@@ -117,6 +117,17 @@ age:
   # pipeline.age_update.update_age, wired in pipeline.orchestrate.run_poc.
   update_to_analysis_year: true
 
+host:
+  # Plan wdrozenia 1.6.3: S_host today only ever looks at the DRZEW storey.
+  # This blends in the pooled lower-storey composition (PODSZ/PODR/PRZES/...,
+  # pipeline.bdl_packages.PackageComposition.species_lower) at weight w:
+  # S_host = (1-w)*S_host_drzew + w*S_host_nizsze. Default 0 (pre-1.6.3
+  # behaviour, DRZEW only) -- this is a HYPOTHESIS about understory
+  # composition mattering for B. edulis, not a correction of a known error
+  # (unlike 1.6.2's age fix), so it stays off pending Faza 2.2 validation.
+  # docs/RAPORT_FAZA_1_6.md compares 0 / 0.25 / 0.5 on a real run.
+  lower_storeys_weight: 0.0
+
 fruiting:
   # Plan 2.1 "Zmiana 2" (user review 2026-09-25): 0.35 meant the AVERAGE
   # moisture percentile (0.5) already scored M=0.82 -> F="Bardzo dobre" --

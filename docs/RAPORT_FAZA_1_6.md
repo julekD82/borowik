@@ -9,7 +9,7 @@ Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/PLAN_WDROZENIA.
 |---|---|---|
 | 1.6.1 Inwentaryzacja paczek | DONE | `docs/BDL_slownik_pol.md` |
 | 1.6.2 Aktualizacja wieku (korekta, za flagą) | DONE | `pipeline/age_update.py`, wpięte w `pipeline/orchestrate.py` |
-| 1.6.3 Skład z niższych pięter (korekta, za flagą) | w toku | |
+| 1.6.3 Skład z niższych pięter (korekta, za flagą) | DONE | `host.lower_storeys_weight`, domyślnie 0 |
 | 1.6.4 Cechy do diagnostyki (bez wagi w R) | w toku | |
 | 1.6.5 Łatwość szukania w karcie | w toku | |
 | 1.6.6 Przebieg i raport | w toku | |
@@ -47,7 +47,46 @@ brak `a_year`/NaN, brak `spec_age`, przekroczenie progu maski) +
 przechodzi maskę w 2026 gdy włączone, zostaje odrzucone gdy wyłączone, brak
 `a_year` nie crashuje i jest zliczony).
 
+## 1.6.3 Skład z niższych pięter
+
+`pipeline/bdl_packages.py::PackageComposition` ma nowe pole `species_lower`
+(pulowany skład numerycznych udziałów ze wszystkich pięter poza `DRZEW` --
+`PODSZ`/`PODR`/`PRZES`/itd., zob. `docs/BDL_slownik_pol.md`). Nowa funkcja
+`pipeline.habitat.blend_host_with_lower_storeys(s_host_drzew, species_lower,
+weight, profile)`: `S_host = (1-w)*S_host_drzew + w*S_host_nizsze`, gdzie
+`S_host_nizsze` to średnia ważona powinowactwa znormalizowana przez sumę
+udziałów (nie surowa suma ważona jak dla `DRZEW`) -- konieczne, bo
+zsumowane piętra niższe mogą dać sumę != 1 (np. `PODSZ` + `PRZES` razem).
+Brak pięter niższych = `S_host_nizsze = S_host_drzew` (no-op przy każdym
+`w`). Config `host.lower_storeys_weight` (domyślnie `0.0`) w
+`profiles/boletus_edulis.yaml`; przy `0.0` `S_host` jest bit-w-bit taki sam
+jak przed 1.6.3 (zweryfikowane testem).
+
+Wpięte w `pipeline/orchestrate.py::run_poc` zaraz po `score_host_composition`
+na DRZEW; licznik `host_lower_storeys_weight` w `.attrs["diagnostics"]`
+(do manifestu/raportu). Porównanie 0 / 0,25 / 0,5 na realnym przebiegu --
+w sekcji 1.6.6 niżej.
+
+Testy: `tests/test_bdl_packages.py` (parsowanie `species_lower`, wyłączenie
+kodów MJS/PJD, pusta lista gdy brak pięter niższych) +
+`tests/test_habitat.py` (`blend_host_with_lower_storeys`: no-op przy w=0,
+no-op przy braku danych, normalizacja sumy != 1, blend przy w pośrednim,
+zliczanie nieznanych gatunków) + `tests/test_orchestrate.py` (integracja
+end-to-end przez `run_poc`).
+
 ## Rulingi (decyzje bez pytania właściciela, zgodnie z zasadą 0.8)
+
+- **1.6.3 normalizacja `S_host_nizsze`:** plan mówi "tym samym wzorem" co
+  `S_host_drzew` (`Σ udział_i × powinowactwo_i`, bez normalizacji -- DRZEW
+  nie normalizuje, bo `part_cd_act` sumuje się do 10 z definicji w obrębie
+  jednej warstwy). Dla spulowanych pięter niższych ta sama suma może wyjść
+  różna od 1 (kilka warstw naraz). Zdecydowałem znormalizować przez sumę
+  udziałów (średnia ważona, nie suma ważona), żeby `S_host_nizsze` zostało
+  porównywalnym wynikiem 0-1 jak `S_host_drzew`, zamiast np. przekroczyć 1
+  przy dwóch pełnych warstwach. Przy dokładnie jednej pełnej warstwie
+  (suma=1) wynik jest identyczny z niesnormalizowanym wzorem. Koszt błędu:
+  przy `lower_storeys_weight=0` (domyślne) rulng nie ma żadnego wpływu na R
+  -- dotyczy wyłącznie hipotetycznego trybu do oceny w Fazie 2.2.
 
 - **1.6.2 źródło "rok stanu opisu":** plan dopuszcza pierwszeństwo metadanych
   paczki nad `a_year` WFS. `pipeline/bdl_packages.py` nie parsuje dziś

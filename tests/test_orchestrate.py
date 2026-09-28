@@ -660,3 +660,60 @@ def test_run_poc_missing_a_year_is_flagged_and_not_crashed():
     row_a2 = result[result["adr_for"] == "A-2"].iloc[0]
     assert row_a2["age_update_status"] == "skorygowano"
     assert result.attrs["diagnostics"]["age_update_missing_year_count"] == 1
+
+
+# --- Plan 1.6.3: S_host blended with lower-storey composition -----------
+
+def test_run_poc_default_weight_leaves_s_host_drzew_only():
+    package_index = {
+        "A-1": PackageComposition(
+            species=[("SO", 0.6), ("BK", 0.4)], species_lower=[("BRZ", 1.0)],
+            source_name="PKG", package_date=None,
+        ),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    expected_drzew_only, _ = score_host_composition([("SO", 0.6), ("BK", 0.4)], PROFILE)
+    assert a1["S_host"] == pytest.approx(expected_drzew_only)
+    assert result.attrs["diagnostics"]["host_lower_storeys_weight"] == pytest.approx(0.0)
+
+
+def test_run_poc_nonzero_weight_blends_lower_storey_composition():
+    profile_weighted = {**PROFILE, "host": {"lower_storeys_weight": 0.5}}
+    package_index = {
+        # DRZEW pure SO (affinity 1.0); lower storey pure OL (affinity 0.0)
+        # -- blend at w=0.5 should land exactly halfway.
+        "A-1": PackageComposition(
+            species=[("SO", 1.0)], species_lower=[("OL", 1.0)],
+            source_name="PKG", package_date=None,
+        ),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=profile_weighted,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    assert a1["S_host"] == pytest.approx(0.5)
+    assert result.attrs["diagnostics"]["host_lower_storeys_weight"] == pytest.approx(0.5)
+
+
+def test_run_poc_nonzero_weight_falls_back_when_no_lower_storey_present():
+    profile_weighted = {**PROFILE, "host": {"lower_storeys_weight": 0.5}}
+    package_index = {
+        "A-1": PackageComposition(species=[("SO", 1.0)], species_lower=[], source_name="PKG", package_date=None),
+    }
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=profile_weighted,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        package_index=package_index,
+    )
+    a1 = result.loc[result["stand_id"] == "A-1@2026"].iloc[0]
+    assert a1["S_host"] == pytest.approx(1.0)  # unchanged: no species_lower to blend with

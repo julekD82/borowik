@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import geopandas as gpd
@@ -43,6 +43,14 @@ class PackageComposition:
     # not rejected like an over-1.0 sum, just flagged for the manifest/
     # diagnostics count and the profile-coverage report below.
     sklad_niepelny: bool = False
+    # Plan 1.6.3: numeric-share rows pooled from every storey OTHER than
+    # DRZEW (PODSZ/PODR/PRZES/PODS/PODRII/NAL/IP/IIP -- "nizsze pietra" per
+    # docs/BDL_slownik_pol.md), same (species_cd, share 0-1) shape as
+    # `species`. Empty (the default) when the stand has no such storey, or
+    # for a PackageComposition built before 1.6.3 existed. Optional
+    # (host.lower_storeys_weight, default 0 -- see pipeline.habitat) blend
+    # component for S_host, never used unless a profile opts in.
+    species_lower: list[tuple[str, float]] = field(default_factory=list)
 
 
 def _parse_metadane(path: Path) -> dict[str, str]:
@@ -80,6 +88,22 @@ def _load_one_package(package_dir: Path) -> dict[str, PackageComposition]:
 
     joined = drzew.merge(g_subarea, on="a_i_num", how="inner")
 
+    # Plan 1.6.3: same numeric-share filter as DRZEW above, but pooled across
+    # every OTHER storey (PODSZ/PODR/PRZES/... -- see docs/BDL_slownik_pol.md
+    # for which storeys actually show up in real D-STAN data). Kept as a
+    # separate join, not folded into `drzew`, so `species` (DRZEW-only,
+    # feeding today's S_host) stays byte-for-byte what it was before 1.6.3.
+    lower = species[species["storey_cd"] != "DRZEW"].copy()
+    lower = lower[lower["part_cd_act"].str.match(_NUMERIC_PART_CD, na=False)]
+    lower["share"] = lower["part_cd_act"].astype(int) / 10.0
+    lower = lower.rename(columns={"arodes_int_num": "a_i_num"})
+    lower["a_i_num"] = lower["a_i_num"].astype(str)
+    lower_joined = lower.merge(g_subarea, on="a_i_num", how="inner")
+    lower_species_by_stand = {
+        adr_for: list(zip(g["species_cd"], g["share"]))
+        for adr_for, g in lower_joined.groupby("adr_for")
+    }
+
     metadane_path = package_dir / "metadane.txt"
     package_date = None
     if metadane_path.exists():
@@ -98,6 +122,7 @@ def _load_one_package(package_dir: Path) -> dict[str, PackageComposition]:
             source_name=package_dir.name,
             package_date=package_date,
             sklad_niepelny=bool(group["share"].sum() < _MIN_SHARE_SUM),
+            species_lower=lower_species_by_stand.get(adr_for, []),
         )
     if rejected:
         print(
