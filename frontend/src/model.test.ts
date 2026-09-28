@@ -6,6 +6,7 @@ import {
   topExplanations,
   navigationUrl,
   distanceLabel,
+  zakazNote,
   parseData,
   isStandaloneTarget,
   MIN_STANDALONE_AREA_HA,
@@ -555,5 +556,20 @@ describe("loadData against a dev-server SPA fallback for missing optional files"
     expect(data.details).toEqual([]);
     expect(data.conditions).toBeNull();
     vi.unstubAllGlobals();
+  });
+});
+
+describe("zakazNote", () => {
+  it("returns a discrete notice for nie_sprawdzono and blad", () => {
+    expect(zakazNote("nie_sprawdzono")).toContain("nie sprawdzono");
+    expect(zakazNote("blad")).toContain("nie powiodło się");
+  });
+  it("returns a notice for an active zakaz", () => {
+    expect(zakazNote("zakaz")).toContain("Wykryto zakaz");
+  });
+  it("returns an empty string for brak or an undefined/unknown value", () => {
+    expect(zakazNote("brak")).toBe("");
+    expect(zakazNote(undefined)).toBe("");
+    expect(zakazNote("cos_innego")).toBe("");
   });
 });

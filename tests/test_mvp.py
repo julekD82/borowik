@@ -218,3 +218,64 @@ def test_enrich_defaults_g_season_to_one_when_column_absent():
     )
     for exp in result["explanation"]:
         assert not any(e["factor"] == "g_season" for e in exp)
+
+
+# --- Plan 1.6: zakaz_status / gdos_status ------------------------------------
+
+def test_enrich_zakaz_status_nie_sprawdzono_when_not_checked():
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: (_ for _ in ()).throw(AssertionError("should not be called")),
+        top_n_for_ban_check=0,
+    )
+    assert result["zakaz_status"].tolist() == ["nie_sprawdzono", "nie_sprawdzono"]
+
+
+def test_enrich_zakaz_status_brak_and_zakaz_when_checked():
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: lat > 45.0,  # both stands "banned" (dummy predicate, always true)
+        top_n_for_ban_check=10,
+    )
+    assert result["zakaz_status"].tolist() == ["zakaz", "zakaz"]
+
+
+def test_enrich_zakaz_status_blad_when_checker_raises_and_run_does_not_crash():
+    # Plan 1.6 / spec S13.1: a failing zakaz source must not abort the whole
+    # run -- the stand keeps its earlier (approximate) R_final/mask_full.
+    r_before = _scored_stands().copy()
+
+    def flaky(lat, lon):
+        raise RuntimeError("ArcGIS REST unavailable")
+
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=flaky, top_n_for_ban_check=10,
+    )
+    assert result["zakaz_status"].tolist() == ["blad", "blad"]
+    assert result["periodic_ban_error"].tolist() == [True, True]
+    assert result["periodic_ban_checked"].tolist() == [False, False]
+
+
+def test_enrich_gdos_status_kafel_pominiety_for_a_stand_in_a_failed_tile():
+    # Stand A's centroid is inside (380100,486100)-(380200,486200); giving
+    # exactly that box as a "failed" GDOS tile must mark A kafel_pominiety
+    # even though mark_gdos_blocked's own optimistic fallback leaves it
+    # "not blocked" (no protected-areas data to say otherwise).
+    failed_tiles = [(486000.0, 380000.0, 486300.0, 380300.0)]  # (n_min, e_min, n_max, e_max)
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
+        gdos_failed_tiles=failed_tiles,
+    )
+    by_id = dict(zip(result["stand_id"], result["gdos_status"]))
+    assert by_id["A"] == "kafel_pominiety"
+    assert by_id["B"] == "brak"  # stand B's centroid is far outside that tile
+
+
+def test_enrich_gdos_status_brak_when_no_failed_tiles_given():
+    result = enrich_with_mvp_layers(
+        _scored_stands(), PROFILE, _no_gdos(), _no_osm_features(),
+        zakaz_checker=lambda lat, lon: False, top_n_for_ban_check=0,
+    )
+    assert result["gdos_status"].tolist() == ["brak", "brak"]

@@ -4,7 +4,7 @@ import pandas as pd
 
 from pipeline.confidence import compute_confidence
 from pipeline.explain import compute_log_contributions, generate_explanation, g_season_note
-from pipeline.gdos import mark_gdos_blocked
+from pipeline.gdos import mark_gdos_blocked, gdos_status as _gdos_status
 from pipeline.habitat import host_affinity
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
 from pipeline.population_grid import impute_osm_population
@@ -24,13 +24,23 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                               roads_routing_gdf: gpd.GeoDataFrame | None = None,
                               entrances_gdf: gpd.GeoDataFrame | None = None,
                               top_n_for_routing: int = 0,
-                              population_points_gdf: gpd.GeoDataFrame | None = None) -> gpd.GeoDataFrame:
+                              population_points_gdf: gpd.GeoDataFrame | None = None,
+                              gdos_failed_tiles: list | None = None) -> gpd.GeoDataFrame:
     stands = stands.copy()
     alpha = profile["pressure"]["alpha_default"] if alpha is None else alpha
 
     gdos_blocked = mark_gdos_blocked(stands, gdos_gdf)
     stands["gdos_blocked"] = gdos_blocked
     stands["mask_full"] = stands["mask"] & ~gdos_blocked
+    # Plan 1.6: gdos_status in {brak, blokada, kafel_pominiety} -- a stand
+    # whose own tile's GDOS fetch failed is distinguishable from one that
+    # was actually checked and found clear (gdos_blocked's own "optimistic
+    # fallback", see that function's docstring, still governs mask_full --
+    # this only makes the tradeoff visible per stand).
+    centroids_for_status = stands.geometry.centroid
+    stands["gdos_status"] = [
+        _gdos_status(b, c, gdos_failed_tiles) for b, c in zip(gdos_blocked, centroids_for_status)
+    ]
 
     parking = osm_features.get("parking")
     roads = osm_features.get("roads")
@@ -95,6 +105,11 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
 
     stands["periodic_ban_checked"] = False
     stands["periodic_ban_active"] = False
+    # Plan 1.6: "zrodlo zawiodlo" is now a real, survivable outcome instead
+    # of an uncaught exception aborting the whole run (spec S13.1) -- a
+    # stand whose check errors keeps its earlier (approximate) distance-only
+    # R_final/mask_full, same as a stand that was never in the top-N at all.
+    stands["periodic_ban_error"] = False
     if top_n_for_ban_check > 0 and len(stands):
         # centroids already carries stands.crs (centroid preserves it); do not
         # call set_crs on it -- set_crs raises on a GeoSeries whose crs is
@@ -103,7 +118,12 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
         top_idx = stands.sort_values("R_final", ascending=False).head(top_n_for_ban_check).index
         for idx in top_idx:
             lon, lat = centroids_4326.loc[idx].x, centroids_4326.loc[idx].y
-            banned = zakaz_checker(lat, lon)
+            try:
+                banned = zakaz_checker(lat, lon)
+            except Exception as exc:
+                print(f"UWAGA: sprawdzenie zakazu okresowego nie powiodlo sie ({exc}) -- status: blad.", flush=True)
+                stands.loc[idx, "periodic_ban_error"] = True
+                continue
             stands.loc[idx, "periodic_ban_checked"] = True
             stands.loc[idx, "periodic_ban_active"] = bool(banned)
             if banned:
@@ -113,6 +133,18 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                 # that reads `mask` directly (e.g. the exported scores.json)
                 # would still show it as legal.
                 stands.loc[idx, "mask_full"] = False
+
+    # Plan 1.6: zakaz_status in {brak, zakaz, nie_sprawdzono, blad} -- a
+    # single field a card/list can show discretely, instead of a caller
+    # having to reconstruct it from three separate booleans.
+    def _zakaz_status_row(row):
+        if row["periodic_ban_error"]:
+            return "blad"
+        if not row["periodic_ban_checked"]:
+            return "nie_sprawdzono"
+        return "zakaz" if row["periodic_ban_active"] else "brak"
+
+    stands["zakaz_status"] = stands.apply(_zakaz_status_row, axis=1)
 
     confidences, reasons_list = [], []
     for _, row in stands.iterrows():

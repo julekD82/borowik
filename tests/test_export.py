@@ -35,6 +35,8 @@ def _enriched_stands():
         "rain_radar_coverage": [0.0, 0.0],
         "s_host_source": ["paczka", "wfs"],
         "s_host_package_date": ["2026-06-23", None],
+        "zakaz_status": ["brak", "nie_sprawdzono"],
+        "gdos_status": ["brak", "brak"],
     }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
 
 
@@ -363,9 +365,8 @@ def _diagnostics_stands():
         "demand": [1234.5, 0.0], "d_park_m": [500.0, float("nan")],
         "weather_point_lat": [50.5, 50.6], "weather_point_lon": [18.6, 18.7],
         "climatology_cell_lat": [50.4, 50.4], "climatology_cell_lon": [18.5, 18.5],
-        "gdos_blocked": [False, True],
-        "periodic_ban_checked": [True, False],
-        "periodic_ban_active": [False, False],
+        "gdos_status": ["brak", "blokada"],
+        "zakaz_status": ["brak", "nie_sprawdzono"],
         "mask": [True, True],
         "mask_full": [True, False],
         "R_final": [

@@ -29,6 +29,13 @@ SCORE_FIELDS = [
     # Plan 2026-09-26 A1: exp-weighted share of the P26w window whose rain
     # came from the IMGW radar (pipeline.radar), 0 = Open-Meteo only.
     "rain_radar_coverage",
+    # Plan wdrozenia 1.6: "sprawdzono brak blokady" vs "nie sprawdzono" vs
+    # "zrodlo zawiodlo" (zakaz_status), and "brak" vs "blokada" vs kafel
+    # pominiety z powodu bledu sieci (gdos_status) -- both computed in
+    # pipeline.mvp.enrich_with_mvp_layers, exported here (not just in
+    # diagnostics_{day}.json) so the frontend card/list can show a discrete
+    # "zakazow nie sprawdzono" notice without needing the diagnostics file.
+    "zakaz_status", "gdos_status",
 ]
 
 
@@ -242,16 +249,6 @@ DIAGNOSTICS_FIELDS = [
 ]
 
 
-def _zakaz_status(row) -> str:
-    """Plan 1.6 will add a real "blad" (source failure) branch once
-    run_poc's zakaz_checker call is wrapped in a try/except -- today an
-    exception there propagates and aborts the run, so "blad" can never
-    reach an export and isn't produced here yet."""
-    if not row["periodic_ban_checked"]:
-        return "nie_sprawdzono"
-    return "zakaz" if row["periodic_ban_active"] else "brak"
-
-
 def build_diagnostics_record(row, day: str) -> dict:
     record = {field: _json_safe(row[field]) for field in DIAGNOSTICS_FIELDS}
     record["day"] = day
@@ -263,11 +260,13 @@ def build_diagnostics_record(row, day: str) -> dict:
                                "lon": _json_safe(row["weather_point_lon"])}
     record["climatology_cell"] = {"lat": _json_safe(row["climatology_cell_lat"]),
                                   "lon": _json_safe(row["climatology_cell_lon"])}
-    # Plan 1.6 will replace this boolean with the richer
-    # gdos_status in {brak, blokada, kafel_pominiety} once that task lands;
-    # today's mvp.gdos_blocked only distinguishes blocked/not.
-    record["gdos_status"] = "blokada" if bool(row["gdos_blocked"]) else "brak"
-    record["zakaz_status"] = _zakaz_status(row)
+    # Plan 1.6: gdos_status/zakaz_status are computed once, in
+    # pipeline.mvp.enrich_with_mvp_layers, and just read here -- both are
+    # also in SCORE_FIELDS (scores.json), so this and the score record
+    # always agree by construction instead of two places deriving the same
+    # status from raw booleans.
+    record["gdos_status"] = row["gdos_status"]
+    record["zakaz_status"] = row["zakaz_status"]
     return record
 
 

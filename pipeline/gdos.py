@@ -48,3 +48,19 @@ def mark_gdos_blocked(stands: gpd.GeoDataFrame, protected_areas: gpd.GeoDataFram
                        how="left", predicate="intersects")
     blocked = hits.groupby(level=0)["index_right"].apply(lambda s: s.notna().any())
     return blocked.reindex(stands.index, fill_value=False)
+
+
+def gdos_status(blocked: bool, centroid, failed_tiles: list) -> str:
+    """Plan wdrozenia 1.6: gdos_status in {brak, blokada, kafel_pominiety}.
+    A stand whose own tile's GDOS fetch failed (pipeline.search_area.
+    fetch_cached_gdos's `failed` list of (n_min, e_min, n_max, e_max) bboxes,
+    the SAME tuples `tiles` itself holds) reports "kafel_pominiety" rather
+    than the misleadingly confident "brak" mark_gdos_blocked's optimistic
+    fallback would otherwise leave it with -- `mask_full` already treats a
+    skipped tile as not-blocked (see prepare_trip.py's own warning when this
+    happens), this only makes that tradeoff visible per stand instead of
+    only as a run-wide count."""
+    for n_min, e_min, n_max, e_max in (failed_tiles or []):
+        if n_min <= centroid.y <= n_max and e_min <= centroid.x <= e_max:
+            return "kafel_pominiety"
+    return "blokada" if blocked else "brak"
