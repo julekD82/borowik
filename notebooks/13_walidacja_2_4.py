@@ -9,6 +9,8 @@ import pathlib
 import random
 import time
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
@@ -33,6 +35,7 @@ SEED = vs.SEED
 YEARS = range(2015, 2027)
 MONTHS_B = range(7, 12)
 MAX_RANDOM_OFFSET = 20000  # glebsze offsety GBIF odpowiadaja bardzo wolno
+PARALLEL = 8              # rownolegle zapytania GBIF (tylko przyspieszenie)
 N_PAGES_B = 400            # stron po 300 rekordow na krolestwo (tlo b)
 
 
@@ -65,14 +68,17 @@ def nonfungal_pool(kingdom_key: int, rng: random.Random, n_pages: int) -> list[d
                 cells.append((p, c))
     total = sum(c for _, c in cells)
     picks = rng.choices(range(len(cells)), weights=[c for _, c in cells], k=n_pages)
-    out, seen = [], set()
-    for ci in picks:
+    requests_list, seen = [], set()
+    for ci in picks:  # losowania najpierw (deterministyczne), pobieranie potem rownolegle
         p, c = cells[ci]
         offset = rng.randrange(0, max(1, min(c, MAX_RANDOM_OFFSET) // gb.PAGE)) * gb.PAGE
-        if (ci, offset) in seen:
-            continue
-        seen.add((ci, offset))
-        results = gb.query({**p, "limit": gb.PAGE, "offset": offset})["results"]
+        if (ci, offset) not in seen:
+            seen.add((ci, offset))
+            requests_list.append({**p, "limit": gb.PAGE, "offset": offset})
+    with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
+        pages = list(pool.map(lambda q: gb.query(q)["results"], requests_list))
+    out = []
+    for results in pages:
         for r in rng.sample(results, min(5, len(results))):
             out.append(gb.slim(r))
     print(f"  kingdom {kingdom_key}: {len(out)} kandydatow ({total} rekordow w komorkach)", flush=True)

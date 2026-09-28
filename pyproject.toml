@@ -22,6 +22,7 @@ dependencies = [
     "folium>=0.16",
     "scipy>=1.13",
     "networkx>=3.2",
+    "netCDF4>=1.6",
 ]
 
 [dependency-groups]
