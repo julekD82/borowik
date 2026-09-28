@@ -236,6 +236,9 @@ def write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path:
 DIAGNOSTICS_FIELDS = [
     "S_host", "S_site", "S_age", "H", "pct_CWB26", "M", "T", "K_frost", "G_season", "F", "q", "F_loc",
     "P", "distance_method", "s_host_source", "s_host_package_date",
+    # Plan 1.3: share sum < 0.9 in this stand's package composition (does not
+    # apply to a WFS-sourced S_host, which has no share sum to check).
+    "sklad_niepelny",
 ]
 
 

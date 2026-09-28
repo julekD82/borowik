@@ -17,7 +17,7 @@ from pyproj import Transformer
 from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_package_details import load_package_details
-from pipeline.bdl_packages import load_packages
+from pipeline.bdl_packages import load_packages, coverage_report
 from pipeline.conditions_timeline import build_conditions_timeline
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
@@ -119,6 +119,11 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--profile", type=str, default="profiles/boletus_edulis.yaml")
     parser.add_argument("--out-dir", type=str, default="notebooks/output")
     parser.add_argument("--cache-dir", type=str, default="cache")
+    parser.add_argument(
+        "--bdl-packages-dir", type=str, default=None,
+        help="Katalog z rozpakowanymi paczkami BDL (plan 1.3) -- domyslnie <cache-dir>/bdl_packages. "
+             "Ustaw, gdy paczki leza poza katalogiem cache (np. wskazany osobno, poza repo).",
+    )
     parser.add_argument(
         "--no-radar", action="store_true",
         help="Nie uzywaj radaru IMGW (RainGRS) -- opady tylko z modelu Open-Meteo (np. do porownania).",
@@ -255,7 +260,8 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
                     gdos_failed_tile_count: int, osm_failed_tile_count: int,
                     zakaz_checked_count: int, region_count: int,
                     package_dir: pathlib.Path | None = None,
-                    incomplete_composition_count: int | None = None,
+                    bdl_coverage_report: list | None = None,
+                    wfs_only_share_of_masked: float | None = None,
                     population_source: str | None = None,
                     pressure_normalization: str | None = None) -> dict:
     """Plan wdrozenia 1.1 (spec S18.1 "Manifest analizy"): one dict with
@@ -263,10 +269,15 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
     caller (run_trip_preparation) already computed -- this function does no
     I/O of its own besides reading the profile file's bytes for its hash.
 
-    `incomplete_composition_count`/`population_source`/`pressure_normalization`
-    default to None: tasks 1.3/1.4/1.5 (not yet landed when this function was
-    first written) fill them in; None here is a real "not applicable yet",
-    not a silent fallback, and stays None until those callers pass a value."""
+    `bdl_coverage_report`/`population_source`/`pressure_normalization` default
+    to None: `population_source`/`pressure_normalization` (tasks 1.4/1.5, not
+    yet landed when this function was first written) are a real "not
+    applicable yet", not a silent fallback, and stay None until those callers
+    pass a value. `incomplete_composition_count` (plan 1.3) isn't a parameter
+    at all -- it's read straight from `diagnostics`, same as every other
+    run_poc-produced count above it, so it's automatically real once
+    orchestrate.py starts tracking it and never needs its own call-site wire-
+    up."""
     now = datetime.now(timezone.utc).astimezone()
     radar_full_fallback = (not use_radar) or diagnostics.get("radar_coverage_mean", 0.0) == 0.0
     return {
@@ -295,9 +306,11 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
             "wfs_stand_count": diagnostics.get("stand_count", 0) - diagnostics.get("package_stand_count", 0),
             "unknown_site_count": diagnostics.get("unknown_site_count", 0),
             "unknown_species_count": diagnostics.get("unknown_species_count", 0),
-            "incomplete_composition_count": incomplete_composition_count,
+            "incomplete_composition_count": diagnostics.get("incomplete_composition_count"),
         },
         "bdl_package_dir": str(package_dir) if package_dir is not None else None,
+        "bdl_coverage_report": bdl_coverage_report,
+        "wfs_only_share_of_masked": wfs_only_share_of_masked,
         "population_source": population_source,
         "pressure_normalization": pressure_normalization,
     }
@@ -305,7 +318,8 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
 
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
                           profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path,
-                          target_date: date | None = None, use_radar: bool = True) -> dict:
+                          target_date: date | None = None, use_radar: bool = True,
+                          bdl_packages_dir: pathlib.Path | None = None) -> dict:
     """Analyze stands whose EPSG:2180 centroid lies within the search radius.
 
     Source queries use aligned 10 km tiles; scoring, pressure normalization
@@ -321,6 +335,11 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     profile = load_profile(profile_path)
     bbox = tile_bbox_2180(lat, lon, size_km=2 * radius_km)
     cache_dir = pathlib.Path(cache_dir)
+    # Plan 1.3: configurable BDL package directory (CLI --bdl-packages-dir),
+    # defaulting to the pre-1.3 cache_dir/bdl_packages location -- every
+    # existing caller that never set this keeps reading from exactly the
+    # same place as before this parameter existed.
+    bdl_packages_dir = pathlib.Path(bdl_packages_dir) if bdl_packages_dir else cache_dir / "bdl_packages"
 
     print(f"Resolving RDLP for ({lat}, {lon})...")
     rdlp_gdf = fetch_rdlp_boundaries_cached(cache_dir)
@@ -341,7 +360,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # A missing cache/bdl_packages/ (or one with nothing usable in it)
     # gives {} -- every stand just falls back to the WFS panujący+part_cd
     # S_host, same as before this step existed.
-    package_index = load_packages(cache_dir / "bdl_packages")
+    package_index = load_packages(bdl_packages_dir)
     if package_index:
         print(f"Paczki BDL: {len(package_index)} wydzielen z pelnym skladem gatunkowym.", flush=True)
 
@@ -491,7 +510,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # cache/bdl_packages/ directory as load_packages/load_package_details
     # above; a stand whose adr_for isn't covered gets a neutral 0.5
     # (pipeline.tie_break.tie_break_for_stand).
-    tie_break_raw_index = load_tie_break_raw(cache_dir / "bdl_packages")
+    tie_break_raw_index = load_tie_break_raw(bdl_packages_dir)
     enriched["tie_break"] = [
         tie_break_for_stand(row["adr_for"], tie_break_raw_index) for _, row in enriched.iterrows()
     ]
@@ -507,8 +526,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # guarantee, and tests/test_prepare_trip.py for the explicit regression
     # check).
     print("Building wydzielenie detail cards (paczka BDL + sasiedztwo)...")
-    dictionaries = load_dictionaries(cache_dir / "bdl_packages")
-    package_details_index = load_package_details(cache_dir / "bdl_packages")
+    dictionaries = load_dictionaries(bdl_packages_dir)
+    package_details_index = load_package_details(bdl_packages_dir)
     neighbors_by_stand = {
         row["adr_for"]: find_neighbor_labels(row, context_stands, dictionaries)
         for _, row in enriched.iterrows()
@@ -535,6 +554,23 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # enrich_with_mvp_layers, so it's recomputed here from the same inputs
     # rather than threading a new return value through that function).
     zakaz_checked_count = min(50, len(scored))
+    # Plan 1.3: coverage report (per-nadlesnictwo) + the single global share
+    # the interface banner threshold (>20% WFS-only among masked stands)
+    # checks against -- both computed from `enriched`, not run_poc's own
+    # diagnostics, since "masked" here means the structural mask specifically
+    # (coverage_report's own contract), consistent with the diagnostics
+    # export's separate mask/gdos_status/zakaz_status fields (plan 1.2).
+    bdl_coverage_report = coverage_report(enriched, package_index)
+    masked = enriched[enriched["mask"]]
+    wfs_only_share_of_masked = (
+        float((masked["s_host_source"] == "wfs").mean()) if len(masked) else 0.0
+    )
+    if wfs_only_share_of_masked > 0.2:
+        print(
+            f"UWAGA: {wfs_only_share_of_masked:.0%} wydzielen w masce ma sklad tylko z WFS "
+            "(brak paczki BDL) -- skad drzewostanu jest tu przyblizeniem z gatunku panujacego.",
+            flush=True,
+        )
     manifest = build_manifest(
         lat=lat, lon=lon, radius_km=radius_km, day=day, target_date=target_date or date.today(),
         profile_path=profile_path, use_radar=use_radar,
@@ -542,6 +578,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         diagnostics=scored.attrs["diagnostics"], tile_count=len(tiles),
         gdos_failed_tile_count=len(gdos_failed_tiles), osm_failed_tile_count=len(osm_failed_tiles),
         zakaz_checked_count=zakaz_checked_count, region_count=len(regions),
+        package_dir=bdl_packages_dir, bdl_coverage_report=bdl_coverage_report,
+        wfs_only_share_of_masked=wfs_only_share_of_masked,
     )
     manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
 
@@ -575,6 +613,7 @@ def main(argv=None) -> int:
             lat=args.lat, lon=args.lon, day=day, radius_km=args.radius_km,
             profile_path=args.profile, out_dir=pathlib.Path(args.out_dir), cache_dir=pathlib.Path(args.cache_dir),
             target_date=target_date, use_radar=not args.no_radar,
+            bdl_packages_dir=pathlib.Path(args.bdl_packages_dir) if args.bdl_packages_dir else None,
         )
     except TripPreparationError as exc:
         print(f"Blad: {exc}")

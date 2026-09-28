@@ -359,6 +359,7 @@ def _diagnostics_stands():
         "F": [0.6, 0.3], "q": [1.0, 0.9], "F_loc": [0.6, 0.27],
         "P": [0.4, 0.2], "distance_method": ["network", "euclidean"],
         "s_host_source": ["paczka", "wfs"], "s_host_package_date": ["2026-06-23", None],
+        "sklad_niepelny": [False, False],
         "demand": [1234.5, 0.0], "d_park_m": [500.0, float("nan")],
         "weather_point_lat": [50.5, 50.6], "weather_point_lon": [18.6, 18.7],
         "climatology_cell_lat": [50.4, 50.4], "climatology_cell_lon": [18.5, 18.5],

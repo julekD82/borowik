@@ -149,6 +149,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
     s_host_values, s_site_values, s_age_values = [], [], []
     s_host_source_values, s_host_package_date_values = [], []
+    sklad_niepelny_values = []
     m_values, t_values, k_frost_values = [], [], []
     rain_radar_coverage_values = []
     # Plan wdrozenia 1.2 (diagnostics export): percentile/multiplier
@@ -168,6 +169,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     package_index = package_index or {}
     package_stand_count = 0
     package_unknown_species_count = 0
+    incomplete_composition_count = 0
     for _, row in stands.iterrows():
         mask = passes_mask(row, profile)
         if mask:
@@ -188,9 +190,13 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
             s_host_source, s_host_package_date = "paczka", package.package_date
             package_stand_count += 1
             package_unknown_species_count += unk
+            sklad_niepelny = package.sklad_niepelny
+            if sklad_niepelny:
+                incomplete_composition_count += 1
         else:
             s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
             s_host_source, s_host_package_date = "wfs", None
+            sklad_niepelny = False
 
         h = compute_habitat(row, profile, s_host=s_host)
         if h is not None and not math.isfinite(h):
@@ -255,6 +261,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         s_age_values.append(s_age)
         s_host_source_values.append(s_host_source)
         s_host_package_date_values.append(s_host_package_date)
+        sklad_niepelny_values.append(sklad_niepelny)
         m_values.append(m)
         t_values.append(t)
         k_frost_values.append(k_frost)
@@ -269,6 +276,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["S_age"] = s_age_values
     stands["s_host_source"] = s_host_source_values
     stands["s_host_package_date"] = s_host_package_date_values
+    stands["sklad_niepelny"] = sklad_niepelny_values
     stands["M"] = m_values
     stands["T"] = t_values
     stands["K_frost"] = k_frost_values
@@ -297,6 +305,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "forecast_days": forecast_days,
         "package_stand_count": package_stand_count,
         "package_unknown_species_count": package_unknown_species_count,
+        "incomplete_composition_count": incomplete_composition_count,
         "g_season": g_season,
         "radar_coverage_mean": float(sum(rain_radar_coverage_values) / len(rain_radar_coverage_values)) if rain_radar_coverage_values else 0.0,
     }
