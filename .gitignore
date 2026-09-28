@@ -12,3 +12,6 @@ launcher/launcher_config.json
 
 # Prywatne dane z wyjsc (plan 2.1) - nigdy do repozytorium
 /dane_terenowe/
+
+# Worktree sesji Claude
+.claude/worktrees/
