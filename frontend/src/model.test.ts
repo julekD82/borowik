@@ -658,3 +658,14 @@ describe("access layers (Faza 3.5)", () => {
     expect(distanceMethodF3("access_points")).toContain("punktów dostępu");
   });
 });
+
+describe("attractivenessClass", () => {
+  it("classifies from the exported number and tolerates absence", async () => {
+    const { attractivenessClass } = await import("./model");
+    expect(attractivenessClass(0.05)).toBe("niska");
+    expect(attractivenessClass(0.2)).toBe("średnia");
+    expect(attractivenessClass(0.5)).toBe("wysoka");
+    expect(attractivenessClass(null)).toBeNull();
+    expect(attractivenessClass(undefined)).toBeNull();
+  });
+});

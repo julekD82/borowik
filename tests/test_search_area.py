@@ -459,3 +459,58 @@ def test_conditions_fetch_network_error_does_not_abort_an_otherwise_successful_r
     assert summary['scores_path'].exists()
     assert summary['conditions_path'] is None
     assert 'UWAGA' in capsys.readouterr().out
+
+
+def test_pipeline_with_access_points_exports_layers_manifest_and_card(monkeypatch, tmp_path):
+    # Faza 3: BDL parking + fire road at every tile centre, Overpass unused --
+    # the access model must drive P and be reported end to end.
+    import pipeline.prepare_trip as trip
+    configure_sources(monkeypatch)
+
+    def bdl_get(service, type_name, bbox, start):
+        n0, e0, n1, e1 = bbox
+        e, n = (e0 + e1) / 2, (n0 + n1) / 2
+        if 'turystyczna' in service:
+            return {'features': [{'type': 'Feature', 'geometry': {'type': 'Point', 'coordinates': [e + 300, n]},
+                                  'properties': {'objectid': int(e), 'tur_rec_pnt_cd': 'PARKING', 'nzw_ob': 'Test'}}]}
+        return {'features': [{'type': 'Feature', 'geometry': {'type': 'MultiLineString',
+                              'coordinates': [[[e, n], [e + 800, n]]]},
+                              'properties': {'objectid': int(e) + 1, 'nr_ppoz': '7'}}]}
+    monkeypatch.setattr(trip, '_default_bdl_get', bdl_get)
+    center, _ = search_tiles(50.5318, 18.6055, 10)
+
+    def osm_with_town(bbox, profile, **kw):
+        # jedna duza miejscowosc w centrum -- ludnosc wzmacnia punkty dostepu
+        empty = gpd.GeoDataFrame(geometry=[], crs=2180)
+        town = gpd.GeoDataFrame({'osm_id': [1], 'place': ['city'], 'population': [50000.0]},
+                                geometry=[center], crs=2180)
+        return {'parking': empty, 'roads': empty, 'places': town}
+    monkeypatch.setattr(trip, 'fetch_osm_features', osm_with_town)
+    summary = run_trip_preparation(50.5318, 18.6055, '2026-09-24', 10, 'profiles/boletus_edulis.yaml',
+                                   tmp_path, tmp_path / 'cache', use_radar=False)
+    points = json.loads(summary['access_points_path'].read_text(encoding='utf-8'))
+    roads = json.loads(summary['forest_roads_path'].read_text(encoding='utf-8'))
+    assert any(f['properties']['type'] == 'parking' and f['properties']['source'] == 'bdl' for f in points['features'])
+    assert any(f['properties']['kind'] == 'fire' and f['properties']['fire_no'] == '7' for f in roads['features'])
+    manifest = json.loads(summary['manifest_path'].read_text(encoding='utf-8'))
+    assert manifest['pressure_model_used'] == 'access_points'
+    assert manifest['access_points']['used'] is True
+    assert manifest['access_points']['parking_bdl'] >= 1
+    scores = json.loads(summary['scores_path'].read_text(encoding='utf-8'))
+    assert any(s['P'] > 0 for s in scores) and {s['distance_method'] for s in scores} == {'access_points'}
+    details = json.loads(summary['details_path'].read_text(encoding='utf-8'))
+    with_access = [d for d in details if d['access']]
+    assert with_access and with_access[0]['access']['d_parking_m'] is not None
+    diagnostics = json.loads(summary['diagnostics_path'].read_text(encoding='utf-8'))
+    assert 'pcontrib_parking' in diagnostics[0] and diagnostics[0]['pressure_model'] == 'access_points'
+
+
+def test_pipeline_falls_back_to_gravity_and_says_so_when_no_access_points(monkeypatch, tmp_path):
+    configure_sources(monkeypatch)   # zrodla dostepu puste
+    summary = run_trip_preparation(50.5318, 18.6055, '2026-09-24', 10, 'profiles/boletus_edulis.yaml',
+                                   tmp_path, tmp_path / 'cache', use_radar=False)
+    manifest = json.loads(summary['manifest_path'].read_text(encoding='utf-8'))
+    assert manifest['pressure_model_used'] == 'gravity'
+    assert manifest['access_points'] == {'used': False, 'reason': 'brak_punktow_dostepu',
+                                          'failed_tiles': {'bdl': 0, 'osm': 0}}
+    assert summary['access_points_path'] is None

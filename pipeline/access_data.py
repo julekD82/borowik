@@ -56,7 +56,7 @@ def _default_bdl_get(service: str, type_name: str, bbox, start_index: int) -> di
         "count": _PAGE_SIZE, "startIndex": start_index,
     }
     resp = requests.get(
-        f"{BDL_ARCGIS_BASE}/{service}/MapServer/WFSServer", params=params, timeout=120,
+        f"{BDL_ARCGIS_BASE}/{service}/MapServer/WFSServer", params=params, timeout=(15, 60),
         headers={"User-Agent": "grzyby-borowik-poc/0.1 (research script)"},
     )
     resp.raise_for_status()

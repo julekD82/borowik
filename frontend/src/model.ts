@@ -348,6 +348,11 @@ const SOURCE_LABELS: Record<string, string> = {
 export function sourceLabel(value: unknown): string {
   return SOURCE_LABELS[String(value)] ?? String(value ?? "");
 }
+// Progi jak w pipeline.access_pressure.ATTRACTIVENESS_CLASS_EDGES.
+export function attractivenessClass(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value < 0.1 ? "niska" : value < 0.3 ? "średnia" : "wysoka";
+}
 export function roadKindLabel(kind: unknown): string {
   return kind === "public"
     ? "droga publiczna"

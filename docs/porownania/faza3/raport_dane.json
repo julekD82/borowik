@@ -1,0 +1,438 @@
+{
+  "stand_count": 19716,
+  "mask_passing": 14399,
+  "saturation": {
+    "S_in_profile": 7.0,
+    "S_fit_median_match": 6.960604162802578,
+    "gravity_median_P_mask": 0.37321919002285153,
+    "median_raw_mask": 3.251704598148521,
+    "share_raw_zero_mask": 0.000555594138481839
+  },
+  "counts": {
+    "points_by_type_source": {
+      "entrance/osm": 1693,
+      "gate/osm": 153,
+      "parking/bdl": 148,
+      "parking/osm": 230,
+      "settlement/gus": 921
+    },
+    "parking_bdl": 148,
+    "parking_osm": 230,
+    "entrance": 1693,
+    "gate": 153,
+    "road_fallback": 0,
+    "settlement": 921,
+    "fallback_tile_count": 0,
+    "roads_by_kind": {
+      "closed": 11266,
+      "fire": 15683,
+      "public": 2041
+    },
+    "osm_public_roads_paved": 1874,
+    "corridor_sample_count": 57336,
+    "corridor_roads_reached": 15657
+  },
+  "P": {
+    "gravity_median_mask": 0.37321919002285153,
+    "access_median_mask": 0.37156911696695794,
+    "gravity_mean_mask": 0.3794329801499946,
+    "access_mean_mask": 0.3886265250387855,
+    "spearman_P_mask": 0.7471776065079485
+  },
+  "checks": {
+    "stands_beyond_all_ranges": 1,
+    "of_which_P_nonzero": 0,
+    "share_forest_area_P_gt_0_5_all": 0.3175557477905808,
+    "share_forest_area_P_gt_0_5_mask": 0.31441800066350645,
+    "share_forest_area_P_gt_0_5_gravity_all": 0.32252862492442086,
+    "share_forest_area_P_gt_0": 0.9990678956327899,
+    "threshold_warning_70pct": false,
+    "neighbour_jump_p99_access": 0.05879767766872166,
+    "neighbour_jump_p99_gravity": 0.10579839091985145,
+    "neighbour_jump_max_access": 0.10933410541385957,
+    "neighbour_jump_max_gravity": 0.4584162970689849
+  },
+  "lubliniec_belt": [
+    {
+      "od_osiedla_m": "0-500",
+      "wydzielen": 14,
+      "P_access_srednia": 0.49119991464518414,
+      "P_gravity_srednia": 0.6313108465696452
+    },
+    {
+      "od_osiedla_m": "500-1000",
+      "wydzielen": 67,
+      "P_access_srednia": 0.5745938627512573,
+      "P_gravity_srednia": 0.6624131243480867
+    },
+    {
+      "od_osiedla_m": "1000-2000",
+      "wydzielen": 384,
+      "P_access_srednia": 0.4953110414413693,
+      "P_gravity_srednia": 0.5221121685449507
+    },
+    {
+      "od_osiedla_m": "2000-3000",
+      "wydzielen": 460,
+      "P_access_srednia": 0.3665678964777765,
+      "P_gravity_srednia": 0.39474284322297754
+    },
+    {
+      "od_osiedla_m": "3000-5000",
+      "wydzielen": 1021,
+      "P_access_srednia": 0.41885921924808595,
+      "P_gravity_srednia": 0.37923287356188823
+    },
+    {
+      "od_osiedla_m": "5000-inf",
+      "wydzielen": 118,
+      "P_access_srednia": 0.5118057772537582,
+      "P_gravity_srednia": 0.4360468954757182
+    }
+  ],
+  "R_recompute_check_max_abs_diff_vs_1_6": 0.0,
+  "ranking": {
+    "top20_overlap": 5,
+    "spearman_R_mask": 0.9604225794237234
+  },
+  "regions": {
+    "przed": [
+      {
+        "region_id": "region_1",
+        "rank_score": 78.23948600685426,
+        "stand_count": 23,
+        "centroid_lon_lat": [
+          18.58761,
+          50.60068
+        ]
+      },
+      {
+        "region_id": "region_2",
+        "rank_score": 82.157431157927,
+        "stand_count": 21,
+        "centroid_lon_lat": [
+          18.38662,
+          50.59434
+        ]
+      },
+      {
+        "region_id": "region_3",
+        "rank_score": 78.38690977244951,
+        "stand_count": 15,
+        "centroid_lon_lat": [
+          18.45548,
+          50.57717
+        ]
+      },
+      {
+        "region_id": "region_4",
+        "rank_score": 78.52119330927269,
+        "stand_count": 13,
+        "centroid_lon_lat": [
+          18.53601,
+          50.61718
+        ]
+      },
+      {
+        "region_id": "region_5",
+        "rank_score": 79.91076878913456,
+        "stand_count": 38,
+        "centroid_lon_lat": [
+          18.47709,
+          50.54775
+        ]
+      }
+    ],
+    "po": [
+      {
+        "region_id": "region_1",
+        "rank_score": 82.97658700257642,
+        "stand_count": 22,
+        "centroid_lon_lat": [
+          18.3766,
+          50.59649
+        ]
+      },
+      {
+        "region_id": "region_2",
+        "rank_score": 75.3229308312807,
+        "stand_count": 18,
+        "centroid_lon_lat": [
+          18.4649,
+          50.55835
+        ]
+      },
+      {
+        "region_id": "region_3",
+        "rank_score": 78.19948424598338,
+        "stand_count": 23,
+        "centroid_lon_lat": [
+          18.58761,
+          50.60068
+        ]
+      },
+      {
+        "region_id": "region_4",
+        "rank_score": 78.79445994369446,
+        "stand_count": 13,
+        "centroid_lon_lat": [
+          18.53601,
+          50.61718
+        ]
+      },
+      {
+        "region_id": "region_5",
+        "rank_score": 75.30646796865274,
+        "stand_count": 18,
+        "centroid_lon_lat": [
+          18.44652,
+          50.52513
+        ]
+      }
+    ],
+    "old_regions_kept_within_1600m": 4
+  },
+  "top10_wzrost_P": [
+    {
+      "stand_id": "02-03-1-02-49    -h   -00@2026",
+      "lat": 50.56358,
+      "lon": 18.63584,
+      "P_gravity": 0.259,
+      "P_access": 0.842,
+      "d_parking_m": 1004,
+      "wyjasnienie": "parking pk-osm-926794438 (osm); wklady: parking=5.549, entrance=6.063, gate=1.088, settlement=0.116, forest_road=0.091"
+    },
+    {
+      "stand_id": "02-03-1-02-49    -d   -00@2026",
+      "lat": 50.56503,
+      "lon": 18.63559,
+      "P_gravity": 0.314,
+      "P_access": 0.848,
+      "d_parking_m": 845,
+      "wyjasnienie": "parking pk-osm-926794438 (osm); wklady: parking=5.679, entrance=6.065, gate=1.219, settlement=0.149, forest_road=0.060"
+    },
+    {
+      "stand_id": "02-14-3-01-445   -a   -00@2026",
+      "lat": 50.56135,
+      "lon": 18.63401,
+      "P_gravity": 0.3,
+      "P_access": 0.825,
+      "d_parking_m": 941,
+      "wyjasnienie": "parking pk-osm-1059189549 (osm); wklady: parking=5.322, entrance=5.733, gate=0.959, settlement=0.085, forest_road=0.104"
+    },
+    {
+      "stand_id": "02-03-1-03-136   -b   -00@2026",
+      "lat": 50.54822,
+      "lon": 18.73103,
+      "P_gravity": 0.288,
+      "P_access": 0.809,
+      "d_parking_m": 947,
+      "wyjasnienie": "parking pk-bdl-26728 (bdl, L-ctwo Tworóg oddz. 171 n); wklady: parking=4.378, entrance=6.701, gate=0.441, settlement=0.033, forest_road=0.053"
+    },
+    {
+      "stand_id": "02-19-1-11-806   -f   -00@2026",
+      "lat": 50.59958,
+      "lon": 18.68528,
+      "P_gravity": 0.216,
+      "P_access": 0.737,
+      "d_parking_m": 1175,
+      "wyjasnienie": "parking pk-bdl-53657 (bdl, Pod Stokiem); wklady: parking=3.744, entrance=3.234, gate=2.312, settlement=0.007, forest_road=0.044"
+    },
+    {
+      "stand_id": "02-03-1-02-49    -c   -00@2026",
+      "lat": 50.56616,
+      "lon": 18.63797,
+      "P_gravity": 0.333,
+      "P_access": 0.851,
+      "d_parking_m": 802,
+      "wyjasnienie": "parking pk-osm-926794438 (osm); wklady: parking=5.614, entrance=6.367, gate=1.169, settlement=0.170, forest_road=0.000"
+    },
+    {
+      "stand_id": "02-19-1-11-842   -b   -99@2026",
+      "lat": 50.59536,
+      "lon": 18.68662,
+      "P_gravity": 0.232,
+      "P_access": 0.743,
+      "d_parking_m": 1094,
+      "wyjasnienie": "parking pk-osm-245534364 (osm); wklady: parking=3.468, entrance=4.107, gate=1.823, settlement=0.022, forest_road=0.097"
+    },
+    {
+      "stand_id": "02-14-3-01-445A  -j   -00@2026",
+      "lat": 50.56442,
+      "lon": 18.63317,
+      "P_gravity": 0.332,
+      "P_access": 0.842,
+      "d_parking_m": 877,
+      "wyjasnienie": "parking pk-osm-926794438 (osm); wklady: parking=5.707, entrance=5.693, gate=1.275, settlement=0.143, forest_road=0.077"
+    },
+    {
+      "stand_id": "02-19-1-11-843   -b   -00@2026",
+      "lat": 50.59746,
+      "lon": 18.68184,
+      "P_gravity": 0.166,
+      "P_access": 0.674,
+      "d_parking_m": 1431,
+      "wyjasnienie": "parking pk-bdl-53657 (bdl, Pod Stokiem); wklady: parking=3.010, entrance=3.275, gate=1.500, settlement=0.007, forest_road=0.053"
+    },
+    {
+      "stand_id": "02-03-1-03-136   -j   -00@2026",
+      "lat": 50.54674,
+      "lon": 18.72981,
+      "P_gravity": 0.332,
+      "P_access": 0.837,
+      "d_parking_m": 828,
+      "wyjasnienie": "parking pk-bdl-26728 (bdl, L-ctwo Tworóg oddz. 171 n); wklady: parking=4.546, entrance=7.530, gate=0.500, settlement=0.056, forest_road=0.060"
+    }
+  ],
+  "top10_spadek_P": [
+    {
+      "stand_id": "02-25-1-05-254   -j   -00@2026",
+      "lat": 50.4011,
+      "lon": 18.54654,
+      "P_gravity": 0.793,
+      "P_access": 0.158,
+      "d_parking_m": 3307,
+      "wyjasnienie": "entrance en-osm-506 (osm); wklady: entrance=0.996, settlement=0.081, forest_road=0.128"
+    },
+    {
+      "stand_id": "02-25-1-05-253   -f   -00@2026",
+      "lat": 50.40173,
+      "lon": 18.54758,
+      "P_gravity": 0.786,
+      "P_access": 0.152,
+      "d_parking_m": 3398,
+      "wyjasnienie": "entrance en-osm-509 (osm); wklady: entrance=0.983, settlement=0.078, forest_road=0.092"
+    },
+    {
+      "stand_id": "02-03-1-05-381   -h   -00@2026",
+      "lat": 50.50156,
+      "lon": 18.66094,
+      "P_gravity": 0.771,
+      "P_access": 0.14,
+      "d_parking_m": 3019,
+      "wyjasnienie": "entrance en-osm-136 (osm); wklady: entrance=0.910, settlement=0.042, forest_road=0.103"
+    },
+    {
+      "stand_id": "02-03-1-05-483   -d   -00@2026",
+      "lat": 50.46982,
+      "lon": 18.65992,
+      "P_gravity": 0.74,
+      "P_access": 0.126,
+      "d_parking_m": 2158,
+      "wyjasnienie": "entrance en-osm-1241 (osm); wklady: parking=0.187, entrance=0.569, settlement=0.109, forest_road=0.079"
+    },
+    {
+      "stand_id": "02-03-1-05-380   -c   -00@2026",
+      "lat": 50.50569,
+      "lon": 18.66238,
+      "P_gravity": 0.764,
+      "P_access": 0.16,
+      "d_parking_m": 2639,
+      "wyjasnienie": "entrance en-osm-136 (osm); wklady: parking=0.042, entrance=1.158, settlement=0.024"
+    },
+    {
+      "stand_id": "02-03-1-05-380   -g   -00@2026",
+      "lat": 50.50195,
+      "lon": 18.66289,
+      "P_gravity": 0.742,
+      "P_access": 0.139,
+      "d_parking_m": 2975,
+      "wyjasnienie": "entrance en-osm-136 (osm); wklady: parking=0.000, entrance=0.983, settlement=0.034, forest_road=0.028"
+    },
+    {
+      "stand_id": "02-03-1-05-380   -f   -00@2026",
+      "lat": 50.50456,
+      "lon": 18.66294,
+      "P_gravity": 0.746,
+      "P_access": 0.15,
+      "d_parking_m": 2758,
+      "wyjasnienie": "entrance en-osm-136 (osm); wklady: parking=0.019, entrance=1.095, settlement=0.025"
+    },
+    {
+      "stand_id": "02-03-1-07-513   -i   -00@2026",
+      "lat": 50.44149,
+      "lon": 18.72325,
+      "P_gravity": 0.782,
+      "P_access": 0.187,
+      "d_parking_m": 2940,
+      "wyjasnienie": "entrance en-osm-1245 (osm); wklady: parking=0.001, entrance=1.275, settlement=0.019, forest_road=0.157"
+    },
+    {
+      "stand_id": "02-03-1-10-720   -n   -00@2026",
+      "lat": 50.38765,
+      "lon": 18.58212,
+      "P_gravity": 0.762,
+      "P_access": 0.175,
+      "d_parking_m": 4361,
+      "wyjasnienie": "entrance en-osm-513 (osm); wklady: entrance=1.041, settlement=0.076, forest_road=0.229"
+    },
+    {
+      "stand_id": "02-25-1-04-205   -c   -00@2026",
+      "lat": 50.4368,
+      "lon": 18.6157,
+      "P_gravity": 0.59,
+      "P_access": 0.005,
+      "d_parking_m": 6080,
+      "wyjasnienie": "settlement st-gus-451 (gus); wklady: settlement=0.034"
+    }
+  ],
+  "sensitivity_unknown_surface": {
+    "nieznana_jak_utwardzona": {
+      "median_P_mask": 0.3752431473948442,
+      "share_area_P_gt_0_5": 0.32149785235736345,
+      "spearman_vs_baza": 0.9998823348464663
+    },
+    "nieznana_jak_gruntowa": {
+      "median_P_mask": 0.37047548019638765,
+      "share_area_P_gt_0_5": 0.3163943264845688,
+      "spearman_vs_baza": 0.999981597415338
+    },
+    "baza_0_5": {
+      "median_P_mask": 0.37156911696695794,
+      "share_area_P_gt_0_5": 0.3175557477905808,
+      "spearman_vs_baza": 1.0
+    }
+  },
+  "lateral_range_comparison": {
+    "300m": {
+      "share_forest_area_reached_by_roads": 0.9540448857658462,
+      "share_area_P_gt_0_5": 0.3175557477905808,
+      "median_P_mask": 0.37156911696695794
+    },
+    "500m": {
+      "share_forest_area_reached_by_roads": 0.9931496381758598,
+      "share_area_P_gt_0_5": 0.3202723295172218,
+      "median_P_mask": 0.37434876936742656
+    },
+    "1000m": {
+      "share_forest_area_reached_by_roads": 0.9975389203626313,
+      "share_area_P_gt_0_5": 0.32447363322276573,
+      "median_P_mask": 0.3772300008767464
+    }
+  },
+  "surface_coverage": {
+    "network_km": 8925.79886944398,
+    "known_share_overall": 0.6377769683864404,
+    "fire_road_km": 3954.0430206456817,
+    "fire_known_share": 0.7876825089966129,
+    "cells_2x2km": 501,
+    "cell_known_share_quantiles": {
+      "0.0": 0.0,
+      "0.1": 0.0,
+      "0.25": 0.342823695750902,
+      "0.5": 0.6171713359371455,
+      "0.75": 0.7969473867551006,
+      "0.9": 0.9150657165842202,
+      "1.0": 1.0
+    },
+    "cells_below_20pct_known": 88
+  },
+  "export": {
+    "access_points_bytes": 753213,
+    "forest_roads_bytes": 6206243,
+    "forest_roads_tolerance_m": 4.0,
+    "features_points": 3145,
+    "features_roads": 28990
+  },
+  "czas_s": 413.0
+}

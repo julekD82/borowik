@@ -8,6 +8,7 @@ import {
   sourceLabel,
   surfaceLabel,
   roadKindLabel,
+  attractivenessClass,
 } from "./model";
 
 // Faza 3.5: warstwy mapy (grupa przelaczana w legendzie -> id warstw MapLibre).
@@ -123,11 +124,13 @@ export class ForestMap {
         (c) =>
           ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
       );
-    const cls = props.attractiveness_class
-      ? `atrakcyjność: <strong>${escapeHtml(props.attractiveness_class)}</strong>`
+    const level =
+      attractivenessClass(props.attractiveness) ?? props.attractiveness_class;
+    const cls = level
+      ? `atrakcyjność: <strong>${escapeHtml(level)}</strong>`
       : "atrakcyjność: nie dotyczy";
     const html = props.kind
-      ? `<strong>${escapeHtml(roadKindLabel(props.kind))}</strong><br>nawierzchnia: ${escapeHtml(surfaceLabel(props.surface))}<br>źródło: ${escapeHtml(sourceLabel(props.source))}${props.fire_no ? `<br>numer dojazdu: ${escapeHtml(props.fire_no)}` : ""}<br>${cls}`
+      ? `<strong>${escapeHtml(roadKindLabel(props.kind))}</strong><br>nawierzchnia: ${escapeHtml(surfaceLabel(props.surface))}<br>źródło: ${escapeHtml(sourceLabel(props.source ?? (props.kind === "fire" ? "bdl_ppoz" : "")))}${props.fire_no ? `<br>numer dojazdu: ${escapeHtml(props.fire_no)}` : ""}<br>${cls}`
       : `<strong>${escapeHtml(pointTypeLabel(props.type))}${props.name ? ` „${escapeHtml(props.name)}”` : ""}</strong><br>źródło: ${escapeHtml(sourceLabel(props.source))}<br>${cls}`;
     new maplibregl.Popup({ closeButton: true, maxWidth: "240px" })
       .setLngLat(event.lngLat)

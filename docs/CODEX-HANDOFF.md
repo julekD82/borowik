@@ -590,3 +590,12 @@ npm.cmd run dev
 - Brak serwera uruchamiającego Python z przeglądarki, brak nowych suwaków w UI, brak hostingu i pełnego trybu offline.
 - Nie zmieniać historycznych planów tak, jakby wcześniej obejmowały tę implementację. Aktualizacje stanu znajdują się tutaj oraz na początku `docs/projekt-borowik.md`.
 
+## Faza 3 (presja v2: punkty dostępu) — stan z 2026-09-29, gałąź `ulepszenia-faza3`
+
+Raport i liczby: `docs/RAPORT_FAZA_3.md`, materiały: `docs/porownania/faza3/`. Skrót dla kolejnej sesji:
+- `pressure.model: access_points` (domyślny w profilu) liczy P z punktów dostępu (`pipeline/access_*.py`); `pressure.model: gravity` przywraca stary model. Kolumna `pressure_model` i manifest (`pressure_model_used`) mówią, który zadecydował; brak jakichkolwiek punktów dostępu = powrót do gravity z komunikatem.
+- Źródła: ArcGIS WFS BDL (turystyczny: kody `PARKING`, `MSC POST`; dojazdy pożarowe) i osobne zapytanie Overpass (drogi z tagami nawierzchni, szlabany), cache w `cache/access_tiles/`. Główny WFS BDL tych warstw nie ma; ArcGIS zwraca cp1250 zamiast UTF‑8; BBOX w kolejności N,E.
+- BDOT10k (`OT_SKDR_L`) i relacje `route=bicycle` NIE są zaimplementowane (BLOCKED, patrz raport).
+- `saturation_s: 7.0` i wszystkie `pressure.access_points.*` to nieskalibrowana hipoteza. Zasięg poprzeczny dróg leśnych 0,3 km i tak obejmuje ~95% lasu Kieleczki, więc korytarze prawie nie różnicują wydzieleń.
+- Testy integracyjne `run_trip_preparation` muszą mockować `pipeline.prepare_trip._default_bdl_get` i `_default_overpass_call` (patrz `configure_sources` w `tests/test_search_area.py`), inaczej wychodzą do sieci.
+- Pełny przebieg `prepare_trip` z modelem `access_points` na żywych danych pogodowych jeszcze nie był uruchomiony (raport liczono offline z cache i wyników 1.6).

@@ -46,7 +46,7 @@ def test_roads_geojson_kinds_and_null_attractiveness_for_public(tmp_path):
     fc = json.loads(path.read_text(encoding="utf-8"))
     by_kind = {f["properties"]["kind"]: f["properties"] for f in fc["features"]}
     assert by_kind["closed"]["attractiveness"] > 0 and by_kind["closed"]["surface"] == "hard"
-    assert by_kind["public"]["attractiveness"] is None
+    assert "attractiveness" not in by_kind["public"]      # publiczna: zrodlo, nie korytarz
     assert tol == 2.0
 
 

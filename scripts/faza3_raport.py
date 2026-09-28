@@ -29,6 +29,7 @@ from scipy.spatial import cKDTree  # noqa: E402
 from scipy.stats import spearmanr  # noqa: E402
 
 from pipeline.access_data import load_access_sources  # noqa: E402
+from pipeline.access_export import write_access_points_geojson, write_forest_roads_geojson  # noqa: E402
 from pipeline.access_points import build_access_set  # noqa: E402
 from pipeline.access_pressure import build_access_model, compute_access_pressure  # noqa: E402
 from pipeline.entrances import compute_forest_boundary  # noqa: E402
@@ -325,6 +326,13 @@ def main() -> int:
     pd.DataFrame({"stand_id": stands["stand_id"], "mask": mask, "P_gravity": p_grav, "P_access": p_acc,
                   "R_przed": r_old, "R_po": r_new, "top_point_id": out["top_point_id"],
                   "top_point_type": out["top_point_type"]}).to_csv(OUT_DIR / "roznice_P.csv", index=False)
+
+    # --- eksport warstw mapy z realnych danych (rozmiar, tolerancja uproszczenia) -------------
+    ap_path = write_access_points_geojson(model, OUT_DIR / "access_points_2026-09-28.geojson")
+    fr_path, tol = write_forest_roads_geojson(model, OUT_DIR / "forest_roads_2026-09-28.geojson")
+    report["export"] = {"access_points_bytes": ap_path.stat().st_size, "forest_roads_bytes": fr_path.stat().st_size,
+                        "forest_roads_tolerance_m": tol, "features_points": int(len(model.points)),
+                        "features_roads": int(len(model.roads))}
 
     report["czas_s"] = round(time.time() - t0, 1)
     (OUT_DIR / "raport_dane.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=float), encoding="utf-8")

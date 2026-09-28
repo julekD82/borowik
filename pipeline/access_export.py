@@ -15,7 +15,7 @@ import numpy as np
 
 from pipeline.access_pressure import AccessModel, attractiveness_class
 
-DEFAULT_LIMIT_BYTES = 8 * 1024 * 1024
+DEFAULT_LIMIT_BYTES = 6 * 1024 * 1024
 _ROUND = 5
 
 
@@ -65,12 +65,16 @@ def roads_feature_collection(model: AccessModel, tolerance_m: float) -> dict:
         if geom is None or geom.is_empty:
             continue
         att = _num(row["attractiveness"])
-        props = {
-            "id": row["road_id"], "kind": row["kind"], "surface": row["surface_class"],
-            "source": row["source"], "fire_no": row["fire_no"] or "",
-            "attractiveness": att,
-            "attractiveness_class": attractiveness_class(att) if att is not None else None,
-        }
+        # Zwarte wlasciwosci (rozmiar pliku zalezy od liczby odcinkow, nie od
+        # wierzcholkow): klase atrakcyjnosci liczy przegladarka z liczby, puste
+        # pola sa pomijane, zrodlo dojazdu pozarowego wynika z kind == "fire".
+        props = {"kind": row["kind"], "surface": row["surface_class"]}
+        if row["kind"] != "fire":
+            props["source"] = row["source"]
+        if row["fire_no"]:
+            props["fire_no"] = row["fire_no"]
+        if att is not None:
+            props["attractiveness"] = round(att, 3)
         features.append({"type": "Feature", "geometry": {
             "type": geom.geom_type, "coordinates": _round_coords(list(geom.coords)),
         }, "properties": props})
@@ -98,7 +102,7 @@ def write_forest_roads_geojson(model: AccessModel, out_path, limit_bytes: int = 
     Zwraca (sciezka, uzyta_tolerancja_m)."""
     out_path = pathlib.Path(out_path)
     tolerance = start_tolerance_m
-    for _ in range(8):
+    for _ in range(6):
         size = _write(roads_feature_collection(model, tolerance), out_path)
         if size <= limit_bytes:
             return out_path, tolerance
