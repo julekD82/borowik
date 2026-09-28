@@ -1,12 +1,17 @@
 # Raport nocny — Faza 0 i Faza 1 (noc 27/28.09.2026)
 
-> W trakcie realizacji. Sekcja „Na rano" zostanie uzupełniona na końcu nocy
-> (zadanie 1.9) — na razie tymczasowa rekomendacja poniżej.
+## Na rano
 
-## Na rano (tymczasowe, do aktualizacji po 1.9)
+**Użyj migawki „Kieleczka 28.09 — nowy kod".** Rekomendacja: nowy kod, nie baseline.
 
-- Migawka do użycia rano: **jeszcze nieznana** — poczekaj na finalną wersję tej sekcji.
-- Status w trakcie realizacji, patrz log zadań poniżej.
+Dlaczego:
+- Wszystkie testy przechodzą (backend 578/578, frontend 72/72 + tsc czysty) po każdym zadaniu, na bieżąco.
+- Zmiany rankingu są **wytłumaczone i oczekiwane**, nie przypadkowe: korelacja Spearmana R między starym a nowym kodem to **0,975** (wśród 14399 wydzieleń w masce w obu przebiegach) — silna zgodność ogólna, z realną, uzasadnioną reorganizacją czołówki. Trzy największe awanse i trzy największe spadki w rankingu **wszystkie** tłumaczy zmiana źródła składu gatunkowego (WFS → pełny skład z paczki BDL) zmieniająca H w oczekiwanym kierunku (w górę przy awansach, w dół przy spadkach) — to dokładnie to, co miała zrobić Faza 1.
+- Największa realna poprawa: **89,1% wydzieleń w masce ma teraz skład z paczki BDL** (0% w starym kodzie) i **populacja z prawdziwej siatki GUS** zamiast w większości brakujących tagów OSM (10 237 komórek, zero pominiętych w buforze). To usuwa dwa najpoważniejsze problemy z dokumentu technicznego (§18.1).
+- **Uwaga do świadomości na rano:** mediana P wzrosła (0,245 → 0,373) — to efekt realnych, gęstszych danych o populacji (GUS), nie błąd. Rejony pozostają w tej samej okolicy rankingu (rank_score różni się o ≤1,3 punktu), ale skład członków zmienił się umiarkowanie (59 wspólnych z 97/111).
+- Panel „Warunki na kolejne dni" **nie wygenerował się w tym przebiegu** — chwilowy błąd 503 Open-Meteo przy osobnym zapytaniu o prognozę 7-dniową (sam ranking/eksport główny nie ucierpiał, panel to osobny, nie-krytyczny dodatek). Jeśli rano interesuje Cię pasek „Warunki”, uruchom ponownie tylko to zapytanie albo zaakceptuj jego brak w tej migawce.
+
+Szczegóły porównania niżej (sekcja 1.9).
 
 ---
 
@@ -40,6 +45,36 @@ Patrz punkt 3 powyżej. `docs/bdl-paczki-rozpoznanie.md` potwierdza konwencję: 
 
 Mediana zbliżona (zgodnie z celem doboru D_half); maksimum w trybie absolute wyraźnie niższe — oczekiwane: w trybie local najbardziej obleganie miejsce w danej analizie zawsze normalizuje się blisko 1 niezależnie od jego realnej skali, w trybie absolute nie.
 
+## 1.9: raport porównawczy — Kieleczka 28.09, stary kod vs nowy kod
+
+Wszystkie liczby z realnych eksportów obu przebiegów (`docs/porownania/baseline/`, `docs/porownania/nowy/`), 19716 wydzieleń dopasowanych po `stand_id` w obu.
+
+**Korelacja Spearmana R:**
+- wszystkie dopasowane wydzielenia (19716): rho = 0,9898
+- w masce w obu przebiegach (14399): rho = 0,9746
+
+**Zmiana źródła składu (WFS → paczka BDL):** 14631 wydzieleń przeszło z WFS na pełny skład z paczki (zgodnie z manifestem: `package_stand_count=14631`); 5085 zostało przy WFS (nadleśnictwa bez paczki: 02-06, 02-31).
+
+**Rozkład H (w masce w obu):** stary min=0,000 mediana=0,843 max=1,000 → nowy min=0,000 mediana=0,860 max=1,000. Lekki wzrost mediany — realny skład z paczki średnio nieznacznie poprawia S_host względem przybliżenia „sam gatunek panujący”.
+
+**Rozkład P (w masce w obu):** stary min=0,0008 mediana=0,2446 max=0,8500 → nowy min=0,0014 mediana=0,3732 max=0,8175 (patrz też sekcja 1.5 — częściowo efekt trybu `absolute`, częściowo efekt gęstszej siatki GUS zamiast rzadkich tagów OSM).
+
+**Top-20 (≥ 0,5 ha, po R malejąco):** pokrywają się w 7/20 pozycjach. Pozostałe przesunięcia wynikają głównie ze zmiany źródła składu (nowe wydzielenia z wysokim H z paczki wchodzą do czołówki, część starych spada, bo ich realny skład okazał się gorszy niż przybliżenie WFS zakładało).
+
+**Rejony:** 5 w obu przebiegach, zbliżone rank_score (stary: 77,75–81,78; nowy: 77,36–82,50 — różnica median ≤ 1,3 punktu). Łączne członkostwo we wszystkich rejonach: stary 97, nowy 111; część wspólna: 59.
+
+**Trzy największe awanse w rankingu** (po pozycji rankingowej wśród wydzieleń w masce w obu):
+1. `02-25-1-03-135-f-00@2026`: pozycja 9423→3921 (+5502), R 48,4→58,4. Przyczyna: WFS→paczka, H 0,655→0,790 (realny skład znacznie lepszy niż przybliżenie).
+2. `02-14-3-09-10-j-00@2026`: pozycja 8581→3541 (+5040), R 50,2→59,5. Przyczyna: WFS→paczka, H 0,668→0,819.
+3. `02-14-3-09-36-j-00@2026`: pozycja 8971→3935 (+5036), R 49,4→58,4. Przyczyna: WFS→paczka, H 0,619→0,746.
+
+**Trzy największe spadki:**
+1. `02-25-1-05-263-r-00@2026`: pozycja 7686→12573 (−4887), R 52,1→38,6. Przyczyna: WFS→paczka, H 0,780→0,599 (realny skład gorszy niż zakładało przybliżenie) + wzrost P (0,235→0,364, nowa populacja GUS).
+2. `02-19-1-13-801-b-00@2026`: pozycja 6029→10301 (−4272), R 55,6→45,1. Przyczyna: WFS→paczka, H 0,767→0,652, P 0,183→0,331.
+3. `02-25-1-07-345-b-00@2026`: pozycja 8193→12319 (−4126), R 50,9→39,4. Przyczyna: WFS→paczka, H 0,691→0,550, P 0,128→0,261.
+
+We wszystkich sześciu przypadkach zmiana wynika ze **znanej, celowej przyczyny** (1.3 + 1.4/1.5), nie z błędu — F_loc praktycznie bez zmian (ta sama pogoda), więc to H (skład) i P (presja) niosą całą różnicę.
+
 ## Status zadań
 
 | Zadanie | Status | Notatka |
@@ -61,7 +96,7 @@ Mediana zbliżona (zgodnie z celem doboru D_half); maksimum w trybie absolute wy
 | 1.8d | DONE | Zrealizowane w ramach 1.7 (patrz wyżej): `percentile_rank` ignoruje NaN, `climatology_window_insufficient` (puste lub <50% ważnych) zasila etykietę pewności |
 | 1.8e | DONE | Klucze cache pogody i klimatologii zawierają teraz `past_days`/zakres lat i numer wersji formatu (`_v1`) — stare pliki cache zostają, po prostu nie są już dopasowywane (nowe zapytanie zapisze nowe pliki obok). Realny koszt dziś: pełny bieg 1.9 przeliczy klimatologię Kieleczki na nowo (~25 punktów, mały koszt) |
 | 1.8f | DONE | Poprawione teksty: `--date` (realna data wyjazdu, nie etykieta), `CLAUDE.md` (usunięty odniesienie do nieistniejącego katalogu `borowik-faza2-mvp-backend`), `frontend/README.md` (ścieżka uruchomienia, lista plików `sync-data`, status grupowania, zakaz_status/gdos_status), uzasadnienie wilgotności w `pipeline/explain.py` („mediana obszaru” zamiast mylącej „normy dla tej pory roku”) |
-| 1.9 | TODO | |
+| 1.9 | DONE | Przebieg końcowy Kieleczka 20 km, 2026-09-28, z całym kodem Fazy 1 + realnymi paczkami BDL i siatką GUS. Migawka „Kieleczka 28.09 — nowy kod”, eksporty w `docs/porownania/nowy/`. Panel warunków pominięty (503 z Open-Meteo przy osobnym zapytaniu, nie wpłynęło na główny wynik). Pełne porównanie niżej |
 
 ## Ruling: pole „w launcherze” dla ścieżki paczek BDL
 
