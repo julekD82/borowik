@@ -230,7 +230,16 @@ def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92,
         df["lat"] = lat
         df["lon"] = lon
         frames.append(df)
-    return pd.concat(frames, ignore_index=True)
+    result = pd.concat(frames, ignore_index=True)
+    if cache_dir is not None:
+        # Plan 2.2: keep the raw forecast with its issue time. Best-effort --
+        # a failed archive write must never abort an otherwise good run.
+        try:
+            from pipeline.forecast_archive import archive_forecast
+            archive_forecast(result, Path(cache_dir), forecast_days)
+        except OSError as exc:
+            print(f"  UWAGA: nie zapisano archiwum prognoz: {exc}", flush=True)
+    return result
 
 
 def _rolling_sum(series: pd.Series, window: int) -> float:
