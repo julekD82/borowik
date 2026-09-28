@@ -37,6 +37,13 @@ Patrz punkt 3 powyżej. `docs/bdl-paczki-rozpoznanie.md` potwierdza konwencję: 
 |---|---|---|
 | 0.1 | DONE | patrz wyżej |
 | 0.2 | DONE | patrz wyżej |
-| 0.3 | W TOKU | uruchomiony przebieg baseline (obecny kod, bez paczek BDL — kod nie umożliwia wskazania innego katalogu niż `cache/bdl_packages/`), Kieleczka, 20 km, 2026-09-28 |
-| 0.4 | TODO | gałąź `ulepszenia-faza1` (po 0.3) |
-| 1.1–1.9 | TODO | |
+| 0.3 | DONE | migawka „Kieleczka 28.09 — baseline (stary kod)”, eksporty w `docs/porownania/baseline/`. 19716 wydzieleń, 14399 w masce, 5 rejonów, 0% składu z paczek (kod nie umiał wskazać `BDL/`) |
+| 0.4 | DONE | gałąź `ulepszenia-faza1` |
+| 1.1 | DONE | `run_manifest_{day}.json`: id/commit/dirty/profile hash, statusy źródeł, liczniki. `population_source`/`pressure_normalization` — pola-zaślepki do 1.4/1.5 |
+| 1.2 | DONE | `diagnostics_{day}.json`/`.parquet` (próg 20 MB na realnym pliku). Test kluczowy: R_final odtworzony z diagnostyki, tolerancja 1e-9. Przy okazji naprawiony realny (choć dotąd nieszkodliwy) błąd w `orchestrate.py`: `cell` (komórka klimatologii) była czytana tylko przy cache miss |
+| 1.3 | DONE | `--bdl-packages-dir`, wybór najnowszej paczki wg daty (nie kolejności katalogów), flaga `sklad_niepelny` (suma < 0,9), raport pokrycia per nadleśnictwo. **Zweryfikowane na realnych danych**: `BDL/` (9 nadleśnictw RDLP Katowice) dla Kieleczki 20 km daje **89,1% pokrycia paczkami** wśród wydzieleń w masce (0% w baseline). 2 nadleśnictwa bez paczki: 02-06 (5 wydz.), 02-31 (1339 wydz., prawdopodobnie Gliwice). Baner w interfejsie (>20% WFS-only) **odłożony** — dane już w `manifest.json` (`wfs_only_share_of_masked`), ostrzeżenie na razie tylko w logu konsoli; sama zmiana frontendu to osobna, niewielka praca zostawiona na później z braku czasu w nocy |
+| 1.4–1.9 | TODO | |
+
+## Ruling: pole „w launcherze” dla ścieżki paczek BDL
+
+Plan 1.3 wymaga ścieżki konfigurowalnej przez „parametr CLI, pole w launcherze **lub** wartość w konfiguracji lokalnej” (alternatywa, nie koniunkcja). Zrobiony `--bdl-packages-dir` (CLI) w pełni spełnia wymaganie. Nie dodano osobnego pola w GUI launchera (Tkinter) — koszt/czas nie uzasadniał tego przy już spełnionym wymaganiu. Koszt błędu: żaden (funkcjonalność dostępna, tylko mniej wygodna z GUI).
