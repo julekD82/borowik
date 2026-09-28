@@ -4,7 +4,10 @@ import pytest
 from shapely.geometry import Point
 
 from pipeline.habitat import load_profile
-from pipeline.pressure import nearest_distance_m, compute_d_park, compute_demand, compute_pressure
+from pipeline.pressure import (
+    nearest_distance_m, compute_d_park, compute_demand, compute_pressure,
+    demand_norm_local, demand_norm_absolute, compute_demand_norm,
+)
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
 CENTROID = Point(385000.0, 491000.0)
@@ -49,11 +52,57 @@ def test_compute_demand_zero_when_no_places():
     assert compute_demand(CENTROID, empty, decay_km=10.0) == 0.0
 
 
-def test_compute_pressure_matches_formula():
+def test_compute_pressure_matches_formula_absolute_default():
+    # Plan 1.5: PROFILE's default pressure.normalization is "absolute" --
+    # Demand_norm = Demand/(Demand+d_half), not the pre-1.5 Demand/demand_max.
     p = compute_pressure(d_park=400.0, demand=50.0, demand_max=100.0, profile=PROFILE)
+    cfg = PROFILE["pressure"]
+    demand_norm = 50.0 / (50.0 + cfg["d_half"])
+    expected = 1 - math.exp(-cfg["k"] * demand_norm * math.exp(-400.0 / cfg["park_decay_m"]))
+    assert p == pytest.approx(expected)
+
+
+def test_compute_pressure_matches_formula_local_opt_in():
+    local_profile = {**PROFILE, "pressure": {**PROFILE["pressure"], "normalization": "local"}}
+    p = compute_pressure(d_park=400.0, demand=50.0, demand_max=100.0, profile=local_profile)
     cfg = PROFILE["pressure"]
     expected = 1 - math.exp(-cfg["k"] * (50.0 / 100.0) * math.exp(-400.0 / cfg["park_decay_m"]))
     assert p == pytest.approx(expected)
+
+
+# --- Plan 1.5: Demand normalization modes -----------------------------------
+
+def test_demand_norm_local_divides_by_run_max():
+    assert demand_norm_local(50.0, 100.0) == pytest.approx(0.5)
+
+
+def test_demand_norm_local_zero_when_max_is_zero_or_none():
+    assert demand_norm_local(0.0, 0.0) == 0.0
+    assert demand_norm_local(0.0, None) == 0.0
+
+
+def test_demand_norm_absolute_divides_by_demand_plus_d_half():
+    assert demand_norm_absolute(50.0, d_half=50.0) == pytest.approx(0.5)
+    assert demand_norm_absolute(0.0, d_half=100.0) == 0.0
+
+
+def test_demand_norm_absolute_signature_has_no_run_wide_max_parameter():
+    # The whole point of "absolute" (unlike demand_norm_local): normalizing
+    # one stand's Demand takes no run-derived value at all, only the raw
+    # Demand and the profile's fixed d_half -- so two different searches
+    # with the same raw Demand always normalize identically.
+    import inspect
+    assert list(inspect.signature(demand_norm_absolute).parameters) == ["demand", "d_half"]
+
+
+def test_compute_demand_norm_defaults_to_absolute():
+    profile = {"pressure": {"d_half": 100.0}}  # no "normalization" key at all
+    assert compute_demand_norm(50.0, demand_max=1000.0, profile=profile) == pytest.approx(50.0 / 150.0)
+
+
+def test_compute_demand_norm_local_opt_in():
+    profile = {"pressure": {"normalization": "local", "d_half": 100.0}}
+    assert compute_demand_norm(50.0, demand_max=200.0, profile=profile) == pytest.approx(0.25)
 
 
 def test_compute_pressure_zero_demand_max_does_not_raise():

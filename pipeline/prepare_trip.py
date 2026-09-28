@@ -612,6 +612,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         package_dir=bdl_packages_dir, bdl_coverage_report=bdl_coverage_report,
         wfs_only_share_of_masked=wfs_only_share_of_masked,
         population_source=population_source,
+        pressure_normalization=profile["pressure"].get("normalization", "absolute"),
     )
     manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
 
