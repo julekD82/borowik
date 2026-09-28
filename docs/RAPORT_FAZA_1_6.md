@@ -12,7 +12,7 @@ Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/PLAN_WDROZENIA.
 | 1.6.3 Skład z niższych pięter (korekta, za flagą) | DONE | `host.lower_storeys_weight`, domyślnie 0 |
 | 1.6.4 Cechy do diagnostyki (bez wagi w R) | DONE | `pipeline/bdl_extra_features.py`, `pipeline/compartment_boundary.py` |
 | 1.6.5 Łatwość szukania w karcie | DONE | `pipeline/searchability.py` + frontend `searchability_hint` |
-| 1.6.6 Przebieg i raport | w toku | |
+| 1.6.6 Przebieg i raport | DONE | migawka „Kieleczka — faza 1.6”, `docs/porownania/faza1_6/` |
 
 ## 1.6.1 Inwentaryzacja paczek
 
@@ -147,8 +147,109 @@ z `extra_features_index`) + `frontend/src/model.test.ts` (walidacja pola
 opcjonalnego, round-trip, odrzucenie złego typu). Backend: `pytest` 639/639.
 Frontend: `npm run build` (tsc + vite) czysto, `npm run test` 75/75.
 
+## 1.6.6 Przebieg końcowy i raport porównawczy
+
+Przebieg Kieleczki (50,527 N, 18,605 E, promień 20 km, 2026-09-28 -- te same
+parametry co 0.3/1.9/Faza 1.5), z ustawieniami domyślnymi po Fazie 1.6
+(`age.update_to_analysis_year: true`, `host.lower_storeys_weight: 0.0`),
+paczki BDL z `BDL/`, siatka GUS z cache. Cały przebieg z lokalnego cache
+(pogoda, klimatologia, radar, GDOŚ, OSM, BDL) -- brak nowego zużycia budżetu
+Open-Meteo poza kilkoma bieżącymi godzinami radaru. Migawka **„Kieleczka —
+faza 1.6"** (`frontend/public/data/trips/kieleczka-faza-1-6-2026-09-28/`,
+wpis w `index.json`); eksporty w `docs/porownania/faza1_6/`.
+
+Wynik przebiegu: 19716 wydzieleń, 14399 w masce (identycznie jak w
+poprzednich przebiegach Kieleczki 20 km -- Faza 1/1.5), 14631 ze składem z
+paczki BDL (74,2%), 5085 z WFS, 5 rejonów, `age_update_missing_year_count=0`,
+`host_lower_storeys_weight=0.0`.
+
+### Wpływ 1.6.2 (korekta wieku) na ten przebieg
+
+**Zero wydzieleń zmieniło przedział wieku lub przeszło przez próg maski.**
+Ustalone bezpośrednio z danych: `a_year` (rok stanu z WFS) = **2026 dla
+wszystkich 19716 wydzieleń** -- identyczny z rokiem analizy (2026-09-28), więc
+`wiek_obecny = wiek_z_opisu + (2026 − 2026) = wiek_z_opisu` dla każdego
+wydzielenia. Korekta jest tu matematycznym no-opem nie z powodu błędu w
+kodzie (poprawność mechanizmu jest sprawdzona jednostkowo w
+`tests/test_orchestrate.py` na syntetycznym wydzieleniu z `a_year=2020`,
+gdzie realnie przechodzi próg maski), a dlatego że WFS w tym momencie jest
+aktualny względem roku analizy. Efekt 1.6.2 będzie widoczny dopiero gdy
+`a_year` z WFS/paczki zostanie w tyle za rokiem analizy (np. paczka
+nieodświeżona po zmianie roku kalendarzowego, lub analiza z datą przyszłą
+przekraczającą granicę roku) -- **to jest uczciwy wynik tego konkretnego
+przebiegu, nie dowód, że funkcja nie działa.**
+
+### Porównanie rankingu dla `host.lower_storeys_weight` (0 / 0,25 / 0,5)
+
+Przeliczone na tym samym przebiegu (te samo `S_host_drzew`/`H`/`F_loc`/`P`
+z cache, wyłącznie `S_host` przeliczone realną funkcją
+`blend_host_with_lower_storeys`, bez ponownego pobierania pogody) -- 14399
+wydzieleń w masce prawnej, z czego **3812/45565 (8,4%) wydzieleń z paczką ma
+jakąkolwiek warstwę niższą** (PODSZ/PODR/PRZES/...) do wykorzystania:
+
+| waga | Spearman ρ (vs waga 0) | pokrycie top-20 | wydzieleń ze zmianą R (2 miejsca po przecinku) |
+|---|---|---|---|
+| 0,0 (domyślna) | 1,0000 | 20/20 | 0 / 14399 |
+| 0,25 | 0,9995 | 18/20 | 665 / 14399 (4,6%) |
+| 0,5 | 0,9978 | 18/20 | 665 / 14399 (4,6%) |
+
+Ranking jest bardzo stabilny nawet przy w=0,5 (ρ > 0,997, 18/20 tych samych
+wydzieleń w top-20) -- zmiana dotyka tylko wydzieleń z realnie obecną
+warstwą niższą (8,4% wszystkich wydzieleń z paczką), a S_host_drzew (główny
+składnik) jest niezmienione. Nie ma tu podstawy do zmiany domyślnej wagi z
+0 -- pozostaje hipotezą do oceny dopiero po danych terenowych (Faza 2.2/5),
+zgodnie z planem.
+
+### Rozkład cech 1.6.4 w top-5% R vs cała maska (opisowo, bez wniosków o skuteczności)
+
+Top-5% R (próg R ≥ 71,32) = 720 z 14399 wydzieleń w masce.
+
+| Cecha | Cała maska | Top-5% R |
+|---|---|---|
+| Bonitacja gat. panującego: I / IA / II / III | 39,4% / 37,4% / 18,6% / 4,4% | 34,2% / 41,4% / 20,4% / 4,1% |
+| Stan siedliska (degradation_cd): N1 | 45,0% | **93,8%** |
+| Stan siedliska: Z1 | 32,8% | 5,1% |
+| Pokrywa runa: ZAD / MSZC / SZAD | 46,9% / 13,6% / 29,3% | 49,4% / 26,2% / 21,8% |
+| Obecny podszyt | 81,3% | 90,0% |
+| Obecny podrost | 3,9% | 5,0% |
+| Ma zaplanowane zabiegi (f_arod_cue) | 77,9% | 93,5% |
+| Odległość do granicy oddziału, mediana | 73,5 m | 83,2 m |
+
+Najbardziej zauważalna różnica -- `degradation_cd=N1` (hipotetycznie
+"naturalne", patrz `docs/BDL_slownik_pol.md`) w top-5% R prawie dwukrotnie
+częściej niż w całej masce. **To korelacja, nie dowód związku**: `H`/`R` nie
+używa `degradation_cd` w żadnym wzorze -- N1 najpewniej współwystępuje z
+innymi czynnikami, które realnie sterują R (np. typ siedliska/wilgotność,
+które wpływają na S_site i M), a nie oddziałuje samodzielnie. Do sprawdzenia
+metodą z Fazy 2.2 (test przestrzenny AUC z tłem GBIF), nie do wnioskowania
+stąd.
+
+**Metodologia:** `scratchpad` skrypty jednorazowe (poza repo) łączące
+`diagnostics_2026-09-28.parquet` + `scores_2026-09-28.json` z tego przebiegu
+i `pipeline.bdl_packages.load_packages(BDL)`; porównanie wag 1.6.3 używa
+bezpośrednio produkcyjnych funkcji `blend_host_with_lower_storeys` i
+`compute_ranking`, nie osobnego przeliczenia wzoru.
+
 ## Rulingi (decyzje bez pytania właściciela, zgodnie z zasadą 0.8)
 
+- **1.6.6 przeliczenie wagi 1.6.3 bez ponownego przebiegu pogody:** ranking
+  dla `host.lower_storeys_weight` 0,25/0,5 przeliczony z już wyeksportowanych
+  `S_host`/`H`/`F_loc`/`P` (waga wpływa wyłącznie na `S_host`, więc `H_nowe =
+  H_stare × (S_host_nowe/S_host_stare)^0,40`, potem `R` przez prawdziwe
+  `compute_ranking`) -- zamiast trzech pełnych przebiegów `prepare_trip`.
+  Szybsze, zero dodatkowego zużycia API, i matematycznie identyczne z pełnym
+  przebiegiem dla wydzieleń w masce prawnej (H/F_loc/P nie zależą od wagi
+  1.6.3). Koszt błędu: żaden dla tego wyniku -- gdyby kod `run_poc`
+  liczył coś inaczej niż ten wzór, ujawniłoby to jedno z testów integracyjnych
+  w `tests/test_orchestrate.py` (`test_run_poc_nonzero_weight_blends_lower_storey_composition`),
+  które faktycznie przechodzą przez `run_poc`, nie przez ten wzór.
+- **1.6.6 migawka i eksporty w git:** `frontend/public/data/*` jest objęte
+  `frontend/.gitignore` (nigdy nie trafia do repo, potwierdzone
+  `git check-ignore`) -- migawka „Kieleczka — faza 1.6” istnieje tylko
+  lokalnie, jak wszystkie pozostałe migawki w `trips/`. `docs/porownania/faza1_6/`
+  NIE jest ignorowane i zgodnie z precedensem z Fazy 1/1.5
+  (`docs/porownania/baseline/`, `docs/porownania/faza1_5/` są w repo) --
+  dodane do commitu.
 - **1.6.4 pola pominięte:** `plant_comm_cd` (zbiorowisko roślinne),
   `tree_stock_cd` (zadrzewienie) i zagęszczenie warstw `PODSZ`/`PODR` NIE
   weszły do eksportu mimo że plan je wymienia wprost -- wszystkie ~0%
