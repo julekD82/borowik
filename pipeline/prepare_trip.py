@@ -32,6 +32,7 @@ from pipeline.neighbors import find_neighbor_labels
 from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M
 from pipeline.radar import make_radar_weather_fetcher
 from pipeline.osm import fetch_osm_features, _default_overpass_call
+from pipeline.population_grid import load_population_points
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
@@ -123,6 +124,12 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--bdl-packages-dir", type=str, default=None,
         help="Katalog z rozpakowanymi paczkami BDL (plan 1.3) -- domyslnie <cache-dir>/bdl_packages. "
              "Ustaw, gdy paczki leza poza katalogiem cache (np. wskazany osobno, poza repo).",
+    )
+    parser.add_argument(
+        "--population-grid-path", type=str, default=None,
+        help="Plik siatki kilometrowej GUS NSP 2021 (zasob 24532, plan 1.4) -- gdy brak, "
+             "populacja miejscowosci OSM bez tagu population dostaje wartosc domyslna wg klasy "
+             "zamiast znikac jako 0.",
     )
     parser.add_argument(
         "--no-radar", action="store_true",
@@ -319,7 +326,8 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
                           profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path,
                           target_date: date | None = None, use_radar: bool = True,
-                          bdl_packages_dir: pathlib.Path | None = None) -> dict:
+                          bdl_packages_dir: pathlib.Path | None = None,
+                          population_grid_path: pathlib.Path | None = None) -> dict:
     """Analyze stands whose EPSG:2180 centroid lies within the search radius.
 
     Source queries use aligned 10 km tiles; scoring, pressure normalization
@@ -496,12 +504,35 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     confirmed_count = int((entrances["status"] == "confirmed").sum()) if len(entrances) else 0
     print(f"  {len(entrances)} candidate entrance(s), {confirmed_count} confirmed")
 
+    # Plan 1.4: GUS population grid, queried over the search circle plus a
+    # buffer (profile["population"]["buffer_km"], spec: a city just outside
+    # the search radius should still contribute Demand) -- None when no
+    # grid file is configured or the path doesn't exist, in which case
+    # enrich_with_mvp_layers falls back to OSM place nodes with per-class
+    # imputed population (pipeline.population_grid.impute_osm_population).
+    population_points_gdf = None
+    population_source = "osm_z_imputacja"
+    if population_grid_path is not None:
+        buffer_km = profile["population"]["buffer_km"]
+        population_bbox = tile_bbox_2180(lat, lon, size_km=2 * (radius_km + buffer_km))
+        population_points_gdf = load_population_points(population_grid_path, population_bbox)
+        if population_points_gdf is not None:
+            population_source = "gus_siatka"
+            print(
+                f"Siatka GUS: {len(population_points_gdf)} komorek "
+                f"({population_points_gdf.attrs.get('missing_count', 0)} pominietych -- tajemnica statystyczna)",
+                flush=True,
+            )
+        else:
+            print(f"UWAGA: plik siatki GUS nie istnieje ({population_grid_path}) -- populacja z OSM.", flush=True)
+
     print("Enriching with legal mask + presja + confidence + explanations...")
     enriched = enrich_with_mvp_layers(
         scored, profile, gdos_gdf, osm_features,
         zakaz_checker=check_periodic_ban, top_n_for_ban_check=50,
         roads_routing_gdf=osm_features["roads"], entrances_gdf=entrances,
         top_n_for_routing=profile["entrances"]["top_n_for_routing"],
+        population_points_gdf=population_points_gdf,
     )
 
     # Plan 2.1 "Zmiana 4": must run before group_into_regions below --
@@ -580,6 +611,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         zakaz_checked_count=zakaz_checked_count, region_count=len(regions),
         package_dir=bdl_packages_dir, bdl_coverage_report=bdl_coverage_report,
         wfs_only_share_of_masked=wfs_only_share_of_masked,
+        population_source=population_source,
     )
     manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
 
@@ -614,6 +646,7 @@ def main(argv=None) -> int:
             profile_path=args.profile, out_dir=pathlib.Path(args.out_dir), cache_dir=pathlib.Path(args.cache_dir),
             target_date=target_date, use_radar=not args.no_radar,
             bdl_packages_dir=pathlib.Path(args.bdl_packages_dir) if args.bdl_packages_dir else None,
+            population_grid_path=pathlib.Path(args.population_grid_path) if args.population_grid_path else None,
         )
     except TripPreparationError as exc:
         print(f"Blad: {exc}")

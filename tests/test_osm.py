@@ -52,11 +52,16 @@ def test_parse_osm_elements_splits_into_parking_roads_places():
     assert len(frames["places"]) == 2
 
 
-def test_parse_osm_elements_coerces_missing_population_to_zero():
+def test_parse_osm_elements_keeps_missing_population_as_nan():
+    # Plan 1.4: a missing/non-numeric population tag is NaN, not a silent
+    # 0.0 -- pipeline.population_grid.impute_osm_population is what fills
+    # it in (with a class-based default), never this parsing step, so a
+    # caller that skips imputation sees the gap instead of a false zero.
+    import math
     frames = parse_osm_elements(ELEMENTS)
     pop_by_name = dict(zip(frames["places"]["name"], frames["places"]["population"]))
     assert pop_by_name["Kieleczka"] == pytest.approx(450.0)
-    assert pop_by_name["Bez ludzi"] == pytest.approx(0.0)
+    assert math.isnan(pop_by_name["Bez ludzi"])
 
 
 def test_parse_osm_elements_builds_way_linestring_geometry():

@@ -170,6 +170,25 @@ phenology:
 legal_mask:
   gdos_layers: ["GDOS:Rezerwaty", "GDOS:ParkiNarodowe"]   # spec §4.2, §9 step 8
 
+population:
+  # Plan wdrozenia 1.4: GUS NSP 2021 1km grid (zasob 24532) replaces OSM
+  # place-node population as pipeline.pressure.compute_demand's point
+  # source when a grid file is given (pipeline.prepare_trip's
+  # --population-grid-path); buffer_km widens the query beyond the search
+  # circle so a city just outside it still contributes via the existing
+  # distance-decay term. Fallback values (osm_fallback_population_by_class)
+  # are used only when no grid file is configured/found: OSM place nodes
+  # with no population tag get this class default instead of silently 0,
+  # source recorded as "osm_z_imputacja". These are rough (grubo) manual
+  # estimates, not calibrated -- Demand's own formula is unchanged either
+  # way (spec: "nie zmieniac wzoru Demand poza zrodlem punktow populacji").
+  buffer_km: 30.0
+  osm_fallback_population_by_class:
+    hamlet: 50
+    village: 500
+    town: 5000
+    city: 50000
+
 pressure:
   k: 2.0                    # [E] gravity-model steepness, spec §4.5 -- unvalidated
   park_decay_m: 800.0       # spec §4.5 "exp(-d_parking/800 m)"

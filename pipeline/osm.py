@@ -76,7 +76,13 @@ def parse_osm_elements(elements: list[dict]) -> dict:
             population = pd.to_numeric(tags.get("population"), errors="coerce")
             place_rows.append({
                 "osm_id": el["id"], "place": tags["place"], "name": tags.get("name", ""),
-                "population": 0.0 if pd.isna(population) else float(population),
+                # Plan 1.4: NaN (not 0.0) for a missing/non-numeric tag --
+                # pipeline.population_grid.impute_osm_population fills this
+                # with a class-based default when the GUS grid isn't in use;
+                # collapsing it to 0.0 here would make that fallback see a
+                # "real" zero-population place instead of a missing value
+                # (spec S5.4: "miejscowosc bez populacji dostaje 0 i znika").
+                "population": float(population) if not pd.isna(population) else float("nan"),
                 "geometry": point,
             })
     return {

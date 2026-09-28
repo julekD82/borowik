@@ -7,6 +7,7 @@ from pipeline.explain import compute_log_contributions, generate_explanation, g_
 from pipeline.gdos import mark_gdos_blocked
 from pipeline.habitat import host_affinity
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
+from pipeline.population_grid import impute_osm_population
 from pipeline.routing import build_road_graph, nearest_entrance_distance
 from pipeline.scoring import compute_ranking
 
@@ -22,7 +23,8 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                               top_n_for_ban_check: int = 50,
                               roads_routing_gdf: gpd.GeoDataFrame | None = None,
                               entrances_gdf: gpd.GeoDataFrame | None = None,
-                              top_n_for_routing: int = 0) -> gpd.GeoDataFrame:
+                              top_n_for_routing: int = 0,
+                              population_points_gdf: gpd.GeoDataFrame | None = None) -> gpd.GeoDataFrame:
     stands = stands.copy()
     alpha = profile["pressure"]["alpha_default"] if alpha is None else alpha
 
@@ -41,7 +43,14 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
         # profiles/boletus_edulis.yaml's own comment on why "track" was
         # excluded: it made d_park nearly constant across a tile).
         roads = roads[roads["highway"].isin(profile["osm"]["road_highway_types"])]
-    places = osm_features.get("places")
+    # Plan 1.4: population_points_gdf (GUS grid, when the caller has one) is
+    # the Demand point source; otherwise OSM place nodes with missing
+    # population imputed by settlement class -- never OSM's raw NaN, which
+    # compute_demand's own .fillna(0.0) would otherwise silently zero out.
+    places = (
+        population_points_gdf if population_points_gdf is not None
+        else impute_osm_population(osm_features.get("places"), profile)
+    )
     centroids = stands.geometry.centroid
 
     d_parks = [compute_d_park(c, parking, roads, profile["pressure"]["euclid_factor"]) for c in centroids]
