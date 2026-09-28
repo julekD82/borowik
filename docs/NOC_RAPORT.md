@@ -31,6 +31,15 @@ Zadano jedną serię pytań przed zmianami w kodzie (zgodnie z poleceniem). Odpo
 
 Patrz punkt 3 powyżej. `docs/bdl-paczki-rozpoznanie.md` potwierdza konwencję: `pipeline.bdl_packages.load_packages` auto-wykrywa podkatalogi `cache/bdl_packages/*/` zawierające `G_SUBAREA.shp` + `f_storey_species.txt`. Katalog wskazany przez właściciela (`BDL/`) ma dokładnie taką strukturę w każdym z 9 podkatalogów (zweryfikowano zawartość `BDL_02_25_RUDZINIEC_2026/`).
 
+## 1.5: rozkład P dla Kieleczki 20 km, oba tryby (realne dane z cache, bez API)
+
+| Tryb | min | mediana | max |
+|---|---|---|---|
+| local (stary) | 0,0008 | 0,2446 | 0,8500 |
+| absolute (nowy, d_half=90000) | 0,0008 | 0,2511 | 0,7185 |
+
+Mediana zbliżona (zgodnie z celem doboru D_half); maksimum w trybie absolute wyraźnie niższe — oczekiwane: w trybie local najbardziej obleganie miejsce w danej analizie zawsze normalizuje się blisko 1 niezależnie od jego realnej skali, w trybie absolute nie.
+
 ## Status zadań
 
 | Zadanie | Status | Notatka |
@@ -42,7 +51,9 @@ Patrz punkt 3 powyżej. `docs/bdl-paczki-rozpoznanie.md` potwierdza konwencję: 
 | 1.1 | DONE | `run_manifest_{day}.json`: id/commit/dirty/profile hash, statusy źródeł, liczniki. `population_source`/`pressure_normalization` — pola-zaślepki do 1.4/1.5 |
 | 1.2 | DONE | `diagnostics_{day}.json`/`.parquet` (próg 20 MB na realnym pliku). Test kluczowy: R_final odtworzony z diagnostyki, tolerancja 1e-9. Przy okazji naprawiony realny (choć dotąd nieszkodliwy) błąd w `orchestrate.py`: `cell` (komórka klimatologii) była czytana tylko przy cache miss |
 | 1.3 | DONE | `--bdl-packages-dir`, wybór najnowszej paczki wg daty (nie kolejności katalogów), flaga `sklad_niepelny` (suma < 0,9), raport pokrycia per nadleśnictwo. **Zweryfikowane na realnych danych**: `BDL/` (9 nadleśnictw RDLP Katowice) dla Kieleczki 20 km daje **89,1% pokrycia paczkami** wśród wydzieleń w masce (0% w baseline). 2 nadleśnictwa bez paczki: 02-06 (5 wydz.), 02-31 (1339 wydz., prawdopodobnie Gliwice). Baner w interfejsie (>20% WFS-only) **odłożony** — dane już w `manifest.json` (`wfs_only_share_of_masked`), ostrzeżenie na razie tylko w logu konsoli; sama zmiana frontendu to osobna, niewielka praca zostawiona na później z braku czasu w nocy |
-| 1.4–1.9 | TODO | |
+| 1.4 | DONE | `pipeline/population_grid.py`: siatka GUS (`--population-grid-path`) jako źródło Demand, bufor +30 km. Fallback bez pliku: OSM z imputacją wg klasy (`osm_z_imputacja`), zamiast cichego zera. Zweryfikowane na realnym pliku: 10237 komórek, 0 pominiętych w buforze Kieleczki, ~10 s zapytania |
+| 1.5 | DONE | `pressure.normalization: absolute` (domyślny), `d_half=90000.0`. **Ruling**: D_half dobrany na Kieleczce (offline, z cache), nie na Będziemyślu jak sugerował plan — pełny cache Będziemyśla (paczki BDL, dawne przebiegi) już nie istnieje na tym dysku (patrz 0.2). Kieleczka to ten sam rząd wielkości (miejska aglomeracja śląska), więc kalibracja jest równie sensowna jako punkt startowy. Koszt błędu: żaden poza samą wartością D_half — jest i tak jawnie oznaczona jako tymczasowa/nieskalibrowana, do korekty po realnej walidacji terenowej (Faza 5) |
+| 1.6–1.9 | TODO | |
 
 ## Ruling: pole „w launcherze” dla ścieżki paczek BDL
 
