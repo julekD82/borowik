@@ -363,6 +363,7 @@ def _diagnostics_stands():
         "s_host_source": ["paczka", "wfs"], "s_host_package_date": ["2026-06-23", None],
         "sklad_niepelny": [False, False],
         "rain_radar_coverage": [0.75, 0.0],
+        "age_update_status": ["skorygowano", "brak_roku_stanu"],
         "demand": [1234.5, 0.0], "d_park_m": [500.0, float("nan")],
         "weather_point_lat": [50.5, 50.6], "weather_point_lon": [18.6, 18.7],
         "climatology_cell_lat": [50.4, 50.4], "climatology_cell_lon": [18.5, 18.5],

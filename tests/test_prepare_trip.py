@@ -427,7 +427,9 @@ def test_build_manifest_has_every_field_the_spec_lists(tmp_path):
     # Count fields (spec: total/mask/package/wfs/unknown-code stands).
     for field in ("stand_count", "mask_passing_count", "region_count", "package_stand_count",
                   "wfs_stand_count", "unknown_site_count", "unknown_species_count",
-                  "incomplete_composition_count"):
+                  "incomplete_composition_count",
+                  # Plan 1.6.2
+                  "age_update_enabled", "age_update_missing_year_count"):
         assert field in manifest["counts"], f"missing counts.{field}"
     assert manifest["counts"]["wfs_stand_count"] == 100 - 40
     assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is False

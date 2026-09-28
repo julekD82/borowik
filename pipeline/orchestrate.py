@@ -4,6 +4,7 @@ from datetime import date
 import geopandas as gpd
 import pandas as pd
 
+from pipeline.age_update import update_age
 from pipeline.habitat import (
     compute_habitat, passes_mask, score_site, score_host, score_age, score_host_composition,
 )
@@ -207,7 +208,26 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     package_stand_count = 0
     package_unknown_species_count = 0
     incomplete_composition_count = 0
+    # Plan 1.6.2: same analysis year for every stand in one run (target_date
+    # doesn't vary per stand), config-gated (default on) in profile["age"].
+    age_update_enabled = bool(profile.get("age", {}).get("update_to_analysis_year", True))
+    analysis_year = target_date.year
+    age_update_status_values = []
+    age_update_missing_year_count = 0
     for _, row in stands.iterrows():
+        # Correction touches both the mask (age < 12 lat) and S_age below,
+        # so it must happen before passes_mask, not just before score_age --
+        # a copy() here is cheap next to the per-row weather/BDL work already
+        # done in this loop.
+        corrected_age, age_status = update_age(
+            row.get("spec_age"), row.get("a_year"), analysis_year, age_update_enabled,
+        )
+        if age_status == "brak_roku_stanu":
+            age_update_missing_year_count += 1
+        age_update_status_values.append(age_status)
+        row = row.copy()
+        row["spec_age"] = corrected_age
+
         mask = passes_mask(row, profile)
         if mask:
             # Only mask-passing stands matter here: the BDL tile also contains
@@ -351,6 +371,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # derived column already flows through to scores_{day}.json.
     stands["forecast_days"] = forecast_days
     stands["G_season"] = g_season
+    stands["age_update_status"] = age_update_status_values
     stands.attrs["diagnostics"] = {
         "stand_count": len(stands),
         "mask_passing_count": int(sum(mask_values)),
@@ -369,5 +390,11 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         # mean -- 0 whenever stand_precip_daily wasn't passed (radar.mode:
         # block) or every lookup missed (radar down for the whole window).
         "stand_precip_used_count": stand_precip_used_count,
+        # Plan 1.6.2: whether the age-to-analysis-year shift ran at all, and
+        # how many stands couldn't be corrected for lack of a rok stanu
+        # (a_year) -- 0 whenever age_update_enabled is False, since nothing
+        # was attempted.
+        "age_update_enabled": age_update_enabled,
+        "age_update_missing_year_count": age_update_missing_year_count,
     }
     return stands

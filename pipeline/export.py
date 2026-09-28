@@ -250,6 +250,10 @@ DIAGNOSTICS_FIELDS = [
     # the IMGW radar rather than Open-Meteo's model -- per stand (its own 1 km
     # RainGRS series) in radar.mode: stand, per shared weather point otherwise.
     "rain_radar_coverage",
+    # Plan 1.6.2: "skorygowano" / "wylaczona" / "brak_roku_stanu" -- whether
+    # this stand's age was shifted to the analysis year, and why not when it
+    # wasn't (pipeline.age_update.update_age).
+    "age_update_status",
 ]
 
 

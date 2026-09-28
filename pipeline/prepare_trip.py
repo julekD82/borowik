@@ -364,6 +364,11 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
             "unknown_site_count": diagnostics.get("unknown_site_count", 0),
             "unknown_species_count": diagnostics.get("unknown_species_count", 0),
             "incomplete_composition_count": diagnostics.get("incomplete_composition_count"),
+            # Plan 1.6.2: read straight from diagnostics, same pattern as
+            # incomplete_composition_count above -- no new build_manifest
+            # parameter needed since orchestrate.run_poc always sets both.
+            "age_update_enabled": diagnostics.get("age_update_enabled"),
+            "age_update_missing_year_count": diagnostics.get("age_update_missing_year_count", 0),
         },
         "bdl_package_dir": str(package_dir) if package_dir is not None else None,
         "bdl_coverage_report": bdl_coverage_report,

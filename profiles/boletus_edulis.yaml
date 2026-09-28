@@ -107,6 +107,16 @@ age_breakpoints:
     - {from: 35, to: 120, value_from: 1.0, value_to: 1.0}
   above_120: 0.9
 
+age:
+  # Plan wdrozenia 1.6.2: spec_age (from WFS/BDL a_year, "opisu
+  # taksacyjnego") was never shifted forward to the analysis year -- a
+  # stand described in 2020 still reported its 2020 age in a 2026 run.
+  # True (default) applies wiek_obecny = wiek_z_opisu + (rok_analizy -
+  # rok_stanu_opisu); false reproduces the pre-1.6.2 behaviour (raw
+  # spec_age, no shift). Affects S_age AND the age mask (< 12 lat) --
+  # pipeline.age_update.update_age, wired in pipeline.orchestrate.run_poc.
+  update_to_analysis_year: true
+
 fruiting:
   # Plan 2.1 "Zmiana 2" (user review 2026-09-25): 0.35 meant the AVERAGE
   # moisture percentile (0.5) already scored M=0.82 -> F="Bardzo dobre" --
