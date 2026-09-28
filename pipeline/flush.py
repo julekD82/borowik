@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.phenology import compute_g_season
+from pipeline.weather import to_local_date
 
 
 @dataclass(frozen=True)
@@ -169,12 +170,13 @@ def fmt_day_range(a: date, b: date) -> str:
 
 
 def area_daily_weather(daily: pd.DataFrame, points) -> pd.DataFrame:
-    """Per-LOCAL-day median over `points` (Open-Meteo `date` is the UTC
-    instant of local midnight; naive dates from test fakes are taken as-is)."""
+    """Per-LOCAL-day median over `points`. Plan 1.8b: local-date conversion
+    is pipeline.weather.to_local_date, shared with pipeline.radar and
+    pipeline.conditions_timeline -- see that function's docstring for why
+    the noon-recentering matters around a DST transition."""
     wanted = set(points)
     sel = daily[[(la, lo) in wanted for la, lo in zip(daily["lat"], daily["lon"])]]
-    dates = sel["date"]
-    local = (dates.dt.tz_convert("Europe/Warsaw") if dates.dt.tz is not None else dates).dt.date
+    local = to_local_date(sel["date"])
     return (sel.assign(local_date=local)
             .groupby("local_date")[["precipitation_mm", "tmean_c", "tmin_c"]].median()
             .sort_index()

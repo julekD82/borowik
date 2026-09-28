@@ -21,18 +21,19 @@ from pipeline.phenology import compute_g_season
 from pipeline.scoring import (
     classify_fruiting_level, compute_fruiting, score_frost, score_moisture, score_temperature,
 )
-from pipeline.weather import climatology_window_values, compute_weather_features, percentile_rank
+from pipeline.weather import (
+    climatology_window_values, compute_weather_features, percentile_rank, to_local_date,
+)
 
 
 def with_local_date(daily: pd.DataFrame) -> pd.DataFrame:
-    """Adds a `local_date` column (Open-Meteo `date` is the UTC instant of
-    local midnight; naive dates from test fakes are taken as-is) -- same
-    tz handling as pipeline.flush.area_daily_weather, duplicated here
-    because this module needs the per-point rows (for
-    compute_weather_features' rolling windows), not the area median."""
-    dates = daily["date"]
-    local = (dates.dt.tz_convert("Europe/Warsaw") if dates.dt.tz is not None else dates).dt.date
-    return daily.assign(local_date=local)
+    """Adds a `local_date` column via pipeline.weather.to_local_date (plan
+    1.8b: same shared, noon-corrected tz handling as
+    pipeline.flush.area_daily_weather and pipeline.radar -- this module
+    needs the per-point rows (for compute_weather_features' rolling
+    windows), not the area median, so it can't just reuse area_daily_weather
+    itself)."""
+    return daily.assign(local_date=to_local_date(daily["date"]))
 
 
 def _pulse_params(profile: dict, rain_scale: float) -> FlushParams:

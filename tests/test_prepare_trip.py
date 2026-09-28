@@ -13,6 +13,7 @@ from pipeline.prepare_trip import (
     _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable, _is_transient_network_error,
     _radius_scaled_spacing, REFERENCE_RADIUS_KM,
     build_manifest, _git_commit, _git_dirty, _profile_hash,
+    rain_episode_radar_coverage,
 )
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_package_details import load_package_details
@@ -404,6 +405,32 @@ def test_build_manifest_flags_full_radar_fallback_when_radar_disabled(tmp_path):
         gdos_failed_tile_count=0, osm_failed_tile_count=0, zakaz_checked_count=1, region_count=0,
     )
     assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is True
+
+
+def _conditions_daily(dates, radar_frac=None):
+    df = pd.DataFrame({"date": pd.to_datetime(dates)})
+    if radar_frac is not None:
+        df["radar_frac"] = radar_frac
+    return df
+
+
+def test_rain_episode_radar_coverage_zero_without_radar_frac_column():
+    daily = _conditions_daily(["2026-09-20", "2026-09-21"])  # no radar_frac at all
+    assert rain_episode_radar_coverage(daily, date(2026, 9, 27), lookback_days=45) == 0.0
+
+
+def test_rain_episode_radar_coverage_averages_recent_window_only():
+    daily = _conditions_daily(
+        ["2026-08-01", "2026-09-20", "2026-09-25"],
+        radar_frac=[0.0, 0.9, 1.0],  # 2026-08-01 is outside the lookback window
+    )
+    coverage = rain_episode_radar_coverage(daily, date(2026, 9, 27), lookback_days=10)
+    assert coverage == pytest.approx((0.9 + 1.0) / 2)
+
+
+def test_rain_episode_radar_coverage_zero_when_no_rows_in_window():
+    daily = _conditions_daily(["2026-01-01"], radar_frac=[1.0])
+    assert rain_episode_radar_coverage(daily, date(2026, 9, 27), lookback_days=10) == 0.0
 
 
 def test_build_manifest_flags_full_radar_fallback_when_coverage_is_zero(tmp_path):

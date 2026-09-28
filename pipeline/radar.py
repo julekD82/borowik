@@ -26,6 +26,8 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
+from pipeline.weather import to_local_date
+
 GRS_BASE_URL = "https://danepubliczne.imgw.pl/pl/datastore/getfiledown"
 GRS_ARCHIVE_PATH = "Arch/Nowcasting/rain_grs/grs_60_asc"
 GRS_OPER_PATH = "Oper/Nowcasting/rain_grs/grs_60_asc"
@@ -354,17 +356,10 @@ def merge_radar_into_daily(weather_daily: pd.DataFrame, radar_daily: pd.DataFram
     out["radar_frac"] = 0.0
     if radar_daily.empty:
         return out
-    dates = out["date"]
-    # Open-Meteo's `date` is the UTC instant of LOCAL midnight, but
-    # pipeline.weather._parse_open_meteo_response builds the whole column
-    # with one FIXED 24h UTC step from the first day's local midnight
-    # (pd.date_range(..., freq=86400s)) -- across a DST transition that step
-    # is off by the DST hour, so a naive tz_convert().dt.date collapses two
-    # rows onto the same local date and shifts every later date back by one.
-    # Recentring on local NOON before converting survives up to a +/-12h
-    # drift, far more than one DST hour ever introduces.
-    local_date = ((dates + pd.Timedelta(hours=12)).dt.tz_convert("Europe/Warsaw").dt.date
-                 if dates.dt.tz is not None else dates.dt.date)
+    # Plan 1.8b: shared with pipeline.flush/pipeline.conditions_timeline's
+    # own local-date conversion -- see pipeline.weather.to_local_date's
+    # docstring for why the noon-recentering matters here.
+    local_date = to_local_date(out["date"])
     in_window = ((local_date >= window_start) & (local_date <= window_end)).to_numpy()
     joined = radar_daily.set_index(["lat", "lon", "local_date"]).reindex(
         pd.MultiIndex.from_arrays([out["lat"], out["lon"], local_date]))

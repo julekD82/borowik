@@ -34,6 +34,32 @@ def make_grid(bbox_2180: tuple, spacing_m: float = 5000.0) -> list[tuple[float, 
     return points
 
 
+def to_local_date(dates: pd.Series) -> pd.Series:
+    """Plan 1.8b: the ONE shared UTC-instant -> Europe/Warsaw calendar-date
+    conversion for a daily weather `date` column, used by pipeline.radar's
+    merge_radar_into_daily, pipeline.flush.area_daily_weather and
+    pipeline.conditions_timeline.with_local_date -- previously three
+    separate implementations, two of them (flush/conditions_timeline)
+    naive and one (radar) noon-corrected, which could disagree around a
+    DST transition (see tests/test_weather.py's
+    test_to_local_date_matches_across_a_dst_transition for the shared
+    regression test across both of 2026's transition dates).
+
+    Recentring on local noon before converting (matching radar's own
+    original fix) survives up to +/-12h of drift between the UTC instant a
+    row's `date` actually carries and that day's true local midnight --
+    _parse_open_meteo_response above builds the whole date range with one
+    FIXED 24h step from the first day's local midnight
+    (pd.date_range(..., freq=Interval())), which is only 86400s across a
+    DST transition day, not the real local elapsed time -- so a naive
+    tz_convert().dt.date drifts by the DST hour for every day at and after
+    the transition, silently collapsing or duplicating a calendar date.
+    Naive (tz-less) dates, e.g. from test fakes, are returned as-is."""
+    if dates.dt.tz is None:
+        return dates.dt.date
+    return (dates + pd.Timedelta(hours=12)).dt.tz_convert("Europe/Warsaw").dt.date
+
+
 def _point_cache_path(cache_dir: Path, lat: float, lon: float, suffix: str | None) -> Path:
     name = f"{lat:.6f}_{lon:.6f}"
     if suffix is not None:
@@ -183,15 +209,19 @@ def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92,
     if cache_dir is None:
         results = call_api(points, past_days, forecast_days=forecast_days)
     else:
-        # Scoped to today AND forecast_days (plan 2.1 step A3): past_days is
-        # a rolling window ending "now", so yesterday's cached values would
-        # silently look like today's -- and two runs on the same day with a
-        # different --date (so a different forecast_days) fetch a
-        # genuinely different Open-Meteo response (a different forecast
-        # length), so they must not share a cache entry either.
+        # Scoped to today, forecast_days AND past_days (plan 2.1 step A3 +
+        # plan 1.8e): past_days is a rolling window ending "now", so
+        # yesterday's cached values would silently look like today's -- and
+        # two runs on the same day with a different --date (so a different
+        # forecast_days) or a different past_days fetch a genuinely
+        # different Open-Meteo response, so they must not share a cache
+        # entry either. "_v1" is the cache format version (plan 1.8e): bump
+        # it if this row shape ever changes incompatibly, so an old file
+        # is never misread as the new shape -- old files are never deleted
+        # for this, just no longer matched by the new key.
         results = _fetch_with_point_cache(
             points, Path(cache_dir) / "weather_points",
-            f"{date.today().isoformat()}_fd{forecast_days}",
+            f"{date.today().isoformat()}_fd{forecast_days}_pd{past_days}_v1",
             lambda pts: call_api(pts, past_days, forecast_days=forecast_days),
         )
     frames = []
@@ -293,10 +323,14 @@ def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1
     if cache_dir is None:
         results = call_api(points, start_year, end_year)
     else:
-        # No suffix: the 30-year historical archive never changes, so a
-        # cached point is reused indefinitely across searches and days.
+        # Scoped to the year range + format version (plan 1.8e) -- a fixed
+        # None suffix (pre-1.8e) let a cached point survive a start_year/
+        # end_year change silently, serving the WRONG period's archive as
+        # if it were the requested one. A cached point still IS reused
+        # indefinitely across searches and days for the SAME range, since
+        # the 30-year archive itself never changes once fetched.
         results = _fetch_with_point_cache(
-            points, Path(cache_dir) / "climatology_points", None,
+            points, Path(cache_dir) / "climatology_points", f"{start_year}_{end_year}_v1",
             lambda pts: call_api(pts, start_year, end_year),
         )
     frames = []

@@ -10,6 +10,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import geopandas as gpd
+import pandas as pd
 import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 from pyproj import Transformer
@@ -109,8 +110,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--lon", type=float, required=True, help="Dlugosc geograficzna (WGS84)")
     parser.add_argument(
         "--date", type=str, default=None,
-        help="Etykieta dnia w nazwach plikow wynikowych (YYYY-MM-DD), domyslnie dzisiaj. "
-             "Nie zmienia okna pogodowego (zawsze 'teraz' -- patrz docs/projekt-borowik.md).",
+        help="Data wyjazdu (YYYY-MM-DD), domyslnie dzisiaj -- nie tylko etykieta w nazwach "
+             "plikow: pogoda jest pobierana z prognoza do tej daty (najwyzej 15 dni naprzod). "
+             "Zakazy okresowe sa sprawdzane na dzien przygotowania, nie na te date.",
     )
     parser.add_argument(
         "--radius-km", type=float, default=25.0,
@@ -323,6 +325,20 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
     }
 
 
+def rain_episode_radar_coverage(conditions_daily, today: date, lookback_days: int) -> float:
+    """Plan 1.8c: mean achieved radar coverage over the recent window where
+    pipeline.conditions_timeline.recent_rains actually detects episodes --
+    not whether radar was merely requested (spec S18.4 #5). "radar_frac"
+    only exists on conditions_daily at all when pipeline.radar.
+    merge_radar_into_daily actually ran; absent entirely means no radar
+    attempt, same as 0 coverage, not a KeyError."""
+    if "radar_frac" not in conditions_daily.columns:
+        return 0.0
+    cutoff = pd.Timestamp(today - timedelta(days=lookback_days), tz=conditions_daily["date"].dt.tz)
+    recent = conditions_daily[conditions_daily["date"] >= cutoff]
+    return float(recent["radar_frac"].mean()) if len(recent) else 0.0
+
+
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
                           profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path,
                           target_date: date | None = None, use_radar: bool = True,
@@ -459,7 +475,6 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     conditions_points = points_within_radius(make_grid(bbox, spacing_m=grid_spacing_m), lat, lon, radius_km)
     conditions_clim_points = points_within_radius(
         make_grid(bbox, spacing_m=climatology_grid_spacing_m), lat, lon, radius_km)
-    rain_scale = profile["conditions"]["radar_rain_scale"] if use_radar and profile["radar"]["enabled"] else 1.0
     # This whole block is a best-effort addendum to an ALREADY-SUCCESSFUL
     # trip preparation (run_poc above has finished) -- a transient network
     # failure fetching its own separate, redundant weather/climatology
@@ -468,6 +483,14 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     try:
         conditions_daily = weather_fetcher(conditions_points, 92,
                                            forecast_days=profile["conditions"]["horizon_days"])
+        # Plan 1.8c: the rain-episode detection threshold follows the
+        # ACHIEVED radar coverage, not just whether radar was requested.
+        real_radar_coverage = rain_episode_radar_coverage(
+            conditions_daily, date.today(), profile["conditions"]["lookback_days"])
+        rain_scale = (
+            profile["conditions"]["radar_rain_scale"]
+            if real_radar_coverage >= profile["radar"]["min_coverage_for_quality"] else 1.0
+        )
         conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
         timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
                                              conditions_clim_points, date.today(), profile, rain_scale=rain_scale)

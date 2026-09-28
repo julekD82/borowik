@@ -34,8 +34,15 @@ TEMPLATES = {
         "down": "wiek drzewostanu {age} lat jest poza optymalnym przedziałem (S_age={value:.2f})",
     },
     "moisture": {
-        "up": "wilgotność ostatnich 26 dni powyżej normy dla tej pory roku (M={value:.2f})",
-        "down": "wilgotność ostatnich 26 dni poniżej normy dla tej pory roku (M={value:.2f})",
+        # Plan 1.8f: the contribution being explained here is log(M) vs
+        # log(area median M) -- THIS analysis's own median (spec §12: "po
+        # maskowanych dodatnich wartościach"), not a long-term climatological
+        # norm for the date. "Powyżej normy dla tej pory roku" claimed the
+        # latter; M's own pct_CWB26 percentile already IS relative to the
+        # 1991-2020 archive, but this sentence is about the spatial
+        # comparison within the search, not that temporal one.
+        "up": "wilgotność ostatnich 26 dni wyżej niż mediana dla tego obszaru (M={value:.2f})",
+        "down": "wilgotność ostatnich 26 dni niżej niż mediana dla tego obszaru (M={value:.2f})",
     },
     "temperature": {
         "up": "temperatura blisko optimum dla owocnikowania (T={value:.2f})",

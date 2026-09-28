@@ -4,11 +4,9 @@ Lokalna, statyczna aplikacja według `docs/superpowers/specs/2026-09-24-borowik-
 
 ## Uruchomienie
 
-W katalogu roboczym Claude Code:
+W katalogu głównym repo (`C:\Users\<uzytkownik>\Documents\Grzyby`):
 
 ```powershell
-Set-Location 'C:\Users\<uzytkownik>\Documents\Grzyby\.claude\worktrees\borowik-faza2-mvp-backend'
-
 # Nowa analiza — wymaga dostępu do źródeł danych. Nie jest potrzebna,
 # jeżeli chcesz obejrzeć już przygotowane i zsynchronizowane wyniki.
 & .\.venv\Scripts\python.exe -m pipeline.prepare_trip --lat 53.1509 --lon 16.7382
@@ -19,9 +17,9 @@ npm.cmd run sync-data
 npm.cmd run dev
 ```
 
-Otwórz adres podany przez Vite (domyślnie http://127.0.0.1:5173). Serwer nasłuchuje lokalnie. Grupowanie jest wyłączone: lista i mapa przedstawiają pojedyncze wydzielenia. Nie trzeba przeliczać istniejącej analizy — wystarczy synchronizacja ocen i geometrii.
+Otwórz adres podany przez Vite (domyślnie http://127.0.0.1:5173). Serwer nasłuchuje lokalnie. Grupowanie w rejony jest aktywne: przełącznik „Rejony” / „Wydzielenia” nad listą/mapą (zapamiętywany w `localStorage`) pokazuje domyślnie rejony, gdy analiza je ma, z opcją przejścia do pojedynczych wydzieleń. Nie trzeba przeliczać istniejącej analizy — wystarczy synchronizacja ocen i geometrii.
 
-Powyższe polecenia są dla PowerShell. Nazwa modułu to dokładnie `pipeline.prepare_trip`, bez ukośnika przed `_`. Główny katalog `C:\Users\<uzytkownik>\Documents\Grzyby` zawiera starszą wersję backendu bez tego modułu; aktualna implementacja znajduje się we wskazanym katalogu Claude Code.
+Powyższe polecenia są dla PowerShell. Nazwa modułu to dokładnie `pipeline.prepare_trip`, bez ukośnika przed `_`.
 
 Wymagany Node.js >=22.12 (sprawdzono Node 24). `npm run build` sprawdza TypeScript i tworzy `dist/`; `npm run preview` wyświetla wersję produkcyjną. Hosting jest poza zakresem tej iteracji.
 
@@ -32,7 +30,8 @@ Promień nowej analizy rzeczywiście działa: dodaj do polecenia Pythona `--radi
 `npm run sync-data` kopiuje z `../notebooks/output/` do `public/data/`:
 
 - najnowszy `scores_YYYY-MM-DD.json` → `scores.json`,
-- `stands.geojson` w EPSG:4326 → `stands.geojson`.
+- `stands.geojson` w EPSG:4326 → `stands.geojson`,
+- opcjonalnie, gdy plik dla tego samego dnia istnieje: `regions_{day}.json` → `regions.json` (rejony), `details_{day}.json` → `details.json` (skład/sąsiedztwo), `conditions_{day}.json` → `conditions.json` (panel warunków 7 dni), `run_manifest_{day}.json` → `manifest.json` (parametry i statusy źródeł tego uruchomienia). Brak któregoś z tych plików nie jest błędem — odpowiadająca część interfejsu po prostu się nie pokazuje, a stary plik z poprzedniej synchronizacji jest usuwany, żeby nie mieszać danych z różnych dni.
 
 Można podać inny katalog: `npm run sync-data -- C:/sciezka/do/output`.
 
@@ -70,7 +69,7 @@ Opady z ostatnich 30 dni: radar IMGW-PIB RainGRS (1 km, godzinowy), uzupełniany
 1. **Punkt orientacyjny nie jest wejściem.** Eksport ma status wejścia, ale nie jego współrzędne. Znacznik i Google Maps wskazują przybliżony centroid wybranego wydzielenia, opisany wprost jako punkt orientacyjny. Nie nazywamy go parkingiem ani potwierdzonym startem.
 2. **`d_park_m` nie oznacza dojazdu samochodem.** Dla `network` to dystans po sieci z odcinkami dojścia; dla `euclidean` — oszacowanie od najbliższej drogi/parkingu ×1,3. Starsze eksporty mogą nie zawierać tego pola; UI pokazuje wtedy brak danych. Nie odtwarzamy wartości ani nie zmieniamy starych wyników fikcyjnymi liczbami.
 3. **Zapis lokalny nie zapewnia pełnego offline.** Zachowany tekst działa w otwartej aplikacji i wraca przy kolejnym uruchomieniu, ale sam `localStorage` nie przechowuje aplikacji ani kafli. PWA/service worker pozostają poza zakresem.
-4. **Data eksportu nie jest datą każdego źródła.** CLI pozwala nadać etykietę dnia, ale pobiera bieżące okno pogody. UI nie deklaruje „zakazy sprawdzone dziś” dla całego rejonu: backend sprawdza je tylko dla top-N, a eksport nie zawiera statusów per stand.
+4. **Data eksportu (`--date`) to realna data wyjazdu, nie tylko etykieta.** Pogoda jest pobierana z prognozą do tej daty (do 15 dni naprzód), nie zawsze „na teraz”. Zakazy okresowe są jednak zawsze sprawdzane na dzień przygotowania analizy, nie na dzień wyjazdu — karta wydzielenia mówi o tym wprost. Backend sprawdza zakaz tylko dla top-50 wg rankingu; każde wydzielenie ma pole `zakaz_status` (`brak` / `zakaz` / `nie_sprawdzono` / `blad`) i `gdos_status` (`brak` / `blokada` / `kafel_pominiety`) w eksporcie — karta pokazuje dyskretną notatkę, gdy `zakaz_status` to `nie_sprawdzono` lub `blad`.
 5. Model nieskalibrowany, brak osobnych S_host/S_site/S_age, szczegółów pogody i metadanych pobrania; `P=0` może wynikać z braku danych o dostępności. Pokazujemy ograniczenia, a nie pomiar tłoku.
 6. Istniejące teksty uzasadnień z `nan` pozostają niezmienione zgodnie ze specyfikacją; poprawka generatora jest osobnym zadaniem backendu.
 
