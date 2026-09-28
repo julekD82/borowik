@@ -13,7 +13,7 @@ from pipeline.scoring import (
 )
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
-    climatology_window_insufficient,
+    climatology_window_insufficient, stand_precip_features_table,
 )
 from pipeline.phenology import compute_g_season
 
@@ -27,6 +27,11 @@ from pipeline.phenology import compute_g_season
 # progress or scale spacing (pipeline/prepare_trip.py) share one number.
 WEATHER_GRID_SPACING_M = 5000.0
 CLIMATOLOGY_GRID_SPACING_M = 20000.0
+# Plan 1.5: shared with pipeline.prepare_trip's own stand-mode radar precip
+# precomputation, which needs the SAME past_days run_poc's own default uses
+# below -- a mismatch would fetch a different-length weather series here vs.
+# there for no reason.
+DEFAULT_PAST_DAYS = 92
 
 
 def _nearest_weather_row(centroid, weather_feat_gdf):
@@ -62,9 +67,10 @@ def _nearest_climatology_cell(grid_points, climatology_grid_points, crs) -> dict
 
 def run_poc(layer: str, bbox_2180: tuple, profile: dict,
              bdl_fetcher, weather_fetcher, climatology_fetcher,
-             grid_spacing_m: float = WEATHER_GRID_SPACING_M, past_days: int = 92,
+             grid_spacing_m: float = WEATHER_GRID_SPACING_M, past_days: int = DEFAULT_PAST_DAYS,
              climatology_grid_spacing_m: float = CLIMATOLOGY_GRID_SPACING_M,
-             target_date: date | None = None, package_index: dict | None = None) -> gpd.GeoDataFrame:
+             target_date: date | None = None, package_index: dict | None = None,
+             stand_precip_daily: pd.DataFrame | None = None) -> gpd.GeoDataFrame:
     """Score every wydzielenie in the tile and return the stands GeoDataFrame
     with mask/H/F/F_loc/R columns added.
 
@@ -91,7 +97,18 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     load_packages). A stand whose `adr_for` is present gets S_host from its
     real DRZEW-storey species composition instead of the WFS
     panujący+part_cd fallback -- `None` (the default) or a miss for this
-    particular stand reproduces the exact pre-B2 behaviour."""
+    particular stand reproduces the exact pre-B2 behaviour.
+
+    `stand_precip_daily` (plan 1.5, `radar.mode: stand`): optional per-stand
+    merged daily precipitation (pipeline.radar.stand_radar_precip_daily),
+    columns [stand_id, date, precipitation_mm, radar_frac]. A stand present
+    in it gets its p5/cwb26/rain_radar_coverage recomputed from its OWN
+    RainGRS-sampled precip series (combined with its weather point's
+    et026w) instead of the shared weather-point block mean -- temperature,
+    ET0 and the climatology percentile's reference history are all
+    unaffected, exactly as scoped by the plan. `None` (the default) or a
+    stand missing from it (e.g. radar failed entirely, plan 1.5's D9
+    contract) reproduces the pre-1.5 block-mean behaviour for that stand."""
     target_date = target_date or date.today()
     # Open-Meteo's forecast_days counts today as day 1, so N days ahead
     # needs forecast_days = N+1. max(1, ...) is a defensive floor for a
@@ -146,6 +163,24 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     climate_cells = dict(tuple(clim_df.groupby(["lat", "lon"])))
     history_by_cell = {}
     percentiles_by_point = {}
+    # Plan 1.5: per-stand p5/p26w/rain_radar_coverage, precomputed once in a
+    # vectorized pass (stand_precip_features_table) rather than looked up
+    # from a per-stand pandas group -- {} when the caller didn't pass a
+    # stand_precip_daily (radar.mode: block, or run_poc called directly by a
+    # test/notebook). Converted from the returned DataFrame into a plain
+    # dict of (p5, p26w, rain_radar_coverage) tuples via numpy arrays (not
+    # `.to_dict("index")`, which is itself slow at tens of thousands of rows)
+    # for O(1) lookup per stand in the loop below.
+    if stand_precip_daily is not None and len(stand_precip_daily):
+        stand_feat_table = stand_precip_features_table(stand_precip_daily)
+        stand_feat_index = dict(zip(
+            stand_feat_table.index.to_numpy(),
+            zip(stand_feat_table["p5"].to_numpy(), stand_feat_table["p26w"].to_numpy(),
+                stand_feat_table["rain_radar_coverage"].to_numpy()),
+        ))
+    else:
+        stand_feat_index = {}
+    stand_precip_used_count = 0
 
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
     s_host_values, s_site_values, s_age_values = [], [], []
@@ -208,7 +243,6 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
 
         centroid = row.geometry.centroid
         wrow = _nearest_weather_row(centroid, weather_feat_gdf)
-        rain_radar_coverage_values.append(float(wrow.get("rain_radar_coverage", 0.0)))
 
         point = (wrow["lat"], wrow["lon"])
         # Looked up unconditionally (not just on a percentiles_by_point cache
@@ -237,9 +271,24 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
             # percentile_rank falls back to a neutral 0.5 on an empty window.
             empty_climatology_count += 1
 
+        # Plan 1.5: this stand's own RainGRS-sampled precip series (if any)
+        # overrides the shared weather point's p5/cwb26/rain_radar_coverage.
+        # et026w and the climatology history (cwb26_hist) are the weather
+        # point's/cell's own, unchanged -- only precipitation is per-stand.
+        stand_feat = stand_feat_index.get(row["stand_id"])
+        if stand_feat is not None:
+            p5_value, stand_p26w, rain_coverage_value = stand_feat
+            cwb26_hist = history_by_cell[cell][0]
+            pct_cwb26 = percentile_rank(stand_p26w - wrow["et026w"], cwb26_hist)
+            stand_precip_used_count += 1
+        else:
+            p5_value = wrow["p5"]
+            rain_coverage_value = float(wrow.get("rain_radar_coverage", 0.0))
+        rain_radar_coverage_values.append(rain_coverage_value)
+
         m = score_moisture(pct_cwb26, pct_sm, profile)
         # heat_penalty_p5_mm means a 5-day precipitation sum (spec §4.3), not p1.
-        t = score_temperature(wrow["tmean20"], wrow["tmean5"], wrow["p5"], profile)
+        t = score_temperature(wrow["tmean20"], wrow["tmean5"], p5_value, profile)
         k_frost = score_frost(wrow["tmin3"], profile)
         f = compute_fruiting(m, t, k_frost, g_season=g_season)
         pct_m = moisture_percentile(pct_cwb26, pct_sm, profile)
@@ -315,5 +364,10 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "incomplete_composition_count": incomplete_composition_count,
         "g_season": g_season,
         "radar_coverage_mean": float(sum(rain_radar_coverage_values) / len(rain_radar_coverage_values)) if rain_radar_coverage_values else 0.0,
+        # Plan 1.5: how many stands actually got a per-stand (1 km, own
+        # polygon) precip series rather than the shared weather-point block
+        # mean -- 0 whenever stand_precip_daily wasn't passed (radar.mode:
+        # block) or every lookup missed (radar down for the whole window).
+        "stand_precip_used_count": stand_precip_used_count,
     }
     return stands

@@ -30,8 +30,8 @@ from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.neighbors import find_neighbor_labels
-from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M
-from pipeline.radar import make_radar_weather_fetcher
+from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M, DEFAULT_PAST_DAYS
+from pipeline.radar import make_radar_weather_fetcher, stand_radar_precip_daily
 from pipeline.osm import fetch_osm_features, _default_overpass_call
 from pipeline.population_grid import load_population_points
 from pipeline.rdlp import (
@@ -86,12 +86,27 @@ def points_within_radius(points, lat: float, lon: float, radius_km: float) -> li
     return out
 
 
+def radar_mode(profile: dict, use_radar: bool) -> str:
+    """Plan 1.5: "off" (no radar at all), "block" (pre-1.5 behaviour --
+    RainGRS averaged over each weather point's own grid_spacing_m square),
+    or "stand" (RainGRS area-weighted per stand polygon, ~1 km). Profile key
+    `radar.mode`, defaulting to "block" when absent (an older/hand-edited
+    profile without the plan 1.5 key keeps exactly the pre-1.5 behaviour)."""
+    if not use_radar or not profile["radar"]["enabled"]:
+        return "off"
+    return profile["radar"].get("mode", "block")
+
+
 def build_weather_fetcher(base_fetcher, *, use_radar: bool, profile: dict, grid_spacing_m: float,
                           cache_dir: pathlib.Path, radar_factory=make_radar_weather_fetcher):
     """Plan 2026-09-26 A1: wrap the Open-Meteo fetcher so past precipitation
     comes from the IMGW radar, averaged over each weather point's own
-    grid_spacing_m square (the area whose stands use that point)."""
-    if not use_radar or not profile["radar"]["enabled"]:
+    grid_spacing_m square (the area whose stands use that point) -- only for
+    radar.mode == "block". radar.mode == "stand" (plan 1.5) leaves this
+    fetcher untouched (raw Open-Meteo model, no radar at the weather-point
+    level): precipitation is decided per stand instead, by
+    pipeline.radar.stand_radar_precip_daily, wired in run_trip_preparation."""
+    if radar_mode(profile, use_radar) != "block":
         return base_fetcher
     return radar_factory(
         base_fetcher,
@@ -99,6 +114,25 @@ def build_weather_fetcher(base_fetcher, *, use_radar: bool, profile: dict, grid_
         window_days=profile["radar"]["window_days"],
         cache_dir=pathlib.Path(cache_dir) / "radar_grs",
     )
+
+
+def nearest_weather_point_per_stand(stands: gpd.GeoDataFrame,
+                                    grid_points: list[tuple[float, float]]) -> dict[str, tuple[float, float]]:
+    """Plan 1.5: {stand_id: (lat, lon)} of each stand's nearest weather grid
+    point -- the point whose Open-Meteo model precip fills the gaps in that
+    stand's own RainGRS series (stand_radar_precip_daily), the same "nearest
+    weather point" a stand would use for every other weather feature in
+    block mode (pipeline.orchestrate._nearest_weather_row)."""
+    grid_gdf = gpd.GeoDataFrame(
+        {"lat": [p[0] for p in grid_points], "lon": [p[1] for p in grid_points]},
+        geometry=gpd.points_from_xy([p[1] for p in grid_points], [p[0] for p in grid_points]),
+        crs="EPSG:4326",
+    ).to_crs(stands.crs)
+    centroids = gpd.GeoDataFrame(
+        {"stand_id": stands["stand_id"].to_numpy()}, geometry=stands.geometry.centroid, crs=stands.crs,
+    )
+    joined = gpd.sjoin_nearest(centroids, grid_gdf, how="left")
+    return {row["stand_id"]: (row["lat"], row["lon"]) for _, row in joined.iterrows()}
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -272,7 +306,11 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
                     bdl_coverage_report: list | None = None,
                     wfs_only_share_of_masked: float | None = None,
                     population_source: str | None = None,
-                    pressure_normalization: str | None = None) -> dict:
+                    pressure_normalization: str | None = None,
+                    radar_mode_value: str | None = None,
+                    radar_smoothing_km: float | None = None,
+                    radar_stand_spatial_coverage_mean: float | None = None,
+                    radar_stand_precip_used_count: int | None = None) -> dict:
     """Plan wdrozenia 1.1 (spec S18.1 "Manifest analizy"): one dict with
     every field the acceptance test checks for, assembled from values the
     caller (run_trip_preparation) already computed -- this function does no
@@ -302,6 +340,16 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
         "sources": {
             "radar_coverage_mean": diagnostics.get("radar_coverage_mean", 0.0),
             "radar_full_fallback_to_open_meteo": radar_full_fallback,
+            # Plan 1.5: "block" (pre-1.5, shared weather-point RainGRS mean),
+            # "stand" (per-stand-polygon 1 km mean) or "off" (no radar).
+            "radar_mode": radar_mode_value,
+            "radar_smoothing_km": radar_smoothing_km,
+            # Plan 1.5.1: mean, across stands with a radar.mode: stand
+            # series, of the share of each stand's OWN area actually covered
+            # by a RainGRS 1 km cell (spec's "pokrycie przestrzenne") -- None
+            # outside stand mode.
+            "radar_stand_spatial_coverage_mean": radar_stand_spatial_coverage_mean,
+            "radar_stand_precip_used_count": radar_stand_precip_used_count,
             "gdos_failed_tile_count": gdos_failed_tile_count,
             "osm_failed_tile_count": osm_failed_tile_count,
             "tile_count": tile_count,
@@ -395,7 +443,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # _radius_scaled_spacing's own docstring.
     grid_spacing_m = _radius_scaled_spacing(WEATHER_GRID_SPACING_M, radius_km)
     climatology_grid_spacing_m = _radius_scaled_spacing(CLIMATOLOGY_GRID_SPACING_M, radius_km)
-    point_count = len(make_grid(bbox, spacing_m=grid_spacing_m))
+    grid_points = make_grid(bbox, spacing_m=grid_spacing_m)
+    point_count = len(grid_points)
     climatology_point_count = len(make_grid(bbox, spacing_m=climatology_grid_spacing_m))
     print(
         f"Siatka pogodowa: {point_count} punktow (odstep {grid_spacing_m/1000:.1f} km), "
@@ -444,13 +493,45 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             max_attempts=3, backoff_s=5, pace_s=0.5,
         )
 
+    raw_weather_fetcher = functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir)
     weather_fetcher = build_weather_fetcher(
-        functools.partial(fetch_weather_raw, call_api=_weather_call_api, cache_dir=cache_dir),
-        use_radar=use_radar, profile=profile, grid_spacing_m=grid_spacing_m, cache_dir=cache_dir,
+        raw_weather_fetcher, use_radar=use_radar, profile=profile, grid_spacing_m=grid_spacing_m,
+        cache_dir=cache_dir,
     )
     climatology_fetcher = functools.partial(
         fetch_climatology_raw, call_api=_climatology_call_api, cache_dir=cache_dir,
     )
+
+    # Plan 1.5 (radar.mode: stand): precipitation is decided per stand
+    # (RainGRS sampled over each stand's own polygon) instead of per shared
+    # weather point -- computed here, once, from the RAW (radar-free)
+    # weather fetch at the grid points, and handed to run_poc as
+    # `stand_precip_daily` so it can override p5/cwb26/rain_radar_coverage
+    # per stand while temperature/ET0/climatology stay on the block grid.
+    stand_precip_daily = None
+    radar_stand_spatial_coverage_mean = None
+    mode = radar_mode(profile, use_radar)
+    if mode == "stand":
+        forecast_days_for_radar = max(1, ((target_date or date.today()) - date.today()).days + 1)
+        stands["stand_id"] = stands["adr_for"] + "@" + stands["a_year"].astype(str)
+        print("Radar per wydzielenie (radar.mode: stand): probkowanie 1 km na wielokat...", flush=True)
+        base_weather_daily = raw_weather_fetcher(grid_points, DEFAULT_PAST_DAYS, forecast_days=forecast_days_for_radar)
+        nearest_point = nearest_weather_point_per_stand(stands, grid_points)
+        stand_precip_daily = stand_radar_precip_daily(
+            stands, nearest_point, base_weather_daily,
+            smoothing_km=profile["radar"].get("smoothing_km", 0), window_days=profile["radar"]["window_days"],
+            cache_dir=pathlib.Path(cache_dir) / "radar_grs",
+        )
+        coverage = stand_precip_daily.attrs.get("spatial_coverage", {})
+        if coverage:
+            radar_stand_spatial_coverage_mean = float(sum(coverage.values()) / len(coverage))
+            incomplete = sum(1 for v in coverage.values() if v < 0.99)
+            print(
+                f"  pokrycie przestrzenne: srednio {radar_stand_spatial_coverage_mean:.1%}, "
+                f"{incomplete}/{len(coverage)} wydzielen z niepelnym pokryciem siatki 1 km.",
+                flush=True,
+            )
+
     scored = run_poc(
         layer=layer, bbox_2180=bbox, profile=profile,
         bdl_fetcher=lambda _layer, _bbox: stands.copy(),
@@ -460,6 +541,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         climatology_grid_spacing_m=climatology_grid_spacing_m,
         target_date=target_date,
         package_index=package_index,
+        stand_precip_daily=stand_precip_daily,
     )
     print(
         f"run_poc: {len(scored)} wydzielenia, {int(scored['mask'].sum())} passing structural mask, "
@@ -638,6 +720,10 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         wfs_only_share_of_masked=wfs_only_share_of_masked,
         population_source=population_source,
         pressure_normalization=profile["pressure"].get("normalization", "absolute"),
+        radar_mode_value=mode,
+        radar_smoothing_km=profile["radar"].get("smoothing_km") if mode == "stand" else None,
+        radar_stand_spatial_coverage_mean=radar_stand_spatial_coverage_mean,
+        radar_stand_precip_used_count=scored.attrs["diagnostics"].get("stand_precip_used_count"),
     )
     manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
 

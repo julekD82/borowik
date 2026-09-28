@@ -527,3 +527,61 @@ def test_run_poc_without_radar_reports_zero_coverage():
         climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
     )
     assert result["rain_radar_coverage"].tolist() == [0.0, 0.0]
+
+
+def _stand_precip_daily(stand_id: str, mm_per_day: float, radar_frac: float = 1.0) -> pd.DataFrame:
+    dates = pd.date_range("2026-08-01", periods=30, freq="D")
+    return pd.DataFrame({
+        "stand_id": stand_id, "date": dates, "precipitation_mm": mm_per_day, "radar_frac": radar_frac,
+    })
+
+
+def test_run_poc_stand_precip_daily_overrides_cwb26_only_for_covered_stands():
+    # target_date's day-of-year must fall inside fake_climatology_fetcher's
+    # actual range (see test_run_poc_insufficient_climatology_false_with_a_
+    # dense_window above), or every window is empty and pct_CWB26 is always
+    # the neutral 0.5 fallback regardless of the override.
+    target_date = date(2026, 1, 20)
+    baseline = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        target_date=target_date,
+    )
+    baseline_pct = baseline.set_index("stand_id").loc["A-1@2026", "pct_CWB26"]
+
+    # A-1's own RainGRS-sampled series is far wetter (50 mm/day) than its
+    # weather point's flat 2.0 mm/day block mean -- only A-1 is covered,
+    # A-2 is absent from stand_precip_daily.
+    stand_precip = _stand_precip_daily("A-1@2026", mm_per_day=50.0)
+    overridden = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        target_date=target_date, stand_precip_daily=stand_precip,
+    )
+    by_id = overridden.set_index("stand_id")
+    assert by_id.loc["A-1@2026", "pct_CWB26"] == pytest.approx(1.0)
+    assert by_id.loc["A-1@2026", "pct_CWB26"] != pytest.approx(baseline_pct)
+    # A-2 wasn't in stand_precip_daily -- unaffected, same as the baseline run.
+    assert by_id.loc["A-2@2026", "pct_CWB26"] == pytest.approx(
+        baseline.set_index("stand_id").loc["A-2@2026", "pct_CWB26"])
+    assert by_id.loc["A-1@2026", "rain_radar_coverage"] == pytest.approx(1.0)
+    assert by_id.loc["A-2@2026", "rain_radar_coverage"] == pytest.approx(0.0)
+    assert overridden.attrs["diagnostics"]["stand_precip_used_count"] == 1
+
+
+def test_run_poc_stand_precip_daily_none_reproduces_pre_1_5_behaviour():
+    baseline = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+    )
+    explicit_none = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia", bbox_2180=BBOX, profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher, weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher, grid_spacing_m=5000.0, past_days=30,
+        stand_precip_daily=None,
+    )
+    assert baseline["R"].tolist() == pytest.approx(explicit_none["R"].tolist())
+    assert explicit_none.attrs["diagnostics"]["stand_precip_used_count"] == 0

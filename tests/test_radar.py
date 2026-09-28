@@ -408,3 +408,161 @@ def test_merge_derives_local_date_correctly_across_a_fixed_step_dst_series():
     ], ignore_index=True)
     out = merge_radar_into_daily(daily, radar, date(2026, 10, 1), date(2026, 11, 1))
     assert out["precipitation_mm"].tolist() == pytest.approx([10.0, 20.0, 30.0, 40.0, 50.0, 0.0])
+
+
+# Plan 1.5: per-stand (1 km, area-weighted) radar sampling.
+
+import geopandas as gpd
+from shapely.geometry import box as shapely_box
+
+from pipeline.radar import (
+    cell_bounds, smoothing_radius_cells, smooth_grid_stack, build_stand_cell_weights,
+    sample_stack_weighted, radar_hourly_at_stands, stand_radar_precip_daily,
+)
+
+HEADER_5x5 = GridHeader(ncols=5, nrows=5, xllcorner=0.0, yllcorner=0.0, cellsize=1000.0)
+
+
+def test_cell_bounds_row_0_is_the_northmost_cell():
+    minx, miny, maxx, maxy = cell_bounds(HEADER_5x5, row=0, col=0)
+    assert (minx, miny, maxx, maxy) == (0.0, 4000.0, 1000.0, 5000.0)
+
+
+def test_smoothing_radius_cells_maps_km_to_cells_at_1km_cellsize():
+    assert smoothing_radius_cells(0, 1000.0) == 0
+    assert [smoothing_radius_cells(km, 1000.0) for km in (1, 2, 3)] == [1, 2, 3]
+
+
+def test_smooth_grid_stack_zero_radius_is_a_noop():
+    stack = np.array([[[1.0, np.nan], [3.0, 4.0]]])
+    assert np.array_equal(smooth_grid_stack(stack, 0), stack, equal_nan=True)
+
+
+def test_build_stand_cell_weights_small_stand_takes_the_centroid_cell():
+    # A 10x10 m stand (0.01 ha) is tiny compared to a 100 ha RainGRS cell --
+    # spec 1.5.1: "wydzielenia mniejsze od komorki biora komorke zawierajaca
+    # centroid", weight 1, no shapely intersection.
+    small = shapely_box(100, 4100, 110, 4110)  # inside row=0, col=0
+    stands = gpd.GeoDataFrame({"stand_id": ["s1"]}, geometry=[small], crs="EPSG:2180")
+    sw = build_stand_cell_weights(stands, HEADER_5x5)
+    assert sw.weights.toarray().tolist() == [[1.0] + [0.0] * (sw.n_rows * sw.n_cols - 1)]
+    assert sw.spatial_coverage.tolist() == [1.0]
+
+
+def test_build_stand_cell_weights_large_stand_area_weights_every_overlapping_cell():
+    # Exactly 2x2 cells -> 4 equal 0.25 weights (see manual derivation in the
+    # plan 1.5 implementation notes: cell area 1e6 m^2, stand area 4e6 m^2).
+    large = shapely_box(1000, 1000, 3000, 3000)
+    stands = gpd.GeoDataFrame({"stand_id": ["big"]}, geometry=[large], crs="EPSG:2180")
+    sw = build_stand_cell_weights(stands, HEADER_5x5)
+    row = sw.weights.toarray()[0]
+    assert row.sum() == pytest.approx(1.0)
+    assert sorted(row[row > 0].tolist()) == pytest.approx([0.25, 0.25, 0.25, 0.25])
+    assert sw.spatial_coverage.tolist() == pytest.approx([1.0])
+
+
+def test_sample_stack_weighted_renormalizes_over_valid_cells_and_nans_when_all_missing():
+    large = shapely_box(1000, 1000, 3000, 3000)
+    stands = gpd.GeoDataFrame({"stand_id": ["big"]}, geometry=[large], crs="EPSG:2180")
+    sw = build_stand_cell_weights(stands, HEADER_5x5)
+    flat = np.arange(sw.n_rows * sw.n_cols, dtype=float)
+    weighted_idx = np.flatnonzero(sw.weights.toarray()[0])
+
+    knocked_out_flat = flat.copy()
+    knocked_out_flat[weighted_idx[0]] = np.nan
+    remaining = flat[weighted_idx[1:]]
+    out = sample_stack_weighted(knocked_out_flat.reshape(1, sw.n_rows, sw.n_cols), sw)
+    assert out[0, 0] == pytest.approx(remaining.mean())
+
+    all_missing = np.full((1, sw.n_rows, sw.n_cols), np.nan)
+    assert math.isnan(sample_stack_weighted(all_missing, sw)[0, 0])
+
+
+def _stand_grid_bytes(nrows, ncols, values: dict[tuple[int, int], float], xll=0.0, yll=0.0) -> bytes:
+    grid = [[0.0] * ncols for _ in range(nrows)]
+    for (r, c), v in values.items():
+        grid[r][c] = v
+    return _asc(grid, xll=xll, yll=yll)
+
+
+def test_radar_hourly_at_stands_samples_the_stands_own_cell(tmp_path):
+    day = date(2026, 9, 21)
+    # Centre cell (row=2, col=2 of a 5x5 grid, xll=yll=0) gets 6.0 mm.
+    http = FakeHttp({archive_url(day): _tar({
+        "grs_60_asc_2026-09-21/202609210100_acc0060_grs.asc":
+            _stand_grid_bytes(5, 5, {(2, 2): 6.0}),
+    })})
+    now = datetime(2026, 9, 26, 12, tzinfo=timezone.utc)
+    start = datetime(2026, 9, 21, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 22, 0, tzinfo=timezone.utc)
+    # Row=2 (from the top) of a 5-row, 1km grid spans y=[2000,3000]; a small
+    # stand centred at (2500, 2500) sits in exactly that cell.
+    stand = shapely_box(2450, 2450, 2550, 2550)
+    stands = gpd.GeoDataFrame({"stand_id": ["s1"]}, geometry=[stand], crs="EPSG:2180")
+
+    hourly = radar_hourly_at_stands(stands, 0, start, end, tmp_path, http_get=http, now_utc=now)
+
+    assert hourly["stand_id"].tolist() == ["s1"]
+    assert hourly["precip_mm"].tolist() == pytest.approx([6.0])
+    assert hourly.attrs["spatial_coverage"]["s1"] == pytest.approx(1.0)
+
+
+def test_stand_radar_precip_daily_merges_per_stand_with_nearest_weather_point_model(monkeypatch):
+    def fake_hourly(stands, smoothing_km, start_utc, end_utc, cache_dir, http_get=None, now_utc=None):
+        assert list(stands["stand_id"]) == ["s1"]
+        out = pd.DataFrame({
+            "stand_id": ["s1"], "hour_end_utc": [pd.Timestamp("2026-09-21 12:00", tz="UTC")],
+            "precip_mm": [20.0],
+        })
+        out.attrs["spatial_coverage"] = {"s1": 1.0}
+        return out
+
+    stands = gpd.GeoDataFrame({"stand_id": ["s1"]}, geometry=[shapely_box(0, 0, 10, 10)], crs="EPSG:2180")
+    base_daily = _om_daily({date(2026, 9, 21): 17.0, date(2026, 9, 22): 13.0})
+    merged = stand_radar_precip_daily(
+        stands, {"s1": (50.0, 21.0)}, base_daily,
+        smoothing_km=0, window_days=30, cache_dir="unused",
+        now_utc=datetime(2026, 9, 26, 10, tzinfo=timezone.utc), today=date(2026, 9, 26),
+        radar_hourly_fn=fake_hourly,
+    )
+    out = merged.set_index("date")
+    d21, d22 = pd.Timestamp("2026-09-21", tz="Europe/Warsaw").tz_convert("UTC"), pd.Timestamp("2026-09-22", tz="Europe/Warsaw").tz_convert("UTC")
+    assert out.loc[d21, "precipitation_mm"] == pytest.approx(20.0 + 17.0 * 23 / 24)
+    assert out.loc[d21, "radar_frac"] == pytest.approx(1 / 24)
+    assert out.loc[d22, "precipitation_mm"] == pytest.approx(13.0)
+
+
+def test_stand_radar_precip_daily_falls_back_to_model_when_radar_unavailable(capsys):
+    def down(*args, **kwargs):
+        raise RadarUnavailableError("dns")
+
+    stands = gpd.GeoDataFrame({"stand_id": ["s1"]}, geometry=[shapely_box(0, 0, 10, 10)], crs="EPSG:2180")
+    base_daily = _om_daily({date(2026, 9, 21): 17.0})
+    merged = stand_radar_precip_daily(
+        stands, {"s1": (50.0, 21.0)}, base_daily,
+        smoothing_km=0, window_days=30, cache_dir="unused",
+        now_utc=datetime(2026, 9, 26, 10, tzinfo=timezone.utc), today=date(2026, 9, 26),
+        radar_hourly_fn=down,
+    )
+    assert merged["precipitation_mm"].tolist() == pytest.approx([17.0])
+    assert (merged["radar_frac"] == 0.0).all()
+    assert "UWAGA: radar IMGW niedostepny" in capsys.readouterr().out
+
+
+def test_radar_daily_and_merge_generalize_to_stand_key_cols_across_dst():
+    # Same DST-transition fixture as
+    # test_merge_derives_local_date_correctly_across_a_fixed_step_dst_series
+    # above, but exercised through key_cols=("stand_id",) -- plan 1.5's
+    # acceptance criterion that the stand path shares (not reimplements) the
+    # already DST-safe local-day logic.
+    start = pd.Timestamp("2026-10-23 22:00", tz="UTC")
+    dates = pd.date_range(start, periods=3, freq=pd.Timedelta(seconds=86400))
+    daily = pd.DataFrame({"stand_id": "s1", "date": dates, "precipitation_mm": 0.0})
+    stand_hourly = pd.DataFrame({
+        "stand_id": ["s1", "s1"],
+        "hour_end_utc": [pd.Timestamp("2026-10-24 12:00", tz="UTC"), pd.Timestamp("2026-10-25 12:00", tz="UTC")],
+        "precip_mm": [10.0, 20.0],
+    })
+    radar_daily = radar_daily_at_points(stand_hourly, key_cols=("stand_id",))
+    out = merge_radar_into_daily(daily, radar_daily, date(2026, 10, 1), date(2026, 11, 1), key_cols=("stand_id",))
+    assert out.set_index("date")["precipitation_mm"].tolist() == pytest.approx([10.0, 20.0, 0.0])

@@ -62,7 +62,7 @@ Pasek „Warunki” pokazuje 7 kafelków (dziś..dziś+6). Poziom 0–3 to klasa
 
 ## Źródła danych
 
-Opady z ostatnich 30 dni: radar IMGW-PIB RainGRS (1 km, godzinowy), uzupełniany modelem Open-Meteo. Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy; dane zostały przetworzone (sumy dobowe, średnie blokowe).
+Opady z ostatnich 30 dni: radar IMGW-PIB RainGRS (1 km, godzinowy), uzupełniany modelem Open-Meteo. Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy; dane zostały przetworzone (sumy dobowe, od Fazy 1.5 domyślnie ważone powierzchniowo na wielokącie każdego wydzielenia — `docs/RAPORT_FAZA_1_5.md` — a nie uśredniane blokowo na całej siatce pogodowej; tryb blokowy nadal dostępny przez `radar.mode: block` w profilu).
 
 ## Ważne ograniczenia danych / uwagi do specyfikacji
 
