@@ -1,7 +1,8 @@
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import box
 
-from pipeline.bdl_packages import load_packages
+from pipeline.bdl_packages import load_packages, forest_district_code, coverage_report, PackageComposition
 
 
 def _write_package(package_dir, subarea_rows, species_text, metadane_text=None):
@@ -152,3 +153,116 @@ def test_load_packages_missing_metadane_gives_none_date(tmp_path):
         _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n",
     )
     assert load_packages(tmp_path)["AA-1"].package_date is None
+
+
+# --- Plan 1.3: latest-by-metadata-date wins on a shared adr_for -------------
+
+def test_load_packages_prefers_newer_package_date_even_when_loaded_first(tmp_path):
+    # PKG_A sorts (and so loads) before PKG_B alphabetically, but PKG_B's
+    # composition is dated LATER -- pre-1.3 behaviour picked A's (loaded
+    # last... no, A loads first, B overwrites -- the bug this fixes is the
+    # opposite case, proven by the next test). This one just establishes
+    # that whichever has the newer date wins regardless of load order.
+    _write_package(
+        tmp_path / "PKG_A_OLDER",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n",
+        metadane_text="Data wytworzenia danych: 2026-01-01\r\n",
+    )
+    _write_package(
+        tmp_path / "PKG_B_NEWER",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tBK\t60\t10\tI\t20\t30\t10.0\n",
+        metadane_text="Data wytworzenia danych: 2026-06-23\r\n",
+    )
+    comp = load_packages(tmp_path)["AA-1"]
+    assert comp.species == [("BK", 1.0)]
+    assert comp.package_date == "2026-06-23"
+
+
+def test_load_packages_keeps_older_but_loaded_last_package_when_it_is_older(tmp_path):
+    # The actual pre-1.3 bug: PKG_Z loads AFTER PKG_A alphabetically but is
+    # dated OLDER -- a plain dict.update() would let it silently win. It
+    # must not: the newer PKG_A composition (SO) must survive.
+    _write_package(
+        tmp_path / "PKG_A_NEWER",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n",
+        metadane_text="Data wytworzenia danych: 2026-06-23\r\n",
+    )
+    _write_package(
+        tmp_path / "PKG_Z_OLDER",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tBK\t60\t10\tI\t20\t30\t10.0\n",
+        metadane_text="Data wytworzenia danych: 2026-01-01\r\n",
+    )
+    comp = load_packages(tmp_path)["AA-1"]
+    assert comp.species == [("SO", 1.0)]
+
+
+def test_load_packages_dated_package_beats_an_undated_one_loaded_later(tmp_path):
+    _write_package(
+        tmp_path / "PKG_A_DATED",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tSO\t60\t10\tI\t20\t30\t10.0\n",
+        metadane_text="Data wytworzenia danych: 2026-06-23\r\n",
+    )
+    _write_package(
+        tmp_path / "PKG_Z_UNDATED",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tBK\t60\t10\tI\t20\t30\t10.0\n",
+    )
+    comp = load_packages(tmp_path)["AA-1"]
+    assert comp.species == [("SO", 1.0)]
+
+
+# --- Plan 1.3: sklad_niepelny (share sum below 0.9) -------------------------
+
+def test_load_packages_flags_sklad_niepelny_below_point_nine(tmp_path):
+    _write_package(
+        tmp_path / "PKG",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tSO\t60\t8\tI\t20\t30\t10.0\n",  # sum = 0.8
+    )
+    assert load_packages(tmp_path)["AA-1"].sklad_niepelny is True
+
+
+def test_load_packages_does_not_flag_sklad_niepelny_at_or_above_point_nine(tmp_path):
+    _write_package(
+        tmp_path / "PKG",
+        [{"a_i_num": "1", "adr_for": "AA-1"}],
+        _SPECIES_HEADER + "1\t2026\tDRZEW\t1\tSO\t60\t9\tI\t20\t30\t10.0\n",  # sum = 0.9
+    )
+    assert load_packages(tmp_path)["AA-1"].sklad_niepelny is False
+
+
+# --- Plan 1.3: coverage report ----------------------------------------------
+
+def test_forest_district_code_takes_first_two_dash_segments():
+    assert forest_district_code("02-10-1-05-317   -d   -00") == "02-10"
+    assert forest_district_code("AA-1") == "AA-1"
+    assert forest_district_code("nodash") == "nodash"
+
+
+def test_coverage_report_groups_by_district_and_sorts_worst_first():
+    stands = pd.DataFrame({
+        "adr_for": ["02-10-1", "02-10-2", "02-25-1", "02-25-2", "02-25-3", "99-99-1"],
+        "mask": [True, True, True, True, True, False],  # last stand fails structural mask
+    })
+    package_index = {
+        "02-10-1": PackageComposition(species=[], source_name="x", package_date=None),
+        "02-25-1": PackageComposition(species=[], source_name="x", package_date=None),
+    }
+    report = coverage_report(stands, package_index)
+    by_district = {r["district"]: r for r in report}
+    assert by_district["02-10"] == {"district": "02-10", "stand_count": 2, "package_stand_count": 1, "coverage": 0.5}
+    assert by_district["02-25"]["package_stand_count"] == 1
+    assert by_district["02-25"]["stand_count"] == 3
+    assert "99-99" not in by_district  # only mask-passing stand, excluded (not structurally in scope)
+    # sorted worst-covered first
+    assert report[0]["coverage"] <= report[-1]["coverage"]
+
+
+def test_coverage_report_returns_empty_list_when_nothing_passes_the_mask():
+    stands = pd.DataFrame({"adr_for": ["AA-1"], "mask": [False]})
+    assert coverage_report(stands, {}) == []

@@ -357,18 +357,36 @@ def test_gdos_tile_failure_does_not_abort_the_run(monkeypatch,tmp_path,capsys):
 
 
 def test_failure_mid_pipeline_preserves_previous_export(monkeypatch,tmp_path):
-    # A genuinely fatal error (not a GDOS/OSM tile, which is now
-    # non-fatal -- see above) still aborts the run and leaves whatever a
-    # previous, successful run already exported untouched.
+    # A genuinely fatal error (not a GDOS/OSM tile, and -- since plan 1.6 --
+    # not a failing zakaz-okresowy check either, both now non-fatal, see
+    # below and pipeline.mvp's own "blad" status tests) still aborts the run
+    # and leaves whatever a previous, successful run already exported
+    # untouched. A missing profile file is used here purely as a reliable
+    # early fatal error, not because profile loading itself is the point.
     configure_sources(monkeypatch)
     marker=tmp_path/'scores_2026-09-24.json'
     marker.write_text('previous result')
+    with pytest.raises(FileNotFoundError):
+        run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/does_not_exist.yaml',tmp_path,tmp_path/'cache',use_radar=False)
+    assert marker.read_text() == 'previous result'
+
+
+def test_failing_zakaz_check_no_longer_aborts_the_run(monkeypatch, tmp_path):
+    # Plan 1.6 (spec S13.1): the zakaz-okresowy source failing is now a
+    # survivable "blad" status (pipeline.mvp's own unit tests cover the
+    # status value itself), not a run-aborting exception -- this is the
+    # integration-level guarantee that run_trip_preparation as a whole
+    # completes instead of propagating the checker's exception.
+    configure_sources(monkeypatch)
+
     def fail_ban(*args):
         raise RuntimeError('Zakazy unavailable')
     monkeypatch.setattr('pipeline.prepare_trip.check_periodic_ban', fail_ban)
-    with pytest.raises(RuntimeError,match='Zakazy unavailable'):
-        run_trip_preparation(50.5318,18.6055,'2026-09-24',10,'profiles/boletus_edulis.yaml',tmp_path,tmp_path/'cache',use_radar=False)
-    assert marker.read_text() == 'previous result'
+    summary = run_trip_preparation(
+        50.5318, 18.6055, '2026-09-24', 10, 'profiles/boletus_edulis.yaml', tmp_path, tmp_path / 'cache',
+        use_radar=False,
+    )
+    assert summary['stand_count'] > 0
 
 
 def test_conditions_timeline_written_when_todays_weather_is_available(monkeypatch, tmp_path):

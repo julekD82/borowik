@@ -3,7 +3,9 @@ import pandas as pd
 import responses
 from shapely.geometry import box
 
-from pipeline.gdos import fetch_protected_areas, mark_gdos_blocked, DEFAULT_GDOS_WFS_URL
+from shapely.geometry import Point
+
+from pipeline.gdos import fetch_protected_areas, mark_gdos_blocked, gdos_status, DEFAULT_GDOS_WFS_URL
 
 BBOX = (486000.0, 380000.0, 496000.0, 390000.0)
 
@@ -62,3 +64,36 @@ def test_mark_gdos_blocked_all_false_when_no_protected_areas():
     empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:2180")
     blocked = mark_gdos_blocked(_stands_gdf(), empty)
     assert blocked.tolist() == [False, False]
+
+
+# --- Plan 1.6: gdos_status ---------------------------------------------------
+
+def test_gdos_status_brak_when_not_blocked_and_no_failed_tile():
+    assert gdos_status(False, Point(500.0, 500.0), []) == "brak"
+
+
+def test_gdos_status_blokada_when_blocked():
+    assert gdos_status(True, Point(500.0, 500.0), []) == "blokada"
+
+
+def test_gdos_status_kafel_pominiety_when_centroid_falls_in_a_failed_tile():
+    failed_tiles = [(0.0, 0.0, 1000.0, 1000.0)]  # (n_min, e_min, n_max, e_max)
+    assert gdos_status(False, Point(500.0, 500.0), failed_tiles) == "kafel_pominiety"
+
+
+def test_gdos_status_kafel_pominiety_takes_priority_over_blokada():
+    # mark_gdos_blocked's own optimistic fallback means "blocked" can only
+    # ever be True here from a tile that DID succeed -- but if this stand's
+    # own home tile is in the failed list, the honest status is "we don't
+    # actually know", not "confirmed blocked".
+    failed_tiles = [(0.0, 0.0, 1000.0, 1000.0)]
+    assert gdos_status(True, Point(500.0, 500.0), failed_tiles) == "kafel_pominiety"
+
+
+def test_gdos_status_outside_any_failed_tile_falls_through_to_brak_or_blokada():
+    failed_tiles = [(0.0, 0.0, 1000.0, 1000.0)]
+    assert gdos_status(False, Point(5000.0, 5000.0), failed_tiles) == "brak"
+
+
+def test_gdos_status_handles_none_failed_tiles():
+    assert gdos_status(False, Point(500.0, 500.0), None) == "brak"

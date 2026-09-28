@@ -1,12 +1,16 @@
 import argparse
 import functools
+import hashlib
 import math
 import pathlib
+import subprocess
 import sys
 import time
-from datetime import date, timedelta
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
 import geopandas as gpd
+import pandas as pd
 import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 from pyproj import Transformer
@@ -14,12 +18,13 @@ from pyproj import Transformer
 from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_package_details import load_package_details
-from pipeline.bdl_packages import load_packages
+from pipeline.bdl_packages import load_packages, coverage_report
 from pipeline.conditions_timeline import build_conditions_timeline
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
-    write_regions_json, write_details_json, write_conditions_json,
+    write_regions_json, write_details_json, write_conditions_json, write_manifest_json,
+    write_diagnostics,
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
@@ -28,6 +33,7 @@ from pipeline.neighbors import find_neighbor_labels
 from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M
 from pipeline.radar import make_radar_weather_fetcher
 from pipeline.osm import fetch_osm_features, _default_overpass_call
+from pipeline.population_grid import load_population_points
 from pipeline.rdlp import (
     fetch_rdlp_boundaries_cached, resolve_rdlp_layer,
 )
@@ -104,8 +110,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--lon", type=float, required=True, help="Dlugosc geograficzna (WGS84)")
     parser.add_argument(
         "--date", type=str, default=None,
-        help="Etykieta dnia w nazwach plikow wynikowych (YYYY-MM-DD), domyslnie dzisiaj. "
-             "Nie zmienia okna pogodowego (zawsze 'teraz' -- patrz docs/projekt-borowik.md).",
+        help="Data wyjazdu (YYYY-MM-DD), domyslnie dzisiaj -- nie tylko etykieta w nazwach "
+             "plikow: pogoda jest pobierana z prognoza do tej daty (najwyzej 15 dni naprzod). "
+             "Zakazy okresowe sa sprawdzane na dzien przygotowania, nie na te date.",
     )
     parser.add_argument(
         "--radius-km", type=float, default=25.0,
@@ -115,6 +122,17 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--profile", type=str, default="profiles/boletus_edulis.yaml")
     parser.add_argument("--out-dir", type=str, default="notebooks/output")
     parser.add_argument("--cache-dir", type=str, default="cache")
+    parser.add_argument(
+        "--bdl-packages-dir", type=str, default=None,
+        help="Katalog z rozpakowanymi paczkami BDL (plan 1.3) -- domyslnie <cache-dir>/bdl_packages. "
+             "Ustaw, gdy paczki leza poza katalogiem cache (np. wskazany osobno, poza repo).",
+    )
+    parser.add_argument(
+        "--population-grid-path", type=str, default=None,
+        help="Plik siatki kilometrowej GUS NSP 2021 (zasob 24532, plan 1.4) -- gdy brak, "
+             "populacja miejscowosci OSM bez tagu population dostaje wartosc domyslna wg klasy "
+             "zamiast znikac jako 0.",
+    )
     parser.add_argument(
         "--no-radar", action="store_true",
         help="Nie uzywaj radaru IMGW (RainGRS) -- opady tylko z modelu Open-Meteo (np. do porownania).",
@@ -207,9 +225,125 @@ def _rate_limited(default_call, *args, should_retry, max_attempts=6, backoff_s=6
             time.sleep(backoff_s)
 
 
+def _git_commit(repo_dir: pathlib.Path) -> str | None:
+    """Plan 1.1: run_manifest's `commit` field. None outside a git checkout
+    (e.g. a zipped release) or if git itself isn't on PATH -- a manifest
+    should never abort a run over this."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _git_dirty(repo_dir: pathlib.Path) -> bool | None:
+    """Plan 1.1: `dirty` flag ("niezatwierdzone zmiany"). None (not False)
+    when git itself is unavailable, so a manifest reader can't mistake
+    "couldn't check" for "confirmed clean"."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return bool(result.stdout.strip()) if result.returncode == 0 else None
+
+
+def _profile_hash(profile_path: str) -> str | None:
+    """Short sha256 of the profile file's raw bytes -- cheaper than hashing
+    the parsed dict and just as sufficient to tell "same profile" from "not"
+    across two manifests. None if the path can't be read (shouldn't happen:
+    load_profile above already succeeded on the same path)."""
+    try:
+        raw = pathlib.Path(profile_path).read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
+                    target_date: date, profile_path: str, use_radar: bool,
+                    repo_dir: pathlib.Path, diagnostics: dict, tile_count: int,
+                    gdos_failed_tile_count: int, osm_failed_tile_count: int,
+                    zakaz_checked_count: int, region_count: int,
+                    package_dir: pathlib.Path | None = None,
+                    bdl_coverage_report: list | None = None,
+                    wfs_only_share_of_masked: float | None = None,
+                    population_source: str | None = None,
+                    pressure_normalization: str | None = None) -> dict:
+    """Plan wdrozenia 1.1 (spec S18.1 "Manifest analizy"): one dict with
+    every field the acceptance test checks for, assembled from values the
+    caller (run_trip_preparation) already computed -- this function does no
+    I/O of its own besides reading the profile file's bytes for its hash.
+
+    `bdl_coverage_report`/`population_source`/`pressure_normalization` default
+    to None: `population_source`/`pressure_normalization` (tasks 1.4/1.5, not
+    yet landed when this function was first written) are a real "not
+    applicable yet", not a silent fallback, and stay None until those callers
+    pass a value. `incomplete_composition_count` (plan 1.3) isn't a parameter
+    at all -- it's read straight from `diagnostics`, same as every other
+    run_poc-produced count above it, so it's automatically real once
+    orchestrate.py starts tracking it and never needs its own call-site wire-
+    up."""
+    now = datetime.now(timezone.utc).astimezone()
+    radar_full_fallback = (not use_radar) or diagnostics.get("radar_coverage_mean", 0.0) == 0.0
+    return {
+        "run_id": uuid.uuid4().hex,
+        "commit": _git_commit(repo_dir),
+        "uncommitted_changes": _git_dirty(repo_dir),
+        "profile_path": str(profile_path),
+        "profile_hash": _profile_hash(profile_path),
+        "lat": lat, "lon": lon, "radius_km": radius_km,
+        "target_date": target_date.isoformat(),
+        "day": day,
+        "prepared_at": now.isoformat(timespec="seconds"),
+        "sources": {
+            "radar_coverage_mean": diagnostics.get("radar_coverage_mean", 0.0),
+            "radar_full_fallback_to_open_meteo": radar_full_fallback,
+            "gdos_failed_tile_count": gdos_failed_tile_count,
+            "osm_failed_tile_count": osm_failed_tile_count,
+            "tile_count": tile_count,
+            "zakaz_checked_count": zakaz_checked_count,
+        },
+        "counts": {
+            "stand_count": diagnostics.get("stand_count", 0),
+            "mask_passing_count": diagnostics.get("mask_passing_count", 0),
+            "region_count": region_count,
+            "package_stand_count": diagnostics.get("package_stand_count", 0),
+            "wfs_stand_count": diagnostics.get("stand_count", 0) - diagnostics.get("package_stand_count", 0),
+            "unknown_site_count": diagnostics.get("unknown_site_count", 0),
+            "unknown_species_count": diagnostics.get("unknown_species_count", 0),
+            "incomplete_composition_count": diagnostics.get("incomplete_composition_count"),
+        },
+        "bdl_package_dir": str(package_dir) if package_dir is not None else None,
+        "bdl_coverage_report": bdl_coverage_report,
+        "wfs_only_share_of_masked": wfs_only_share_of_masked,
+        "population_source": population_source,
+        "pressure_normalization": pressure_normalization,
+    }
+
+
+def rain_episode_radar_coverage(conditions_daily, today: date, lookback_days: int) -> float:
+    """Plan 1.8c: mean achieved radar coverage over the recent window where
+    pipeline.conditions_timeline.recent_rains actually detects episodes --
+    not whether radar was merely requested (spec S18.4 #5). "radar_frac"
+    only exists on conditions_daily at all when pipeline.radar.
+    merge_radar_into_daily actually ran; absent entirely means no radar
+    attempt, same as 0 coverage, not a KeyError."""
+    if "radar_frac" not in conditions_daily.columns:
+        return 0.0
+    cutoff = pd.Timestamp(today - timedelta(days=lookback_days), tz=conditions_daily["date"].dt.tz)
+    recent = conditions_daily[conditions_daily["date"] >= cutoff]
+    return float(recent["radar_frac"].mean()) if len(recent) else 0.0
+
+
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
                           profile_path: str, out_dir: pathlib.Path, cache_dir: pathlib.Path,
-                          target_date: date | None = None, use_radar: bool = True) -> dict:
+                          target_date: date | None = None, use_radar: bool = True,
+                          bdl_packages_dir: pathlib.Path | None = None,
+                          population_grid_path: pathlib.Path | None = None) -> dict:
     """Analyze stands whose EPSG:2180 centroid lies within the search radius.
 
     Source queries use aligned 10 km tiles; scoring, pressure normalization
@@ -225,6 +359,11 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     profile = load_profile(profile_path)
     bbox = tile_bbox_2180(lat, lon, size_km=2 * radius_km)
     cache_dir = pathlib.Path(cache_dir)
+    # Plan 1.3: configurable BDL package directory (CLI --bdl-packages-dir),
+    # defaulting to the pre-1.3 cache_dir/bdl_packages location -- every
+    # existing caller that never set this keeps reading from exactly the
+    # same place as before this parameter existed.
+    bdl_packages_dir = pathlib.Path(bdl_packages_dir) if bdl_packages_dir else cache_dir / "bdl_packages"
 
     print(f"Resolving RDLP for ({lat}, {lon})...")
     rdlp_gdf = fetch_rdlp_boundaries_cached(cache_dir)
@@ -245,7 +384,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # A missing cache/bdl_packages/ (or one with nothing usable in it)
     # gives {} -- every stand just falls back to the WFS panujący+part_cd
     # S_host, same as before this step existed.
-    package_index = load_packages(cache_dir / "bdl_packages")
+    package_index = load_packages(bdl_packages_dir)
     if package_index:
         print(f"Paczki BDL: {len(package_index)} wydzielen z pelnym skladem gatunkowym.", flush=True)
 
@@ -336,7 +475,6 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     conditions_points = points_within_radius(make_grid(bbox, spacing_m=grid_spacing_m), lat, lon, radius_km)
     conditions_clim_points = points_within_radius(
         make_grid(bbox, spacing_m=climatology_grid_spacing_m), lat, lon, radius_km)
-    rain_scale = profile["conditions"]["radar_rain_scale"] if use_radar and profile["radar"]["enabled"] else 1.0
     # This whole block is a best-effort addendum to an ALREADY-SUCCESSFUL
     # trip preparation (run_poc above has finished) -- a transient network
     # failure fetching its own separate, redundant weather/climatology
@@ -345,6 +483,14 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     try:
         conditions_daily = weather_fetcher(conditions_points, 92,
                                            forecast_days=profile["conditions"]["horizon_days"])
+        # Plan 1.8c: the rain-episode detection threshold follows the
+        # ACHIEVED radar coverage, not just whether radar was requested.
+        real_radar_coverage = rain_episode_radar_coverage(
+            conditions_daily, date.today(), profile["conditions"]["lookback_days"])
+        rain_scale = (
+            profile["conditions"]["radar_rain_scale"]
+            if real_radar_coverage >= profile["radar"]["min_coverage_for_quality"] else 1.0
+        )
         conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
         timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
                                              conditions_clim_points, date.today(), profile, rain_scale=rain_scale)
@@ -381,12 +527,37 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     confirmed_count = int((entrances["status"] == "confirmed").sum()) if len(entrances) else 0
     print(f"  {len(entrances)} candidate entrance(s), {confirmed_count} confirmed")
 
+    # Plan 1.4: GUS population grid, queried over the search circle plus a
+    # buffer (profile["population"]["buffer_km"], spec: a city just outside
+    # the search radius should still contribute Demand) -- None when no
+    # grid file is configured or the path doesn't exist, in which case
+    # enrich_with_mvp_layers falls back to OSM place nodes with per-class
+    # imputed population (pipeline.population_grid.impute_osm_population).
+    population_points_gdf = None
+    population_source = "osm_z_imputacja"
+    if population_grid_path is not None:
+        buffer_km = profile["population"]["buffer_km"]
+        population_bbox = tile_bbox_2180(lat, lon, size_km=2 * (radius_km + buffer_km))
+        population_points_gdf = load_population_points(population_grid_path, population_bbox)
+        if population_points_gdf is not None:
+            population_source = "gus_siatka"
+            print(
+                f"Siatka GUS: {len(population_points_gdf)} komorek "
+                f"({population_points_gdf.attrs.get('missing_count', 0)} pominietych -- tajemnica statystyczna)",
+                flush=True,
+            )
+        else:
+            print(f"UWAGA: plik siatki GUS nie istnieje ({population_grid_path}) -- populacja z OSM.", flush=True)
+
     print("Enriching with legal mask + presja + confidence + explanations...")
     enriched = enrich_with_mvp_layers(
         scored, profile, gdos_gdf, osm_features,
         zakaz_checker=check_periodic_ban, top_n_for_ban_check=50,
         roads_routing_gdf=osm_features["roads"], entrances_gdf=entrances,
         top_n_for_routing=profile["entrances"]["top_n_for_routing"],
+        population_points_gdf=population_points_gdf,
+        gdos_failed_tiles=gdos_failed_tiles,
+        osm_failed_tiles=osm_failed_tiles,
     )
 
     # Plan 2.1 "Zmiana 4": must run before group_into_regions below --
@@ -395,7 +566,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # cache/bdl_packages/ directory as load_packages/load_package_details
     # above; a stand whose adr_for isn't covered gets a neutral 0.5
     # (pipeline.tie_break.tie_break_for_stand).
-    tie_break_raw_index = load_tie_break_raw(cache_dir / "bdl_packages")
+    tie_break_raw_index = load_tie_break_raw(bdl_packages_dir)
     enriched["tie_break"] = [
         tie_break_for_stand(row["adr_for"], tie_break_raw_index) for _, row in enriched.iterrows()
     ]
@@ -411,8 +582,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # guarantee, and tests/test_prepare_trip.py for the explicit regression
     # check).
     print("Building wydzielenie detail cards (paczka BDL + sasiedztwo)...")
-    dictionaries = load_dictionaries(cache_dir / "bdl_packages")
-    package_details_index = load_package_details(cache_dir / "bdl_packages")
+    dictionaries = load_dictionaries(bdl_packages_dir)
+    package_details_index = load_package_details(bdl_packages_dir)
     neighbors_by_stand = {
         row["adr_for"]: find_neighbor_labels(row, context_stands, dictionaries)
         for _, row in enriched.iterrows()
@@ -430,6 +601,46 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     )
     print(f"  {len(regions)} region(s)")
 
+    # Plan 1.2: per-stand intermediate values (JSON, or parquet over ~20 MB).
+    diagnostics_path = write_diagnostics(enriched, day=day, out_dir=out_dir)
+
+    # Plan 1.1: one run_manifest_{day}.json alongside the other exports.
+    # zakaz_checked_count mirrors pipeline.mvp.enrich_with_mvp_layers'own
+    # top_n_for_ban_check=50 slicing (that count isn't itself returned by
+    # enrich_with_mvp_layers, so it's recomputed here from the same inputs
+    # rather than threading a new return value through that function).
+    zakaz_checked_count = min(50, len(scored))
+    # Plan 1.3: coverage report (per-nadlesnictwo) + the single global share
+    # the interface banner threshold (>20% WFS-only among masked stands)
+    # checks against -- both computed from `enriched`, not run_poc's own
+    # diagnostics, since "masked" here means the structural mask specifically
+    # (coverage_report's own contract), consistent with the diagnostics
+    # export's separate mask/gdos_status/zakaz_status fields (plan 1.2).
+    bdl_coverage_report = coverage_report(enriched, package_index)
+    masked = enriched[enriched["mask"]]
+    wfs_only_share_of_masked = (
+        float((masked["s_host_source"] == "wfs").mean()) if len(masked) else 0.0
+    )
+    if wfs_only_share_of_masked > 0.2:
+        print(
+            f"UWAGA: {wfs_only_share_of_masked:.0%} wydzielen w masce ma sklad tylko z WFS "
+            "(brak paczki BDL) -- skad drzewostanu jest tu przyblizeniem z gatunku panujacego.",
+            flush=True,
+        )
+    manifest = build_manifest(
+        lat=lat, lon=lon, radius_km=radius_km, day=day, target_date=target_date or date.today(),
+        profile_path=profile_path, use_radar=use_radar,
+        repo_dir=pathlib.Path(__file__).resolve().parent.parent,
+        diagnostics=scored.attrs["diagnostics"], tile_count=len(tiles),
+        gdos_failed_tile_count=len(gdos_failed_tiles), osm_failed_tile_count=len(osm_failed_tiles),
+        zakaz_checked_count=zakaz_checked_count, region_count=len(regions),
+        package_dir=bdl_packages_dir, bdl_coverage_report=bdl_coverage_report,
+        wfs_only_share_of_masked=wfs_only_share_of_masked,
+        population_source=population_source,
+        pressure_normalization=profile["pressure"].get("normalization", "absolute"),
+    )
+    manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
+
     return {
         "layer": layer, "layers": layers, "tile_count": len(tiles),
         "radius_km": radius_km, "stand_count": len(scored),
@@ -439,6 +650,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "geojson_path": geojson_path, "regions_path": regions_path,
         "details_path": details_path,
         "conditions_path": str(conditions_path) if conditions_path else None,
+        "diagnostics_path": diagnostics_path,
+        "manifest_path": manifest_path,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
         "forecast_days": scored.attrs["diagnostics"]["forecast_days"],
@@ -458,6 +671,8 @@ def main(argv=None) -> int:
             lat=args.lat, lon=args.lon, day=day, radius_km=args.radius_km,
             profile_path=args.profile, out_dir=pathlib.Path(args.out_dir), cache_dir=pathlib.Path(args.cache_dir),
             target_date=target_date, use_radar=not args.no_radar,
+            bdl_packages_dir=pathlib.Path(args.bdl_packages_dir) if args.bdl_packages_dir else None,
+            population_grid_path=pathlib.Path(args.population_grid_path) if args.population_grid_path else None,
         )
     except TripPreparationError as exc:
         print(f"Blad: {exc}")

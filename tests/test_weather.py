@@ -3,6 +3,8 @@ import pandas as pd
 import pytest
 from pyproj import Transformer
 
+from zoneinfo import ZoneInfo
+
 from pipeline.weather import (
     make_grid,
     fetch_weather_raw,
@@ -10,7 +12,20 @@ from pipeline.weather import (
     compute_weather_features,
     climatology_window_values,
     percentile_rank,
+    climatology_window_insufficient,
+    to_local_date,
 )
+
+_WARSAW = ZoneInfo("Europe/Warsaw")
+
+
+def _fixed_step_dates(first_local_day, n_days):
+    """Reproduces pipeline.weather._parse_open_meteo_response's date
+    construction bug (plan 1.8b): a FIXED 86400s UTC step from the first
+    day's TRUE local midnight, instead of each day's own true local
+    midnight -- correct only until the next DST transition."""
+    start_utc = pd.Timestamp(first_local_day, tz=_WARSAW).tz_convert("UTC")
+    return pd.Series(pd.date_range(start=start_utc, periods=n_days, freq="86400s"))
 
 
 def test_make_grid_covers_bbox_with_points_in_lat_lon():
@@ -160,6 +175,23 @@ def test_fetch_weather_raw_point_cache_distinguishes_different_forecast_horizons
     assert calls == [1, 5]
 
 
+def test_fetch_weather_raw_point_cache_distinguishes_different_past_days_same_day(tmp_path):
+    # Plan 1.8e: past_days must be part of the cache key too, not just
+    # forecast_days -- a different rolling-window length is a genuinely
+    # different Open-Meteo response, same reasoning as forecast_days above.
+    calls = []
+
+    def fake_call_api(points, past_days, forecast_days=1):
+        calls.append(past_days)
+        return [_fake_daily_payload() for _ in points]
+
+    points = [(50.5, 18.6)]
+    fetch_weather_raw(points, past_days=3, call_api=fake_call_api, cache_dir=tmp_path)
+    fetch_weather_raw(points, past_days=92, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert calls == [3, 92]  # both fetched -- no false cache hit across window lengths
+
+
 def test_fetch_weather_raw_point_cache_expires_the_next_day(tmp_path, monkeypatch):
     import pipeline.weather as weather_mod
 
@@ -252,11 +284,97 @@ def test_fetch_climatology_raw_with_cache_dir_never_expires(tmp_path):
     assert len(calls) == 1
 
 
+def test_fetch_climatology_raw_distinguishes_different_year_ranges(tmp_path):
+    # Plan 1.8e: start_year/end_year must be part of the cache key -- a
+    # cached point from one 30-year range must never be silently served for
+    # a request naming a different range (spec S13.1: "klimatologia nie ma
+    # w kluczu daty waznosci"/zakresu lat).
+    calls = []
+
+    def fake_call_api(points, start_year, end_year):
+        calls.append((start_year, end_year))
+        dates = pd.date_range("2020-06-25", periods=2, freq="D")
+        return [{"date": dates, "cwb26": [1.0, 2.0], "soil_moisture": [0.3, 0.31]} for _ in points]
+
+    points = [(50.5, 18.6)]
+    fetch_climatology_raw(points, start_year=1991, end_year=2020, call_api=fake_call_api, cache_dir=tmp_path)
+    fetch_climatology_raw(points, start_year=1981, end_year=2010, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert calls == [(1991, 2020), (1981, 2010)]  # both fetched -- no false cache hit across ranges
+
+
 def test_percentile_rank_of_median_like_value():
     historical = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
     assert percentile_rank(30.0, historical) == pytest.approx(0.5, abs=0.15)
     assert percentile_rank(5.0, historical) == pytest.approx(0.0, abs=0.05)
     assert percentile_rank(55.0, historical) == pytest.approx(1.0, abs=0.05)
+
+
+def test_percentile_rank_ignores_nan_entries():
+    # Plan 1.8d: a real but incomplete window (NaN gaps) must rank against
+    # only the valid entries, not let scipy see the NaNs at all.
+    with_gaps = np.array([10.0, np.nan, 20.0, 30.0, np.nan, 40.0, 50.0])
+    clean = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    assert percentile_rank(30.0, with_gaps) == pytest.approx(percentile_rank(30.0, clean))
+
+
+def test_percentile_rank_all_nan_falls_back_to_neutral():
+    assert percentile_rank(30.0, np.array([np.nan, np.nan])) == 0.5
+
+
+# --- Plan 1.8b: shared, DST-safe local-date conversion ----------------------
+# One shared test across both of 2026's Polish DST transition dates, for the
+# ONE function (to_local_date) now used by pipeline.radar.merge_radar_into_daily,
+# pipeline.flush.area_daily_weather and pipeline.conditions_timeline.with_local_date
+# alike (plan text: "wspolny test... na 2026-03-29 i 2026-10-25").
+
+def test_to_local_date_correct_across_october_fall_back_transition():
+    # Without the noon-recentering fix, the fixed-86400s-step date column
+    # (the real _parse_open_meteo_response construction) reads a FULL DAY
+    # EARLY for 2026-10-26 onward: naive UTC 2026-10-25T22:00 converts (post-
+    # transition, UTC+1) to local 2026-10-25T23:00 -- date() = Oct 25, not
+    # the intended Oct 26 (verified by hand against zoneinfo for this exact
+    # date range; see this test's git history/commit message for the numbers).
+    days = pd.date_range("2026-10-23", periods=6, freq="D").date
+    dates = _fixed_step_dates(days[0], len(days))
+    assert list(to_local_date(dates)) == list(days)
+
+
+def test_to_local_date_correct_across_march_spring_forward_transition():
+    # The fixed-step drift here is 1h LATE instead of early, which (for this
+    # specific date range) happens to stay within the same calendar day even
+    # without the fix -- this test just confirms the fix doesn't break the
+    # case that already worked, alongside the October case that didn't.
+    days = pd.date_range("2026-03-27", periods=6, freq="D").date
+    dates = _fixed_step_dates(days[0], len(days))
+    assert list(to_local_date(dates)) == list(days)
+
+
+def test_to_local_date_passes_through_naive_dates_unchanged():
+    naive = pd.Series(pd.date_range("2026-06-01", periods=3, freq="D"))
+    assert list(to_local_date(naive)) == list(naive.dt.date)
+
+
+# --- Plan 1.7/1.8d: climatology_window_insufficient -------------------------
+
+def test_climatology_window_insufficient_true_when_empty():
+    assert climatology_window_insufficient(np.array([])) is True
+
+
+def test_climatology_window_insufficient_true_below_half_valid():
+    # 2 valid out of 5 = 40% < 50%.
+    window = np.array([1.0, 2.0, np.nan, np.nan, np.nan])
+    assert climatology_window_insufficient(window) is True
+
+
+def test_climatology_window_insufficient_false_at_or_above_half_valid():
+    # 3 valid out of 5 = 60% >= 50%.
+    window = np.array([1.0, 2.0, 3.0, np.nan, np.nan])
+    assert climatology_window_insufficient(window) is False
+
+
+def test_climatology_window_insufficient_false_when_fully_populated():
+    assert climatology_window_insufficient(np.array([1.0, 2.0, 3.0])) is False
 
 
 def test_climatology_window_values_filters_by_point_and_doy_window():

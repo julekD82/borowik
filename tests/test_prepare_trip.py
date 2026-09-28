@@ -1,4 +1,6 @@
 from datetime import date, timedelta
+import pathlib
+import subprocess
 
 import geopandas as gpd
 import pandas as pd
@@ -10,6 +12,8 @@ from pipeline.prepare_trip import (
     parse_args, main, MIN_RADIUS_KM, MAX_RADIUS_KM,
     _rate_limited, _is_open_meteo_rate_limit, _is_overpass_retryable, _is_transient_network_error,
     _radius_scaled_spacing, REFERENCE_RADIUS_KM,
+    build_manifest, _git_commit, _git_dirty, _profile_hash,
+    rain_episode_radar_coverage,
 )
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_package_details import load_package_details
@@ -313,3 +317,129 @@ def test_points_within_radius_keeps_only_points_inside_the_circle():
     near = (50.0555, 21.80)      # ~0.8 km east
     far = (50.40, 21.7889)       # ~38 km north
     assert trip.points_within_radius([near, far], *center, 20.0) == [near]
+
+
+# --- Plan wdrozenia 1.1: run_manifest ---------------------------------------
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def test_git_commit_returns_none_outside_a_repo(tmp_path):
+    assert _git_commit(tmp_path) is None
+
+
+def test_git_commit_returns_the_real_head_inside_this_repo():
+    expected = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True,
+    ).stdout.strip()
+    assert _git_commit(REPO_ROOT) == expected
+
+
+def test_git_dirty_returns_none_outside_a_repo(tmp_path):
+    assert _git_dirty(tmp_path) is None
+
+
+def test_git_dirty_returns_a_bool_inside_this_repo():
+    assert isinstance(_git_dirty(REPO_ROOT), bool)
+
+
+def test_profile_hash_returns_none_for_a_missing_file(tmp_path):
+    assert _profile_hash(str(tmp_path / "does_not_exist.yaml")) is None
+
+
+def test_profile_hash_is_stable_and_content_sensitive(tmp_path):
+    a = tmp_path / "a.yaml"
+    b = tmp_path / "b.yaml"
+    a.write_text("k: 1\n", encoding="utf-8")
+    b.write_text("k: 2\n", encoding="utf-8")
+    assert _profile_hash(str(a)) == _profile_hash(str(a))
+    assert _profile_hash(str(a)) != _profile_hash(str(b))
+
+
+def _manifest_diagnostics(**overrides):
+    base = {
+        "stand_count": 100, "mask_passing_count": 80, "unknown_site_count": 2,
+        "unknown_species_count": 3, "package_stand_count": 40, "radar_coverage_mean": 0.86,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_build_manifest_has_every_field_the_spec_lists(tmp_path):
+    profile_path = tmp_path / "profile.yaml"
+    profile_path.write_text("k: 1\n", encoding="utf-8")
+    manifest = build_manifest(
+        lat=50.527, lon=18.605, radius_km=20.0, day="2026-09-28",
+        target_date=date(2026, 9, 28), profile_path=str(profile_path), use_radar=True,
+        repo_dir=tmp_path, diagnostics=_manifest_diagnostics(), tile_count=23,
+        gdos_failed_tile_count=0, osm_failed_tile_count=1, zakaz_checked_count=50, region_count=5,
+    )
+    # Top-level identity/provenance fields (spec: run id, commit, dirty flag, profile hash).
+    for field in ("run_id", "commit", "uncommitted_changes", "profile_hash", "lat", "lon",
+                  "radius_km", "target_date", "day", "prepared_at"):
+        assert field in manifest, f"missing {field}"
+    # Source-status fields (spec: radar coverage/fallback, skipped tiles, zakaz checks).
+    for field in ("radar_coverage_mean", "radar_full_fallback_to_open_meteo",
+                  "gdos_failed_tile_count", "osm_failed_tile_count", "tile_count",
+                  "zakaz_checked_count"):
+        assert field in manifest["sources"], f"missing sources.{field}"
+    # Count fields (spec: total/mask/package/wfs/unknown-code stands).
+    for field in ("stand_count", "mask_passing_count", "region_count", "package_stand_count",
+                  "wfs_stand_count", "unknown_site_count", "unknown_species_count",
+                  "incomplete_composition_count"):
+        assert field in manifest["counts"], f"missing counts.{field}"
+    assert manifest["counts"]["wfs_stand_count"] == 100 - 40
+    assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is False
+    # population_source/pressure_normalization: tasks 1.4/1.5, not landed yet at this call site.
+    assert manifest["population_source"] is None
+    assert manifest["pressure_normalization"] is None
+
+
+def test_build_manifest_flags_full_radar_fallback_when_radar_disabled(tmp_path):
+    profile_path = tmp_path / "profile.yaml"
+    profile_path.write_text("k: 1\n", encoding="utf-8")
+    manifest = build_manifest(
+        lat=50.0, lon=20.0, radius_km=25.0, day="2026-09-28", target_date=date(2026, 9, 28),
+        profile_path=str(profile_path), use_radar=False, repo_dir=tmp_path,
+        diagnostics=_manifest_diagnostics(radar_coverage_mean=0.9), tile_count=1,
+        gdos_failed_tile_count=0, osm_failed_tile_count=0, zakaz_checked_count=1, region_count=0,
+    )
+    assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is True
+
+
+def _conditions_daily(dates, radar_frac=None):
+    df = pd.DataFrame({"date": pd.to_datetime(dates)})
+    if radar_frac is not None:
+        df["radar_frac"] = radar_frac
+    return df
+
+
+def test_rain_episode_radar_coverage_zero_without_radar_frac_column():
+    daily = _conditions_daily(["2026-09-20", "2026-09-21"])  # no radar_frac at all
+    assert rain_episode_radar_coverage(daily, date(2026, 9, 27), lookback_days=45) == 0.0
+
+
+def test_rain_episode_radar_coverage_averages_recent_window_only():
+    daily = _conditions_daily(
+        ["2026-08-01", "2026-09-20", "2026-09-25"],
+        radar_frac=[0.0, 0.9, 1.0],  # 2026-08-01 is outside the lookback window
+    )
+    coverage = rain_episode_radar_coverage(daily, date(2026, 9, 27), lookback_days=10)
+    assert coverage == pytest.approx((0.9 + 1.0) / 2)
+
+
+def test_rain_episode_radar_coverage_zero_when_no_rows_in_window():
+    daily = _conditions_daily(["2026-01-01"], radar_frac=[1.0])
+    assert rain_episode_radar_coverage(daily, date(2026, 9, 27), lookback_days=10) == 0.0
+
+
+def test_build_manifest_flags_full_radar_fallback_when_coverage_is_zero(tmp_path):
+    profile_path = tmp_path / "profile.yaml"
+    profile_path.write_text("k: 1\n", encoding="utf-8")
+    manifest = build_manifest(
+        lat=50.0, lon=20.0, radius_km=25.0, day="2026-09-28", target_date=date(2026, 9, 28),
+        profile_path=str(profile_path), use_radar=True, repo_dir=tmp_path,
+        diagnostics=_manifest_diagnostics(radar_coverage_mean=0.0), tile_count=1,
+        gdos_failed_tile_count=0, osm_failed_tile_count=0, zakaz_checked_count=1, region_count=0,
+    )
+    assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is True

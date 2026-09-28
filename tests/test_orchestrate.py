@@ -107,6 +107,53 @@ def test_run_poc_counts_unknown_codes_and_nan_h():
     assert diag["nan_h_count"] == 0
 
 
+# --- Plan 1.7/1.8d: insufficient_climatology per stand -----------------------
+
+def test_run_poc_insufficient_climatology_false_with_a_dense_window():
+    # target_date's day-of-year must fall inside fake_climatology_fetcher's
+    # actual range (2000-01-01, 60 days -> doy 1-60) with margin for the
+    # +/-15-day window filter, or the window is empty regardless of "today".
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=fake_climatology_fetcher,
+        grid_spacing_m=5000.0,
+        past_days=30,
+        target_date=date(2026, 1, 20),
+    )
+    assert "insufficient_climatology" in result.columns
+    assert not result["insufficient_climatology"].any()
+
+
+def test_run_poc_insufficient_climatology_true_with_an_empty_window():
+    def empty_climatology_fetcher(points, start_year, end_year):
+        # dtype="datetime64[ns]" for "date" -- a plain columns=[...] empty
+        # frame gives it object dtype instead, and climatology_window_values'
+        # own .dt.dayofyear needs a real datetime column (matches the shape
+        # a genuinely empty real fetch would have, not just an empty list).
+        return pd.DataFrame({
+            "lat": pd.Series(dtype=float), "lon": pd.Series(dtype=float),
+            "date": pd.Series(dtype="datetime64[ns]"),
+            "cwb26": pd.Series(dtype=float), "soil_moisture": pd.Series(dtype=float),
+        })
+
+    result = run_poc(
+        layer="BDL:RDLP_Katowice_wydzielenia",
+        bbox_2180=BBOX,
+        profile=PROFILE,
+        bdl_fetcher=fake_bdl_fetcher,
+        weather_fetcher=fake_weather_fetcher,
+        climatology_fetcher=empty_climatology_fetcher,
+        grid_spacing_m=5000.0,
+        past_days=30,
+    )
+    assert result["insufficient_climatology"].all()
+    assert result.attrs["diagnostics"]["empty_climatology_count"] > 0
+
+
 def test_run_poc_fetches_climatology_on_a_coarser_grid_than_weather():
     # Climatology's 30-year archive is far more expensive per point than a
     # live weather call (Open-Meteo's own weighting formula: weight scales

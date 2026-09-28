@@ -3,6 +3,7 @@ import math
 import pathlib
 
 import geopandas as gpd
+import pandas as pd
 
 from pipeline.tie_break import veg_cover_label
 
@@ -28,6 +29,13 @@ SCORE_FIELDS = [
     # Plan 2026-09-26 A1: exp-weighted share of the P26w window whose rain
     # came from the IMGW radar (pipeline.radar), 0 = Open-Meteo only.
     "rain_radar_coverage",
+    # Plan wdrozenia 1.6: "sprawdzono brak blokady" vs "nie sprawdzono" vs
+    # "zrodlo zawiodlo" (zakaz_status), and "brak" vs "blokada" vs kafel
+    # pominiety z powodu bledu sieci (gdos_status) -- both computed in
+    # pipeline.mvp.enrich_with_mvp_layers, exported here (not just in
+    # diagnostics_{day}.json) so the frontend card/list can show a discrete
+    # "zakazow nie sprawdzono" notice without needing the diagnostics file.
+    "zakaz_status", "gdos_status",
 ]
 
 
@@ -223,5 +231,84 @@ def write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path:
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({"day": day, **timeline}, ensure_ascii=False, indent=2, allow_nan=False),
+                        encoding="utf-8")
+    return out_path
+
+
+# Plan wdrozenia 1.2: per-stand intermediate values behind H/F/P/R, so a
+# ranking can be audited (or R_final reconstructed, see the acceptance test
+# in tests/test_export.py) without re-fetching any network source. Field
+# names follow the plan's own spec §13.2 wording, not the DataFrame's
+# internal column names, where the two differ (e.g. "Demand" -> "demand").
+DIAGNOSTICS_FIELDS = [
+    "S_host", "S_site", "S_age", "H", "pct_CWB26", "M", "T", "K_frost", "G_season", "F", "q", "F_loc",
+    "P", "distance_method", "s_host_source", "s_host_package_date",
+    # Plan 1.3: share sum < 0.9 in this stand's package composition (does not
+    # apply to a WFS-sourced S_host, which has no share sum to check).
+    "sklad_niepelny",
+]
+
+
+def build_diagnostics_record(row, day: str) -> dict:
+    record = {field: _json_safe(row[field]) for field in DIAGNOSTICS_FIELDS}
+    record["day"] = day
+    record["stand_id"] = row["stand_id"]
+    record["mask"] = bool(row["mask"])
+    record["Demand"] = _json_safe(row["demand"])
+    record["d_park_m"] = _json_safe(row["d_park_m"])
+    record["weather_point"] = {"lat": _json_safe(row["weather_point_lat"]),
+                               "lon": _json_safe(row["weather_point_lon"])}
+    record["climatology_cell"] = {"lat": _json_safe(row["climatology_cell_lat"]),
+                                  "lon": _json_safe(row["climatology_cell_lon"])}
+    # Plan 1.6: gdos_status/zakaz_status are computed once, in
+    # pipeline.mvp.enrich_with_mvp_layers, and just read here -- both are
+    # also in SCORE_FIELDS (scores.json), so this and the score record
+    # always agree by construction instead of two places deriving the same
+    # status from raw booleans.
+    record["gdos_status"] = row["gdos_status"]
+    record["zakaz_status"] = row["zakaz_status"]
+    return record
+
+
+def write_diagnostics_json(stands: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    records = [build_diagnostics_record(row, day) for _, row in stands.iterrows()]
+    out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    return out_path
+
+
+_DIAGNOSTICS_SIZE_LIMIT_BYTES = 20 * 1024 * 1024
+
+
+def write_diagnostics(stands: gpd.GeoDataFrame, day: str, out_dir) -> pathlib.Path:
+    """Plan 1.2: JSON normally, parquet when that would exceed ~20 MB (spec
+    §13.2's own "lub parquet, jesli rozmiar > 20 MB"). Writes JSON first and
+    only switches format if it's actually too big, rather than guessing from
+    row count -- record size varies enough (nested weather_point/
+    climatology_cell dicts, nullable fields) that a byte-count check on the
+    real output is more honest than a row-count heuristic."""
+    out_dir = pathlib.Path(out_dir)
+    json_path = out_dir / f"diagnostics_{day}.json"
+    write_diagnostics_json(stands, day, json_path)
+    if json_path.stat().st_size <= _DIAGNOSTICS_SIZE_LIMIT_BYTES:
+        return json_path
+    json_path.unlink()
+    records = [build_diagnostics_record(row, day) for _, row in stands.iterrows()]
+    parquet_path = out_dir / f"diagnostics_{day}.parquet"
+    pd.DataFrame(records).to_parquet(parquet_path)
+    return parquet_path
+
+
+# Plan wdrozenia 1.1: one run_manifest_YYYY-MM-DD.json per run_trip_preparation
+# call, alongside the other exports. pipeline.prepare_trip.build_manifest
+# assembles the dict from values already computed during the run (git state,
+# profile hash, orchestrate.py's scored.attrs["diagnostics"], tile/entrance/
+# zakaz counters) -- this function only serializes it, same pattern as the
+# other write_*_json helpers above.
+def write_manifest_json(manifest: dict, out_path) -> pathlib.Path:
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False),
                         encoding="utf-8")
     return out_path

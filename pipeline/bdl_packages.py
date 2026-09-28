@@ -20,6 +20,11 @@ _NUMERIC_PART_CD = re.compile(r"^\d+$")
 # most 1.0; the tolerance only absorbs float rounding of the /10.
 _MAX_SHARE_SUM = 1.0 + 1e-9
 
+# Plan wdrozenia 1.3: "kontrola sumy udzialow od dolu" -- a share sum below
+# this is flagged sklad_niepelny (not rejected/renormalized, spec is explicit
+# that renormalization is out of scope: just count and report how many).
+_MIN_SHARE_SUM = 0.9
+
 
 @dataclass(frozen=True)
 class PackageComposition:
@@ -33,6 +38,11 @@ class PackageComposition:
     species: list[tuple[str, float]]
     source_name: str
     package_date: str | None
+    # Plan 1.3: True when the numeric-row share sum is below _MIN_SHARE_SUM --
+    # a real but incomplete composition (e.g. undigitized trace species),
+    # not rejected like an over-1.0 sum, just flagged for the manifest/
+    # diagnostics count and the profile-coverage report below.
+    sklad_niepelny: bool = False
 
 
 def _parse_metadane(path: Path) -> dict[str, str]:
@@ -87,6 +97,7 @@ def _load_one_package(package_dir: Path) -> dict[str, PackageComposition]:
             species=list(zip(group["species_cd"], group["share"])),
             source_name=package_dir.name,
             package_date=package_date,
+            sklad_niepelny=bool(group["share"].sum() < _MIN_SHARE_SUM),
         )
     if rejected:
         print(
@@ -120,5 +131,50 @@ def load_packages(packages_dir: Path) -> dict[str, PackageComposition]:
         # directory under cache/bdl_packages/).
         if not (package_dir / "G_SUBAREA.shp").exists() or not (package_dir / "f_storey_species.txt").exists():
             continue
-        index.update(_load_one_package(package_dir))
+        for adr_for, composition in _load_one_package(package_dir).items():
+            # Plan 1.3: when the same adr_for shows up in more than one
+            # package directory, keep the one with the newer metadane.txt
+            # "Data wytworzenia danych" (ISO YYYY-MM-DD, sorts lexically) --
+            # NOT whichever loaded last alphabetically by directory name, the
+            # pre-1.3 behaviour (spec §5.1). A missing date sorts as older
+            # than any real date, so a dated package is never displaced by
+            # an undated one, but still wins over nothing at all.
+            existing = index.get(adr_for)
+            if existing is None or (composition.package_date or "") >= (existing.package_date or ""):
+                index[adr_for] = composition
     return index
+
+
+def forest_district_code(adr_for: str) -> str:
+    """First two dash-separated segments of adr_for ("RDLP-Nadlesnictwo-...",
+    e.g. "02-10-1-05-317   -d   -00" -> "02-10") -- the same RDLP+nadlesnictwo
+    pairing BDL_<rdlp>_<nadl>_<NAME>_<year> package directory names encode
+    (docs/bdl-paczki-rozpoznanie.md), used by coverage_report below to group
+    stands by district without needing a separate WFS attribute for it."""
+    parts = adr_for.split("-")
+    return "-".join(parts[:2]) if len(parts) >= 2 else adr_for
+
+
+def coverage_report(stands: pd.DataFrame, package_index: dict) -> list[dict]:
+    """Plan 1.3 "raport pokrycia": for every forest district (nadlesnictwo)
+    with at least one mask-passing stand in the search radius, how many of
+    those stands have a real package composition vs. the WFS fallback.
+    `stands` needs `adr_for` and `mask` (structural mask -- coverage is about
+    data completeness, not legal exclusion) columns; a district with zero
+    mask-passing stands isn't in the search radius in any way that matters
+    for BDL composition and is left out. Sorted by coverage ascending, so the
+    worst-covered (or entirely uncovered) districts sort first."""
+    masked = stands[stands["mask"]]
+    if not len(masked):
+        return []
+    districts = masked["adr_for"].map(forest_district_code)
+    covered = masked["adr_for"].isin(package_index.keys())
+    report = (
+        pd.DataFrame({"district": districts, "covered": covered})
+        .groupby("district")
+        .agg(stand_count=("covered", "size"), package_stand_count=("covered", "sum"))
+        .reset_index()
+    )
+    report["package_stand_count"] = report["package_stand_count"].astype(int)
+    report["coverage"] = report["package_stand_count"] / report["stand_count"]
+    return report.sort_values("coverage").to_dict("records")

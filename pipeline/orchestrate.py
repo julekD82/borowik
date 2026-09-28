@@ -9,10 +9,11 @@ from pipeline.habitat import (
 )
 from pipeline.scoring import (
     score_moisture, score_temperature, score_frost, compute_fruiting,
-    apply_moisture_modulation, compute_ranking, moisture_percentile,
+    apply_moisture_modulation, compute_ranking, moisture_percentile, moisture_multiplier,
 )
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
+    climatology_window_insufficient,
 )
 from pipeline.phenology import compute_g_season
 
@@ -149,8 +150,17 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     h_values, f_values, f_loc_values, mask_values, r_values = [], [], [], [], []
     s_host_values, s_site_values, s_age_values = [], [], []
     s_host_source_values, s_host_package_date_values = [], []
+    sklad_niepelny_values = []
     m_values, t_values, k_frost_values = [], [], []
     rain_radar_coverage_values = []
+    # Plan wdrozenia 1.2 (diagnostics export): percentile/multiplier
+    # intermediates and the weather-point/climatology-cell identity each
+    # stand was scored against, so scores.json's H/F/P/R aren't the only
+    # auditable trail.
+    pct_cwb26_values, pct_sm_values, pct_m_values, q_values = [], [], [], []
+    insufficient_climatology_values = []
+    weather_lat_values, weather_lon_values = [], []
+    climatology_lat_values, climatology_lon_values = [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
     # a plausible-looking number (see spec review: 59% of stands were hitting
     # the unknown-code fallback unnoticed).
@@ -161,6 +171,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     package_index = package_index or {}
     package_stand_count = 0
     package_unknown_species_count = 0
+    incomplete_composition_count = 0
     for _, row in stands.iterrows():
         mask = passes_mask(row, profile)
         if mask:
@@ -181,9 +192,13 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
             s_host_source, s_host_package_date = "paczka", package.package_date
             package_stand_count += 1
             package_unknown_species_count += unk
+            sklad_niepelny = package.sklad_niepelny
+            if sklad_niepelny:
+                incomplete_composition_count += 1
         else:
             s_host = score_host(row["species_cd"], row.get("part_cd", 10), profile)
             s_host_source, s_host_package_date = "wfs", None
+            sklad_niepelny = False
 
         h = compute_habitat(row, profile, s_host=s_host)
         if h is not None and not math.isfinite(h):
@@ -196,8 +211,12 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         rain_radar_coverage_values.append(float(wrow.get("rain_radar_coverage", 0.0)))
 
         point = (wrow["lat"], wrow["lon"])
+        # Looked up unconditionally (not just on a percentiles_by_point cache
+        # miss) -- plan 1.2's diagnostics export needs this stand's actual
+        # climatology cell every time, not whichever cell the last cache-miss
+        # iteration happened to leave in this loop-local variable.
+        cell = weather_to_clim_cell[point]
         if point not in percentiles_by_point:
-            cell = weather_to_clim_cell[point]
             if cell not in history_by_cell:
                 history = climate_cells.get(cell, clim_df.iloc[:0])
                 history_by_cell[cell] = (
@@ -209,8 +228,11 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
                 percentile_rank(wrow["cwb26"], cwb26_hist),
                 percentile_rank(wrow["soil_moisture"], sm_hist),
                 len(cwb26_hist) == 0 or len(sm_hist) == 0,
+                # Plan 1.7/1.8d: empty OR <50% valid (non-NaN) -- a real but
+                # thin window is a confidence gap even when it's not empty.
+                climatology_window_insufficient(cwb26_hist) or climatology_window_insufficient(sm_hist),
             )
-        pct_cwb26, pct_sm, empty_window = percentiles_by_point[point]
+        pct_cwb26, pct_sm, empty_window, insufficient_climatology = percentiles_by_point[point]
         if empty_window:
             # percentile_rank falls back to a neutral 0.5 on an empty window.
             empty_climatology_count += 1
@@ -221,8 +243,19 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         k_frost = score_frost(wrow["tmin3"], profile)
         f = compute_fruiting(m, t, k_frost, g_season=g_season)
         pct_m = moisture_percentile(pct_cwb26, pct_sm, profile)
+        q = moisture_multiplier(pct_m, moisture_cls, profile)
         f_loc = apply_moisture_modulation(f, moisture_cls, pct_m, profile)
         r = compute_ranking(mask, h, f_loc)
+
+        pct_cwb26_values.append(pct_cwb26)
+        insufficient_climatology_values.append(insufficient_climatology)
+        pct_sm_values.append(pct_sm)
+        pct_m_values.append(pct_m)
+        q_values.append(q)
+        weather_lat_values.append(point[0])
+        weather_lon_values.append(point[1])
+        climatology_lat_values.append(cell[0])
+        climatology_lon_values.append(cell[1])
 
         mask_values.append(mask)
         h_values.append(h)
@@ -234,6 +267,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         s_age_values.append(s_age)
         s_host_source_values.append(s_host_source)
         s_host_package_date_values.append(s_host_package_date)
+        sklad_niepelny_values.append(sklad_niepelny)
         m_values.append(m)
         t_values.append(t)
         k_frost_values.append(k_frost)
@@ -248,10 +282,20 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["S_age"] = s_age_values
     stands["s_host_source"] = s_host_source_values
     stands["s_host_package_date"] = s_host_package_date_values
+    stands["sklad_niepelny"] = sklad_niepelny_values
     stands["M"] = m_values
     stands["T"] = t_values
     stands["K_frost"] = k_frost_values
     stands["rain_radar_coverage"] = rain_radar_coverage_values
+    stands["pct_CWB26"] = pct_cwb26_values
+    stands["insufficient_climatology"] = insufficient_climatology_values
+    stands["pct_SM"] = pct_sm_values
+    stands["pct_m"] = pct_m_values
+    stands["q"] = q_values
+    stands["weather_point_lat"] = weather_lat_values
+    stands["weather_point_lon"] = weather_lon_values
+    stands["climatology_cell_lat"] = climatology_lat_values
+    stands["climatology_cell_lon"] = climatology_lon_values
     # Same forecast_days for every stand in the run (one weather fetch, one
     # target_date) -- exported per stand anyway (spec §3.3: "Oznaczyć w UI,
     # ile dni okna pochodzi z prognozy"), matching how every other weather-
@@ -268,6 +312,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         "forecast_days": forecast_days,
         "package_stand_count": package_stand_count,
         "package_unknown_species_count": package_unknown_species_count,
+        "incomplete_composition_count": incomplete_composition_count,
         "g_season": g_season,
         "radar_coverage_mean": float(sum(rain_radar_coverage_values) / len(rain_radar_coverage_values)) if rain_radar_coverage_values else 0.0,
     }

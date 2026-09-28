@@ -39,6 +39,11 @@ export type Score = {
   // Plan 2026-09-26 A1: exp-weighted share of the P26w window whose rain
   // came from the IMGW radar (pipeline.radar), same optional-field pattern.
   rain_radar_coverage?: number | null;
+  // Plan wdrozenia 1.6: "sprawdzono brak blokady" vs "nie sprawdzono" vs
+  // "zrodlo zawiodlo" (zakaz_status) / kafel pominiety z powodu bledu sieci
+  // (gdos_status) -- same optional-field pattern as the others above.
+  zakaz_status?: string;
+  gdos_status?: string;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -156,6 +161,22 @@ export function distanceMethod(value?: string): string {
     : value === "euclidean"
       ? "oszacowanie: linia prosta × 1,3"
       : "metoda nieznana";
+}
+// Plan wdrozenia 1.6: discrete "zakazow nie sprawdzono"/"zrodlo zawiodlo"
+// notice, plus the as-of-preparation-date caveat -- shown only when it
+// actually applies (checked-and-clear or a missing field say nothing extra),
+// same optional/undefined-tolerant shape as the other score fields above.
+export function zakazNote(value?: string): string {
+  switch (value) {
+    case "nie_sprawdzono":
+      return "Zakazów wstępu do lasu nie sprawdzono dla tego wydzielenia.";
+    case "blad":
+      return "Sprawdzenie zakazu wstępu nie powiodło się (źródło niedostępne).";
+    case "zakaz":
+      return "Wykryto zakaz wstępu okresowy (stan na dzień przygotowania analizy).";
+    default:
+      return "";
+  }
 }
 export function topExplanations(
   items: Explanation[],
@@ -361,6 +382,8 @@ export function parseData(
         (s.G_season === undefined || numeric(s.G_season)) &&
         (s.tie_break === undefined || numeric(s.tie_break)) &&
         (s.rain_radar_coverage === undefined || numeric(s.rain_radar_coverage)) &&
+        (s.zakaz_status === undefined || typeof s.zakaz_status === "string") &&
+        (s.gdos_status === undefined || typeof s.gdos_status === "string") &&
         Array.isArray(s.explanation) &&
         s.explanation.every(
           (e) =>

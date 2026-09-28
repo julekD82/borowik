@@ -35,6 +35,7 @@ it("copies one complete same-day bundle", async () => {
     regions: 0,
     details: 0,
     conditions: 0,
+    manifest: 0,
   });
   expect(
     JSON.parse(await readFile(path.join(target, "scores.json"), "utf8"))[0]
@@ -189,4 +190,34 @@ it("removes a stale conditions.json from a previous sync when the new day has no
   const result = await syncData(source, target);
   expect(result.conditions).toBe(0);
   await expect(readFile(path.join(target, "conditions.json"), "utf8")).rejects.toThrow();
+});
+
+// Plan wdrozenia 1.1: run_manifest_{day}.json -> manifest.json, optional like conditions.
+const manifestFile = (day = "2026-09-24") =>
+  JSON.stringify({ day, run_id: "abc123", commit: "deadbeef", sources: {}, counts: {} });
+
+it("syncs a same-day manifest file alongside scores and geometries", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "run_manifest_2026-09-24.json"), manifestFile());
+  const result = await syncData(source, target);
+  expect(result.manifest).toBe(1);
+  expect(JSON.parse(await readFile(path.join(target, "manifest.json"), "utf8")).run_id).toBe("abc123");
+});
+
+it("rejects a same-day manifest file from another day or malformed", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "run_manifest_2026-09-24.json"), manifestFile("2026-09-23"));
+  await expect(syncData(source, target)).rejects.toThrow();
+  await writeFile(path.join(source, "run_manifest_2026-09-24.json"), "not json");
+  await expect(syncData(source, target)).rejects.toThrow();
+});
+
+it("removes a stale manifest.json from a previous sync when the new day has none", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "run_manifest_2026-09-24.json"), manifestFile());
+  await syncData(source, target);
+  await rm(path.join(source, "run_manifest_2026-09-24.json"));
+  const result = await syncData(source, target);
+  expect(result.manifest).toBe(0);
+  await expect(readFile(path.join(target, "manifest.json"), "utf8")).rejects.toThrow();
 });

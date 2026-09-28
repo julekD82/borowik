@@ -28,6 +28,41 @@ def classify_data_quality(value: float, profile: dict) -> str:
     return profile["confidence"]["data_quality_classes"][-1]["label"]
 
 
+def _real_gap_reasons(row: dict, profile: dict) -> list[str]:
+    """Plan wdrozenia 1.7: each of these is a genuine data gap for THIS
+    stand, not just an input to the smooth data-quality score above (which,
+    per the technical review, rarely dips low enough to reach NISKA on its
+    own -- see docs/Borowik_opis_techniczny_i_walidacja.md §12). Any one of
+    them present forces the final class down to NISKA regardless of dq_class,
+    while model_confidence_cap still caps the OTHER direction (never above
+    SREDNIA)."""
+    cfg = profile["confidence"]
+    reasons_cfg = cfg["reasons"]
+    reasons = []
+    if row.get("insufficient_climatology"):
+        reasons.append(reasons_cfg["empty_or_thin_climatology"])
+    if profile["radar"]["enabled"]:
+        coverage = row.get("rain_radar_coverage")
+        if coverage is not None and coverage < cfg["radar_low_coverage_threshold"]:
+            reasons.append(reasons_cfg["radar_low_coverage"])
+    if row.get("osm_tile_skipped"):
+        reasons.append(reasons_cfg["osm_tile_skipped"])
+    if row.get("gdos_status") == "kafel_pominiety":
+        reasons.append(reasons_cfg["gdos_tile_skipped"])
+    # "site_type" in row (not just a falsy .get()): a real stand row always
+    # has this WFS column, but a minimal test/synthetic row that omits it
+    # entirely means "not provided here", not "provided and unrecognized" --
+    # only the latter is a real data gap.
+    if "site_type" in row and row.get("site_type") not in profile["site_scores"]:
+        reasons.append(reasons_cfg["unknown_site_type"])
+    if row.get("s_host_source") != "paczka":
+        if row.get("species_cd") not in profile["host_affinity"]:
+            reasons.append(reasons_cfg["species_unknown"])
+    elif row.get("sklad_niepelny"):
+        reasons.append(reasons_cfg["incomplete_composition"])
+    return reasons
+
+
 def compute_confidence(row: dict, profile: dict) -> tuple[str, list[str]]:
     cfg = profile["confidence"]
     dq_value = score_data_quality(row, profile)
@@ -52,4 +87,14 @@ def compute_confidence(row: dict, profile: dict) -> tuple[str, list[str]]:
             reasons.append(cfg["reasons"]["species_dominant_only"])
         else:
             reasons.append(cfg["reasons"]["species_unknown"])
+
+    gap_reasons = _real_gap_reasons(row, profile)
+    if gap_reasons:
+        final_class = "NISKA"
+        # gap_reasons may repeat species_unknown (already appended above via
+        # the else-branch) -- de-duplicate while preserving order, so the
+        # same sentence never shows twice in one card's reason list.
+        for reason in gap_reasons:
+            if reason not in reasons:
+                reasons.append(reason)
     return final_class, reasons

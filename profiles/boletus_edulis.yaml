@@ -170,12 +170,49 @@ phenology:
 legal_mask:
   gdos_layers: ["GDOS:Rezerwaty", "GDOS:ParkiNarodowe"]   # spec §4.2, §9 step 8
 
+population:
+  # Plan wdrozenia 1.4: GUS NSP 2021 1km grid (zasob 24532) replaces OSM
+  # place-node population as pipeline.pressure.compute_demand's point
+  # source when a grid file is given (pipeline.prepare_trip's
+  # --population-grid-path); buffer_km widens the query beyond the search
+  # circle so a city just outside it still contributes via the existing
+  # distance-decay term. Fallback values (osm_fallback_population_by_class)
+  # are used only when no grid file is configured/found: OSM place nodes
+  # with no population tag get this class default instead of silently 0,
+  # source recorded as "osm_z_imputacja". These are rough (grubo) manual
+  # estimates, not calibrated -- Demand's own formula is unchanged either
+  # way (spec: "nie zmieniac wzoru Demand poza zrodlem punktow populacji").
+  buffer_km: 30.0
+  osm_fallback_population_by_class:
+    hamlet: 50
+    village: 500
+    town: 5000
+    city: 50000
+
 pressure:
   k: 2.0                    # [E] gravity-model steepness, spec §4.5 -- unvalidated
   park_decay_m: 800.0       # spec §4.5 "exp(-d_parking/800 m)"
   demand_decay_km: 10.0     # spec §4.5 "1 + (d/10 km)^2"
   euclid_factor: 1.3        # spec §4.5 straight-line-to-real-road correction (MVP, no routing)
   alpha_default: 0.3        # spec §4.1 "α ∈ [0; 0,6] suwak, domyślnie 0,3"
+  # Plan wdrozenia 1.5: "absolute" (default) normalizes Demand against a
+  # fixed d_half instead of this run's own max (Demand_norm =
+  # Demand/(Demand+d_half)) -- comparable P across different searches, and a
+  # genuinely quiet area no longer looks as pressured as a city just because
+  # nothing busier was in the search radius. "local" keeps the pre-1.5
+  # behaviour (Demand_norm = Demand/max(Demand in this run)) for comparison.
+  normalization: absolute
+  # d_half chosen 2026-09-28 night, offline from cached data (no API calls):
+  # real OSM Demand + d_park_m for all 14399 mask-passing Kieleczka 20km
+  # stands (docs/porownania/baseline/scores_2026-09-28.json, cache-only
+  # recompute of Demand), searched so median P under "absolute" lands close
+  # to that run's actual median P=0.2446 under "local" (got 0.2437-0.2547
+  # across the search grid around this value). TEMPORARY, UNCALIBRATED
+  # against any real-world pressure measurement -- Bedziemysl's own cache
+  # (the plan's original suggestion) no longer exists on this machine
+  # (see docs/NOC_RAPORT.md); this is a same-scale substitute chosen to get
+  # a working, non-arbitrary constant for tonight, not a validated number.
+  d_half: 90000.0
 
 radar:
   # Plan 2026-09-26 A1 (docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
@@ -263,6 +300,11 @@ confidence:
     - {max: 0.70, label: "SREDNIA"}
     - {max: 1.01, label: "WYSOKA"}
   model_confidence_cap: "SREDNIA"          # spec §10: "faza 1-4: maks. SREDNIA"
+  # Plan wdrozenia 1.7: real radar coverage below this (with radar enabled)
+  # is a NISKA-forcing gap, separate from data_quality_factors.pogoda_radar_1km
+  # above (which only chooses which weather DQ multiplier applies, not
+  # whether radar effectively failed for this stand).
+  radar_low_coverage_threshold: 0.5
   reasons:
     model_uncalibrated: 'model nieskalibrowany na danych terenowych (limit do "średniej")'
     weather_nwp: "pogoda z modelu ~2 km (brak radaru w archiwum)"
@@ -270,6 +312,15 @@ confidence:
     species_dominant_only: "skład gatunkowy: tylko gatunek panujący"
     species_unknown: "gatunek panujący nierozpoznany w profilu gatunku"
     species_full_composition: "skład gatunkowy: pełny (paczka BDL)"  # plan 2.1 step B2
+    # Plan wdrozenia 1.7: each forces final class down to NISKA (spec: obniz
+    # do NISKA, gdy wystapi ktorykolwiek z realnych brakow), unlike the
+    # reasons above which only explain the SREDNIA-level data quality score.
+    empty_or_thin_climatology: "pusta klimatologia lub mało (<50%) ważnych wartości w oknie"
+    radar_low_coverage: "rzeczywiste pokrycie radaru w oknie poniżej 50% (częściowy fallback na Open-Meteo)"
+    osm_tile_skipped: "kafel OSM w otoczeniu wydzielenia pominięty (błąd sieci)"
+    gdos_tile_skipped: "kafel GDOŚ w otoczeniu wydzielenia pominięty (błąd sieci)"
+    unknown_site_type: "typ siedliskowy nierozpoznany w profilu"
+    incomplete_composition: "skład gatunkowy z paczki niepełny (suma udziałów < 0,9)"
 
 explanation:
   max_positive: 2   # spec §9: "generujemy zdania z szablonów (2 plusy i 1-2 minusy)"

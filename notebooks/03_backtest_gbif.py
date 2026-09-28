@@ -191,7 +191,20 @@ def _daily_features(sub: pd.DataFrame) -> list[dict | None] | None:
     tmean = sub["tmean_c"].to_numpy()
     tmin = sub["tmin_c"].to_numpy()
     sm = sub["soil_moisture"].to_numpy()
-    dates = sub["date"].reset_index(drop=True)
+    # Plan 1.8a (spec S18.4 #1): Open-Meteo's `date` is the UTC instant of
+    # LOCAL midnight -- notebooks 06/09 convert to Europe/Warsaw before
+    # taking .dayofyear, this one didn't, so every row's doy here was the
+    # PREVIOUS calendar day's (local midnight = ~22:00-23:00 UTC the day
+    # before), shifting every candidate-day feature back by one day. Noon-
+    # recentred first (same fix as pipeline.weather.to_local_date, plan
+    # 1.8b) so the October DST transition doesn't shift things a SECOND
+    # time on top of the plain UTC offset -- late-October is inside this
+    # notebook's own 1 Jun-31 Oct candidate season.
+    raw_dates = sub["date"].reset_index(drop=True)
+    dates = (
+        (raw_dates + pd.Timedelta(hours=12)).dt.tz_convert("Europe/Warsaw")
+        if raw_dates.dt.tz is not None else raw_dates
+    )
     n = len(sub)
     out: list[dict | None] = [None] * 367
     for i in range(25, n):
