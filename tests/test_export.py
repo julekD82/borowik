@@ -225,6 +225,7 @@ def test_build_details_record_full_shape_with_package():
     assert record["neighbors"] == ["drzewostan buk pospolity", "zrąb"]
     assert record["stand_stru"] == "DRZEW"
     assert record["prot_categ"] == "trw. uszk na sk. dział.przem"
+    assert record["searchability_hint"] == "Obecny podszyt — może utrudniać poruszanie się."
 
 
 def test_build_details_record_includes_veg_cover_and_density_index_with_package():
@@ -235,6 +236,30 @@ def test_build_details_record_includes_veg_cover_and_density_index_with_package(
     )
     assert record["veg_cover"] == "mszysto-czernicowa"
     assert record["standdensity_index"] == pytest.approx(0.9)
+
+
+def test_build_details_record_searchability_hint_uses_podrost_from_extra_features(tmp_path):
+    from pipeline.bdl_extra_features import ExtraStandFeatures
+    details_index = {
+        "AA-1": PackageStandDetails(
+            drzew_species=[], density_cd=None, podszyt_species=[],
+            soil_subtype_cd=None, source_name="PKG", package_date=None,
+        ),
+    }
+    extra_index = {
+        "AA-1": ExtraStandFeatures(
+            veg_cover_cd=None, site_class_cd=None, density_cd=None, soil_subtype_cd=None,
+            degradation_cd=None, stand_struct_cd=None, podszyt_species=[],
+            podrost_species=[("BK", "3")], zabiegi_planowane=[], rok_wskazan=None,
+            dist_do_granicy_oddzialu_m=None, dlugosc_granicy_z_oddzialem_m=None,
+            source_name="PKG", package_date=None,
+        ),
+    }
+    record = build_details_record(
+        "AA-1@2026", "AA-1", None, None, "2026-09-25",
+        details_index, {}, {}, {}, extra_features_index=extra_index,
+    )
+    assert record["searchability_hint"] == "Obecny podrost — może utrudniać poruszanie się."
 
 
 def test_build_details_record_veg_cover_and_density_index_null_without_coverage():

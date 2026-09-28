@@ -11,7 +11,7 @@ Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/PLAN_WDROZENIA.
 | 1.6.2 Aktualizacja wieku (korekta, za flagą) | DONE | `pipeline/age_update.py`, wpięte w `pipeline/orchestrate.py` |
 | 1.6.3 Skład z niższych pięter (korekta, za flagą) | DONE | `host.lower_storeys_weight`, domyślnie 0 |
 | 1.6.4 Cechy do diagnostyki (bez wagi w R) | DONE | `pipeline/bdl_extra_features.py`, `pipeline/compartment_boundary.py` |
-| 1.6.5 Łatwość szukania w karcie | w toku | |
+| 1.6.5 Łatwość szukania w karcie | DONE | `pipeline/searchability.py` + frontend `searchability_hint` |
 | 1.6.6 Przebieg i raport | w toku | |
 
 ## 1.6.1 Inwentaryzacja paczek
@@ -114,7 +114,38 @@ planowane, granica oddziału z warstwą i bez) +
 
 ## 1.6.5 Łatwość szukania w karcie
 
-Zaplanowane po 1.6.6 (frontend), patrz status w tabeli wyżej.
+Nowa czysta funkcja `pipeline/searchability.py::searchability_hint(density_cd,
+podszyt_species, podrost_species)` -- ponieważ zagęszczenie (`density_cd`)
+warstw `PODSZ`/`PODR` jest 0% wypełnione (1.6.1), "gęstość" podszytu/podrostu
+w praktyce oznacza tu ich OBECNOŚĆ (lista gatunków niepusta), nie policzoną
+gęstość; zwarcie koron (`DRZEW`) jest jedyną naprawdę liczbową wartością
+dostępną i używaną jako uzupełniający sygnał, gdy nie ma podszytu/podrostu.
+Priorytety: podszyt+podrost > sam podszyt > sam podrost > gęste/luźne
+zwarcie korony > brak sygnału (`None`, karta nic nie pokazuje).
+
+Wpięte w `pipeline/export.py::build_details_record` (nowe pole
+`searchability_hint` w `details_{day}.json`) -- czytane z istniejącego
+`PackageStandDetails.podszyt_species`/`density_cd` (te same dane co karta od
+2.1 B3) plus `podrost_species` z nowego `pipeline.bdl_extra_features`
+(1.6.4). Nigdy nie wpływa na R ani sortowanie (obliczane już po scoringu,
+tylko dla karty).
+
+Frontend: `StandDetail.searchability_hint?: string | null` w
+`frontend/src/model.ts` (opcjonalne pole, ten sam wzorzec co `veg_cover`/
+`standdensity_index` -- starszy eksport bez tego pola nadal się wczytuje).
+Renderowane w `packageSection()` (`frontend/src/main.ts`) jako wyróżniony
+akapit na górze sekcji "Drzewostan i otoczenie". Karta rejonu używa tego
+samego widoku szczegółów dla swojego wydzielenia-reprezentanta
+(`view.top`, `enterRegionDetail` w `main.ts`), więc wskazówka pojawia się
+automatycznie też przy przeglądaniu rejonu -- bez osobnej logiki po stronie
+backendu dla poziomu rejonu.
+
+Testy: `tests/test_searchability.py` (priorytety sygnałów, progi zwarcia,
+brak sygnału, niesparsowalna wartość) + `tests/test_export.py`
+(`searchability_hint` w `build_details_record`, w tym z `podrost_species`
+z `extra_features_index`) + `frontend/src/model.test.ts` (walidacja pola
+opcjonalnego, round-trip, odrzucenie złego typu). Backend: `pytest` 639/639.
+Frontend: `npm run build` (tsc + vite) czysto, `npm run test` 75/75.
 
 ## Rulingi (decyzje bez pytania właściciela, zgodnie z zasadą 0.8)
 

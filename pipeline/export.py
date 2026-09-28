@@ -5,6 +5,7 @@ import pathlib
 import geopandas as gpd
 import pandas as pd
 
+from pipeline.searchability import searchability_hint
 from pipeline.tie_break import veg_cover_label
 
 SCORE_FIELDS = [
@@ -132,7 +133,7 @@ def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list
 
 def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
-                           tie_break_index: dict) -> dict:
+                           tie_break_index: dict, extra_features_index: dict | None = None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -152,6 +153,7 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
     if prot_categ is not None and not (isinstance(prot_categ, float) and math.isnan(prot_categ)):
         prot_categ_name = dictionaries.get("prot_categ", {}).get(prot_categ, prot_categ)
     tie_break_raw = tie_break_index.get(adr_for)
+    extra = (extra_features_index or {}).get(adr_for)
     return {
         "stand_id": stand_id,
         "day": day,
@@ -171,11 +173,20 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         "prot_categ": prot_categ_name,
         "veg_cover": veg_cover_label(tie_break_raw.veg_cover_cd) if tie_break_raw else None,
         "standdensity_index": _json_safe(tie_break_raw.standdensity_index) if tie_break_raw else None,
+        # Plan 1.6.5: short practical note for the card, built from podszyt/
+        # podrost presence + DRZEW zwarcie -- presentation only, never
+        # affects R/sort order (pipeline.searchability's own docstring).
+        "searchability_hint": searchability_hint(
+            details.density_cd if details else None,
+            details.podszyt_species if details else [],
+            extra.podrost_species if extra else [],
+        ),
     }
 
 
 def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, neighbors_by_stand: dict,
-                         dictionaries: dict, day: str, out_path, tie_break_index: dict) -> pathlib.Path:
+                         dictionaries: dict, day: str, out_path, tie_break_index: dict,
+                         extra_features_index: dict | None = None) -> pathlib.Path:
     """Plan 2.1 step B3: card-detail data (species composition, density,
     understory, soil type, neighbours, stand_stru/prot_categ) for every
     wydzielenie in `stands`, kept in its own file rather than
@@ -198,6 +209,7 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
         build_details_record(
             row["stand_id"], row["adr_for"], row.get("stand_stru"), row.get("prot_categ"),
             day, package_details_index, neighbors_by_stand, dictionaries, tie_break_index,
+            extra_features_index=extra_features_index,
         )
         for _, row in stands.iterrows()
     ]
