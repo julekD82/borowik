@@ -9,6 +9,7 @@ from pipeline.export import (
     build_score_record, write_scores_json, export_stand_geometries,
     build_region_record, write_regions_json,
     build_details_record, write_details_json,
+    write_manifest_json,
 )
 from pipeline.bdl_package_details import PackageStandDetails
 from pipeline.tie_break import TieBreakRaw
@@ -328,3 +329,15 @@ def test_write_conditions_json_adds_day_and_writes_strict_json(tmp_path):
     path = write_conditions_json(timeline, "2026-09-27", tmp_path / "conditions_2026-09-27.json")
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["day"] == "2026-09-27" and data["summary"] == timeline["summary"]
+
+
+def test_write_manifest_json_round_trips_the_whole_dict(tmp_path):
+    # write_manifest_json only serializes -- pipeline.prepare_trip.build_manifest
+    # owns field completeness (see tests/test_prepare_trip.py); this just
+    # checks the file is written where asked and reads back byte-identical
+    # (allow_nan=False, same as every other write_*_json above).
+    manifest = {"run_id": "abc123", "day": "2026-09-28", "commit": None, "uncommitted_changes": None,
+                "sources": {"radar_coverage_mean": 0.86}, "counts": {"stand_count": 4703}}
+    path = write_manifest_json(manifest, tmp_path / "run_manifest_2026-09-28.json")
+    assert path == tmp_path / "run_manifest_2026-09-28.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == manifest

@@ -1,10 +1,13 @@
 import argparse
 import functools
+import hashlib
 import math
 import pathlib
+import subprocess
 import sys
 import time
-from datetime import date, timedelta
+import uuid
+from datetime import date, datetime, timedelta, timezone
 
 import geopandas as gpd
 import requests
@@ -19,7 +22,7 @@ from pipeline.conditions_timeline import build_conditions_timeline
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
-    write_regions_json, write_details_json, write_conditions_json,
+    write_regions_json, write_details_json, write_conditions_json, write_manifest_json,
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
@@ -205,6 +208,98 @@ def _rate_limited(default_call, *args, should_retry, max_attempts=6, backoff_s=6
                 raise
             print(f"  rate limited, waiting {backoff_s}s (attempt {attempt + 1}/{max_attempts})...")
             time.sleep(backoff_s)
+
+
+def _git_commit(repo_dir: pathlib.Path) -> str | None:
+    """Plan 1.1: run_manifest's `commit` field. None outside a git checkout
+    (e.g. a zipped release) or if git itself isn't on PATH -- a manifest
+    should never abort a run over this."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _git_dirty(repo_dir: pathlib.Path) -> bool | None:
+    """Plan 1.1: `dirty` flag ("niezatwierdzone zmiany"). None (not False)
+    when git itself is unavailable, so a manifest reader can't mistake
+    "couldn't check" for "confirmed clean"."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=repo_dir, capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return bool(result.stdout.strip()) if result.returncode == 0 else None
+
+
+def _profile_hash(profile_path: str) -> str | None:
+    """Short sha256 of the profile file's raw bytes -- cheaper than hashing
+    the parsed dict and just as sufficient to tell "same profile" from "not"
+    across two manifests. None if the path can't be read (shouldn't happen:
+    load_profile above already succeeded on the same path)."""
+    try:
+        raw = pathlib.Path(profile_path).read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
+                    target_date: date, profile_path: str, use_radar: bool,
+                    repo_dir: pathlib.Path, diagnostics: dict, tile_count: int,
+                    gdos_failed_tile_count: int, osm_failed_tile_count: int,
+                    zakaz_checked_count: int, region_count: int,
+                    package_dir: pathlib.Path | None = None,
+                    incomplete_composition_count: int | None = None,
+                    population_source: str | None = None,
+                    pressure_normalization: str | None = None) -> dict:
+    """Plan wdrozenia 1.1 (spec S18.1 "Manifest analizy"): one dict with
+    every field the acceptance test checks for, assembled from values the
+    caller (run_trip_preparation) already computed -- this function does no
+    I/O of its own besides reading the profile file's bytes for its hash.
+
+    `incomplete_composition_count`/`population_source`/`pressure_normalization`
+    default to None: tasks 1.3/1.4/1.5 (not yet landed when this function was
+    first written) fill them in; None here is a real "not applicable yet",
+    not a silent fallback, and stays None until those callers pass a value."""
+    now = datetime.now(timezone.utc).astimezone()
+    radar_full_fallback = (not use_radar) or diagnostics.get("radar_coverage_mean", 0.0) == 0.0
+    return {
+        "run_id": uuid.uuid4().hex,
+        "commit": _git_commit(repo_dir),
+        "uncommitted_changes": _git_dirty(repo_dir),
+        "profile_path": str(profile_path),
+        "profile_hash": _profile_hash(profile_path),
+        "lat": lat, "lon": lon, "radius_km": radius_km,
+        "target_date": target_date.isoformat(),
+        "day": day,
+        "prepared_at": now.isoformat(timespec="seconds"),
+        "sources": {
+            "radar_coverage_mean": diagnostics.get("radar_coverage_mean", 0.0),
+            "radar_full_fallback_to_open_meteo": radar_full_fallback,
+            "gdos_failed_tile_count": gdos_failed_tile_count,
+            "osm_failed_tile_count": osm_failed_tile_count,
+            "tile_count": tile_count,
+            "zakaz_checked_count": zakaz_checked_count,
+        },
+        "counts": {
+            "stand_count": diagnostics.get("stand_count", 0),
+            "mask_passing_count": diagnostics.get("mask_passing_count", 0),
+            "region_count": region_count,
+            "package_stand_count": diagnostics.get("package_stand_count", 0),
+            "wfs_stand_count": diagnostics.get("stand_count", 0) - diagnostics.get("package_stand_count", 0),
+            "unknown_site_count": diagnostics.get("unknown_site_count", 0),
+            "unknown_species_count": diagnostics.get("unknown_species_count", 0),
+            "incomplete_composition_count": incomplete_composition_count,
+        },
+        "bdl_package_dir": str(package_dir) if package_dir is not None else None,
+        "population_source": population_source,
+        "pressure_normalization": pressure_normalization,
+    }
 
 
 def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
@@ -430,6 +525,22 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     )
     print(f"  {len(regions)} region(s)")
 
+    # Plan 1.1: one run_manifest_{day}.json alongside the other exports.
+    # zakaz_checked_count mirrors pipeline.mvp.enrich_with_mvp_layers'own
+    # top_n_for_ban_check=50 slicing (that count isn't itself returned by
+    # enrich_with_mvp_layers, so it's recomputed here from the same inputs
+    # rather than threading a new return value through that function).
+    zakaz_checked_count = min(50, len(scored))
+    manifest = build_manifest(
+        lat=lat, lon=lon, radius_km=radius_km, day=day, target_date=target_date or date.today(),
+        profile_path=profile_path, use_radar=use_radar,
+        repo_dir=pathlib.Path(__file__).resolve().parent.parent,
+        diagnostics=scored.attrs["diagnostics"], tile_count=len(tiles),
+        gdos_failed_tile_count=len(gdos_failed_tiles), osm_failed_tile_count=len(osm_failed_tiles),
+        zakaz_checked_count=zakaz_checked_count, region_count=len(regions),
+    )
+    manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
+
     return {
         "layer": layer, "layers": layers, "tile_count": len(tiles),
         "radius_km": radius_km, "stand_count": len(scored),
@@ -439,6 +550,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "geojson_path": geojson_path, "regions_path": regions_path,
         "details_path": details_path,
         "conditions_path": str(conditions_path) if conditions_path else None,
+        "manifest_path": manifest_path,
         "gdos_failed_tile_count": len(gdos_failed_tiles),
         "osm_failed_tile_count": len(osm_failed_tiles),
         "forecast_days": scored.attrs["diagnostics"]["forecast_days"],

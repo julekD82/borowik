@@ -225,3 +225,17 @@ def write_conditions_json(timeline: dict, day: str, out_path) -> pathlib.Path:
     out_path.write_text(json.dumps({"day": day, **timeline}, ensure_ascii=False, indent=2, allow_nan=False),
                         encoding="utf-8")
     return out_path
+
+
+# Plan wdrozenia 1.1: one run_manifest_YYYY-MM-DD.json per run_trip_preparation
+# call, alongside the other exports. pipeline.prepare_trip.build_manifest
+# assembles the dict from values already computed during the run (git state,
+# profile hash, orchestrate.py's scored.attrs["diagnostics"], tile/entrance/
+# zakaz counters) -- this function only serializes it, same pattern as the
+# other write_*_json helpers above.
+def write_manifest_json(manifest: dict, out_path) -> pathlib.Path:
+    out_path = pathlib.Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False),
+                        encoding="utf-8")
+    return out_path

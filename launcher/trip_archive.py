@@ -94,7 +94,8 @@ def read_day(scores_path: Path) -> str:
     return data[0]["day"]
 
 
-TRIP_FILES = ["scores.json", "stands.geojson", "regions.json", "details.json", "conditions.json"]
+TRIP_FILES = ["scores.json", "stands.geojson", "regions.json", "details.json", "conditions.json",
+              "manifest.json"]
 
 
 def copy_trip_files(data_dir: Path, dest_dir: Path) -> list[str]:

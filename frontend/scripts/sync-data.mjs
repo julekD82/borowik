@@ -137,6 +137,26 @@ export async function syncData(source, target) {
       throw new Error(`Niepoprawny format conditions_${day}.json.`);
   }
 
+  // Plan wdrozenia 1.1: run_manifest_{day}.json is optional too (older
+  // exports predate it) -- same "validate, sync as manifest.json, drop if
+  // absent" pattern as conditions above.
+  let manifestRaw = null;
+  try {
+    manifestRaw = await readFile(path.join(source, `run_manifest_${day}.json`), "utf8");
+  } catch {
+    manifestRaw = null;
+  }
+  let manifest = null;
+  if (manifestRaw !== null) {
+    try {
+      manifest = JSON.parse(manifestRaw);
+    } catch {
+      throw new Error(`Plik run_manifest_${day}.json jest uszkodzony.`);
+    }
+    if (!manifest || typeof manifest !== "object" || manifest.day !== day)
+      throw new Error(`Niepoprawny format run_manifest_${day}.json.`);
+  }
+
   await mkdir(target, { recursive: true });
   const targets = ["scores.json", "stands.geojson"];
   const allContents = [...contents];
@@ -151,6 +171,10 @@ export async function syncData(source, target) {
   if (conditions !== null) {
     targets.push("conditions.json");
     allContents.push(conditionsRaw);
+  }
+  if (manifest !== null) {
+    targets.push("manifest.json");
+    allContents.push(manifestRaw);
   }
   // Validate the entire bundle before replacing any existing public file.
   for (let i = 0; i < targets.length; i++)
@@ -170,12 +194,15 @@ export async function syncData(source, target) {
     await rm(path.join(target, "details.json"), { force: true });
   if (conditions === null)
     await rm(path.join(target, "conditions.json"), { force: true });
+  if (manifest === null)
+    await rm(path.join(target, "manifest.json"), { force: true });
   return {
     day,
     stands: scores.length,
     regions: regions?.length ?? 0,
     details: details?.length ?? 0,
     conditions: conditions === null ? 0 : 1,
+    manifest: manifest === null ? 0 : 1,
   };
 }
 
