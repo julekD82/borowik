@@ -290,6 +290,7 @@ pressure:
     settlement_max_dist_to_forest_m: 200.0
     forest_buffer_m: 50.0              # drogi lesne biore z tego obrysu lasu
     corridor_sample_m: 100.0           # gestosc probkowania drogi lesnej przy liczeniu presji
+    fire_surface_match_m: 20.0         # dojazd pozarowy BDL dostaje nawierzchnie od najblizszej drogi OSM z opisem w tej odleglosci
     snap_max_m: 150.0                  # przypiecie punktu dostepu do sieci drog lesnych
     # tagi OSM (osobny cache od glownego OSM: cache/access_tiles/osm)
     osm:

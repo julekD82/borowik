@@ -257,3 +257,21 @@ def test_build_access_set_counts_and_roads_kinds():
     assert s.counts["roads_by_kind"] == {"closed": 1, "fire": 1, "public": 1}
     assert s.counts["fallback_tile_count"] == 0
     assert set(s.roads["surface_class"]) >= {"gravel", "hard", "unknown"}
+
+
+# --- nawierzchnia dojazdow pozarowych z OSM -----------------------------------
+
+def test_fire_road_takes_surface_from_nearest_described_osm_road():
+    from pipeline.access_points import attach_osm_surface_to_fire_roads
+    osm = prepare_osm_roads(_roads([
+        (LineString([(0, 5), (100, 5)]), "track", {"surface": "asphalt", "tracktype": None, "access": None, "motor_vehicle": None}),
+        (LineString([(0, 500), (100, 500)]), "track", {"surface": None, "tracktype": None, "access": None, "motor_vehicle": None}),
+    ]), CFG)
+    fire = gpd.GeoDataFrame({"kind": ["fire"] * 3, "surface_class": ["unknown"] * 3, "fire_no": ["1", "2", "3"]},
+                            geometry=[LineString([(0, 0), (100, 0)]),         # 5 m od drogi z asfaltem
+                                      LineString([(0, 495), (100, 495)]),     # przy drodze BEZ opisu
+                                      LineString([(0, 2000), (100, 2000)])],  # daleko od wszystkiego
+                            crs=CRS)
+    out = attach_osm_surface_to_fire_roads(fire, osm, 20.0)
+    assert out["surface_class"].tolist() == ["hard", "unknown", "unknown"]
+    assert out["surface_source"].tolist() == ["osm", "brak", "brak"]

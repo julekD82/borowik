@@ -172,6 +172,32 @@ def _points_frame(geoms, ptype, source, subtype, name=None, prefix="", ids=None,
     }, geometry=list(geoms), crs="EPSG:2180")
 
 
+def attach_osm_surface_to_fire_roads(fire: gpd.GeoDataFrame, osm_roads: gpd.GeoDataFrame,
+                                      tolerance_m: float) -> gpd.GeoDataFrame:
+    """Plan 3.1: dojazdy pozarowe BDL sa szkieletem sieci, ale nie niosa
+    nawierzchni -- odcinek dostaje klase nawierzchni najblizszej drogi OSM z
+    OPISANA nawierzchnia (surface_class != unknown) w promieniu `tolerance_m`
+    od srodka odcinka; bez takiej drogi zostaje "unknown" (nie "brak drogi").
+    Dodaje `surface_source` ("osm" / "brak")."""
+    fire = fire.copy()
+    fire["surface_source"] = "brak"
+    if not len(fire) or osm_roads is None or not len(osm_roads):
+        return fire
+    known = osm_roads[osm_roads["surface_class"] != "unknown"]
+    if not len(known):
+        return fire
+    tree = shapely.STRtree(np.asarray(list(known.geometry), dtype=object))
+    mids = shapely.line_interpolate_point(np.asarray(list(fire.geometry), dtype=object), 0.5, normalized=True)
+    idx = tree.query_nearest(mids, max_distance=tolerance_m, return_distance=False, all_matches=False)
+    classes = known["surface_class"].values
+    surface = fire["surface_class"].values.copy()
+    source = fire["surface_source"].values.copy()
+    surface[idx[0]] = classes[idx[1]]
+    source[idx[0]] = "osm"
+    fire["surface_class"], fire["surface_source"] = surface, source
+    return fire
+
+
 # --- parkingi -------------------------------------------------------------------
 
 def build_parkings(bdl_parkings, osm_parking, zone_200, cfg: dict) -> gpd.GeoDataFrame:
@@ -382,15 +408,17 @@ def build_access_set(*, forest_boundary, sources: dict, osm_parking, pop_points,
         osm_roads = osm_roads[_within(zone_roads, list(osm_roads.geometry))].reset_index(drop=True)
     elif zone_roads is None:
         osm_roads = osm_roads.iloc[0:0]
+    osm_roads_all = osm_roads
     public = osm_roads[osm_roads["kind"] == "public"] if len(osm_roads) else osm_roads
     closed = osm_roads[osm_roads["kind"] == "closed"] if len(osm_roads) else osm_roads
 
     fire = sources.get("fire_roads")
     if fire is not None and len(fire):
         fire = fire.assign(kind="fire", surface_class="unknown", source="bdl_ppoz", highway="", paved=False)
-        fire = fire[["kind", "surface_class", "paved", "source", "fire_no", "highway", "geometry"]]
+        fire = attach_osm_surface_to_fire_roads(fire, osm_roads_all, cfg["fire_surface_match_m"])
+        fire = fire[["kind", "surface_class", "paved", "source", "fire_no", "highway", "surface_source", "geometry"]]
     else:
-        fire = _empty_roads().assign(paved=pd.Series(dtype=bool))
+        fire = _empty_roads().assign(paved=pd.Series(dtype=bool), surface_source=pd.Series(dtype=str))
 
     forest_roads = pd.concat([closed, fire], ignore_index=True) if (len(closed) or len(fire)) else fire
 
