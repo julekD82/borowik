@@ -370,6 +370,8 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
             # parameter needed since orchestrate.run_poc always sets both.
             "age_update_enabled": diagnostics.get("age_update_enabled"),
             "age_update_missing_year_count": diagnostics.get("age_update_missing_year_count", 0),
+            # Plan 1.6.3
+            "host_lower_storeys_weight": diagnostics.get("host_lower_storeys_weight"),
         },
         "bdl_package_dir": str(package_dir) if package_dir is not None else None,
         "bdl_coverage_report": bdl_coverage_report,
