@@ -1370,3 +1370,73 @@ dialog li {
 .conditions-day.level-2 { background: rgba(46, 125, 50, 0.12); }
 .conditions-day.level-3 { background: rgba(46, 125, 50, 0.22); }
 .conditions-day.forecast span { font-style: italic; }
+
+/* Faza 3.5: przelaczniki warstw dostepu w legendzie */
+.layer-controls {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #dfe5d7;
+}
+.layer-controls[hidden] {
+  display: none;
+}
+.layer-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.layer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #40503a;
+  cursor: pointer;
+}
+.layer-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  align-items: center;
+}
+.layer-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.layer-key i {
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+  border-radius: 50%;
+}
+.layer-key i.key-parking.bdl {
+  background: #1f4e9c;
+}
+.layer-key i.key-parking.osm {
+  background: #5b8ec9;
+}
+.layer-key i.key-entrance {
+  background: #2a8f7a;
+}
+.layer-key i.key-gate {
+  background: #c0392b;
+  box-shadow: 0 0 0 1.5px #3b0d08;
+}
+.layer-key i[style] {
+  height: 3px;
+  width: 14px;
+  border-radius: 0;
+}
+.access-popup {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #2a3a26;
+}
+@media (max-width: 720px) {
+  .layer-keys {
+    display: none;
+  }
+}

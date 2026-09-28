@@ -1,7 +1,30 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection, Polygon, MultiPolygon } from "geojson";
-import type { StandView, StandFeature } from "./model";
-import { vertices } from "./model";
+import type { StandView, StandFeature, AccessCollection, AccessLayerId } from "./model";
+import {
+  vertices,
+  SURFACE_COLORS,
+  pointTypeLabel,
+  sourceLabel,
+  surfaceLabel,
+  roadKindLabel,
+} from "./model";
+
+// Faza 3.5: warstwy mapy (grupa przelaczana w legendzie -> id warstw MapLibre).
+const ACCESS_LAYER_GROUPS: Record<AccessLayerId, string[]> = {
+  parkings: ["ap-parking-osm", "ap-parking-bdl", "ap-parking-label"],
+  entrances: ["ap-entrance", "ap-gate"],
+  roads: ["road-public", "road-closed"],
+  fire: ["road-fire"],
+  settlements: ["ap-settlement"],
+  pressure: ["stand-pressure"],
+};
+const SURFACE_MATCH = [
+  "match",
+  ["get", "surface"],
+  ...Object.entries(SURFACE_COLORS).flat(),
+  SURFACE_COLORS.unknown,
+] as unknown as maplibregl.ExpressionSpecification;
 
 export class ForestMap {
   private map: maplibregl.Map;
@@ -15,6 +38,16 @@ export class ForestMap {
   // other. See selectGroup/highlightGroup/focusStands.
   private groupSelected: string[] = [];
   private groupHover: string[] = [];
+  private accessPoints: AccessCollection | null = null;
+  private forestRoads: AccessCollection | null = null;
+  private layerVisible: Record<AccessLayerId, boolean> = {
+    parkings: true,
+    entrances: true,
+    roads: true,
+    fire: false,
+    settlements: false,
+    pressure: false,
+  };
   private geometry: FeatureCollection<Polygon | MultiPolygon> = {
     type: "FeatureCollection",
     features: [],
@@ -68,7 +101,238 @@ export class ForestMap {
     this.map.on("mouseleave", "stand-fill", () => {
       this.map.getCanvas().style.cursor = "";
     });
+    for (const layer of [
+      "ap-parking-bdl",
+      "ap-parking-osm",
+      "ap-entrance",
+      "ap-gate",
+      "ap-settlement",
+      "road-public",
+      "road-closed",
+      "road-fire",
+    ])
+      this.map.on("click", layer, (event) => this.showAccessPopup(event));
     void this.loadBasemap();
+  }
+  private showAccessPopup(event: maplibregl.MapLayerMouseEvent) {
+    const props = event.features?.[0]?.properties;
+    if (!props) return;
+    const escapeHtml = (s: unknown) =>
+      String(s ?? "").replace(
+        /[&<>"']/g,
+        (c) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+      );
+    const cls = props.attractiveness_class
+      ? `atrakcyjność: <strong>${escapeHtml(props.attractiveness_class)}</strong>`
+      : "atrakcyjność: nie dotyczy";
+    const html = props.kind
+      ? `<strong>${escapeHtml(roadKindLabel(props.kind))}</strong><br>nawierzchnia: ${escapeHtml(surfaceLabel(props.surface))}<br>źródło: ${escapeHtml(sourceLabel(props.source))}${props.fire_no ? `<br>numer dojazdu: ${escapeHtml(props.fire_no)}` : ""}<br>${cls}`
+      : `<strong>${escapeHtml(pointTypeLabel(props.type))}${props.name ? ` „${escapeHtml(props.name)}”` : ""}</strong><br>źródło: ${escapeHtml(sourceLabel(props.source))}<br>${cls}`;
+    new maplibregl.Popup({ closeButton: true, maxWidth: "240px" })
+      .setLngLat(event.lngLat)
+      .setHTML(`<div class="access-popup">${html}</div>`)
+      .addTo(this.map);
+  }
+  private addAccessLayers() {
+    const before = this.map.getLayer("stand-selected") ? "stand-selected" : undefined;
+    if (!this.map.getSource("access-points")) {
+      const empty = { type: "FeatureCollection", features: [] } as AccessCollection;
+      this.map.addSource("access-points", { type: "geojson", data: this.accessPoints ?? empty });
+      this.map.addSource("forest-roads", { type: "geojson", data: this.forestRoads ?? empty });
+    }
+    // Presja P: polprzezroczysta warstwa pod obrysami wydzielen.
+    this.map.addLayer(
+      {
+        id: "stand-pressure",
+        type: "fill",
+        source: "stands",
+        paint: {
+          "fill-color": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "pressure"], 0],
+            0,
+            "#fff3d6",
+            0.5,
+            "#f0a54a",
+            1,
+            "#b23b2e",
+          ],
+          "fill-opacity": 0.45,
+        },
+      },
+      "stand-line",
+    );
+    // grubosc linii wg atrakcyjnosci odcinka
+    const width = [
+      "interpolate",
+      ["linear"],
+      ["coalesce", ["get", "attractiveness"], 0],
+      0,
+      1,
+      0.3,
+      2.2,
+      1,
+      4,
+    ] as unknown as maplibregl.ExpressionSpecification;
+    this.map.addLayer(
+      {
+        id: "road-fire",
+        type: "line",
+        source: "forest-roads",
+        filter: ["==", ["get", "kind"], "fire"],
+        paint: { "line-color": "#6b7fa0", "line-width": 1, "line-opacity": 0.7 },
+      },
+      before,
+    );
+    this.map.addLayer(
+      {
+        id: "road-closed",
+        type: "line",
+        source: "forest-roads",
+        filter: ["==", ["get", "kind"], "closed"],
+        // zamkniete drogi lesne: linia przerywana (publiczne sa ciagle)
+        paint: { "line-color": SURFACE_MATCH, "line-width": width, "line-dasharray": [2, 1.2] },
+      },
+      before,
+    );
+    this.map.addLayer(
+      {
+        id: "road-public",
+        type: "line",
+        source: "forest-roads",
+        filter: ["==", ["get", "kind"], "public"],
+        paint: { "line-color": SURFACE_MATCH, "line-width": 2.2 },
+      },
+      before,
+    );
+    const ofType = (type: string, source?: string) =>
+      (source
+        ? ["all", ["==", ["get", "type"], type], ["==", ["get", "source"], source]]
+        : ["==", ["get", "type"], type]) as maplibregl.FilterSpecification;
+    this.map.addLayer(
+      {
+        id: "ap-settlement",
+        type: "circle",
+        source: "access-points",
+        filter: ofType("settlement"),
+        paint: {
+          "circle-radius": 4,
+          "circle-color": "#c9a8d4",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+          "circle-opacity": 0.8,
+        },
+      },
+      before,
+    );
+    this.map.addLayer(
+      {
+        id: "ap-entrance",
+        type: "circle",
+        source: "access-points",
+        filter: ["in", ["get", "type"], ["literal", ["entrance", "road_fallback"]]],
+        paint: {
+          "circle-radius": 3.5,
+          "circle-color": "#2a8f7a",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+        },
+      },
+      before,
+    );
+    this.map.addLayer(
+      {
+        id: "ap-gate",
+        type: "circle",
+        source: "access-points",
+        filter: ofType("gate"),
+        // szlaban: wiekszy czerwony znacznik z grubym obrysem (osobny symbol)
+        paint: {
+          "circle-radius": 5,
+          "circle-color": "#c0392b",
+          "circle-stroke-color": "#3b0d08",
+          "circle-stroke-width": 2,
+        },
+      },
+      before,
+    );
+    this.map.addLayer(
+      {
+        id: "ap-parking-osm",
+        type: "circle",
+        source: "access-points",
+        filter: ofType("parking", "osm"),
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#5b8ec9",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+        },
+      },
+      before,
+    );
+    this.map.addLayer(
+      {
+        id: "ap-parking-bdl",
+        type: "circle",
+        source: "access-points",
+        filter: ofType("parking", "bdl"),
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#1f4e9c",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+        },
+      },
+      before,
+    );
+    // Litera "P" wymaga glifow z podkladu; bez nich zostaja same kolka.
+    if (this.map.getStyle()?.glyphs) {
+      this.map.addLayer(
+        {
+          id: "ap-parking-label",
+          type: "symbol",
+          source: "access-points",
+          filter: ofType("parking"),
+          layout: {
+            "text-field": "P",
+            "text-size": 10,
+            "text-font": ["Noto Sans Bold"],
+            "text-allow-overlap": true,
+          },
+          paint: { "text-color": "#ffffff" },
+        },
+        before,
+      );
+    }
+    this.applyAccessVisibility();
+  }
+  private applyAccessVisibility() {
+    for (const [group, layers] of Object.entries(ACCESS_LAYER_GROUPS))
+      for (const id of layers)
+        if (this.map.getLayer(id))
+          this.map.setLayoutProperty(
+            id,
+            "visibility",
+            this.layerVisible[group as AccessLayerId] ? "visible" : "none",
+          );
+  }
+  setAccessData(points: AccessCollection | null, roads: AccessCollection | null) {
+    this.accessPoints = points;
+    this.forestRoads = roads;
+    const empty = { type: "FeatureCollection", features: [] } as AccessCollection;
+    (this.map.getSource("access-points") as maplibregl.GeoJSONSource | undefined)?.setData(
+      points ?? empty,
+    );
+    (this.map.getSource("forest-roads") as maplibregl.GeoJSONSource | undefined)?.setData(
+      roads ?? empty,
+    );
+  }
+  setLayerVisible(id: AccessLayerId, visible: boolean) {
+    this.layerVisible[id] = visible;
+    this.applyAccessVisibility();
   }
   private async loadBasemap() {
     try {
@@ -126,6 +390,7 @@ export class ForestMap {
       filter: ["==", ["get", "stand_id"], ""],
       paint: { "line-color": "#de7a39", "line-width": 3 },
     });
+    this.addAccessLayers();
   }
   setData(entries: StandView[]) {
     this.entries = entries;
@@ -133,7 +398,7 @@ export class ForestMap {
       type: "FeatureCollection",
       features: entries.map((e) => ({
         ...e.feature,
-        properties: { ...e.feature.properties, rank: e.score.R },
+        properties: { ...e.feature.properties, rank: e.score.R, pressure: e.score.P },
       })),
     };
     (

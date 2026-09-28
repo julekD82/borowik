@@ -36,6 +36,8 @@ it("copies one complete same-day bundle", async () => {
     details: 0,
     conditions: 0,
     manifest: 0,
+    accessPoints: 0,
+    forestRoads: 0,
   });
   expect(
     JSON.parse(await readFile(path.join(target, "scores.json"), "utf8"))[0]
@@ -220,4 +222,36 @@ it("removes a stale manifest.json from a previous sync when the new day has none
   const result = await syncData(source, target);
   expect(result.manifest).toBe(0);
   await expect(readFile(path.join(target, "manifest.json"), "utf8")).rejects.toThrow();
+});
+
+// Faza 3.5: access_points_{day}.geojson / forest_roads_{day}.geojson -> optional map layers.
+const layerFile = (features = []) => JSON.stringify({ type: "FeatureCollection", features });
+
+it("syncs same-day access layers under day-less names", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "access_points_2026-09-24.geojson"), layerFile([{ type: "Feature" }]));
+  await writeFile(path.join(source, "forest_roads_2026-09-24.geojson"), layerFile());
+  const result = await syncData(source, target);
+  expect([result.accessPoints, result.forestRoads]).toEqual([1, 1]);
+  expect(JSON.parse(await readFile(path.join(target, "access_points.json"), "utf8")).features).toHaveLength(1);
+  expect(JSON.parse(await readFile(path.join(target, "forest_roads.json"), "utf8")).type).toBe("FeatureCollection");
+});
+
+it("rejects a malformed access layer without touching the previous public files", async () => {
+  const { source, target } = await fixture();
+  await syncData(source, target);
+  await writeFile(path.join(source, "access_points_2026-09-24.geojson"), "not json");
+  await expect(syncData(source, target)).rejects.toThrow();
+  await writeFile(path.join(source, "access_points_2026-09-24.geojson"), JSON.stringify({ type: "Feature" }));
+  await expect(syncData(source, target)).rejects.toThrow();
+});
+
+it("removes stale access layers from a previous sync when the new day has none", async () => {
+  const { source, target } = await fixture();
+  await writeFile(path.join(source, "forest_roads_2026-09-24.geojson"), layerFile());
+  await syncData(source, target);
+  await rm(path.join(source, "forest_roads_2026-09-24.geojson"));
+  const result = await syncData(source, target);
+  expect(result.forestRoads).toBe(0);
+  await expect(readFile(path.join(target, "forest_roads.json"), "utf8")).rejects.toThrow();
 });

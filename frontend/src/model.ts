@@ -1,6 +1,7 @@
 import type {
   Feature,
   FeatureCollection,
+  Geometry,
   Polygon,
   MultiPolygon,
   Position,
@@ -160,7 +161,9 @@ export function distanceMethod(value?: string): string {
     ? "po sieci dróg, z odcinkami dojścia"
     : value === "euclidean"
       ? "oszacowanie: linia prosta × 1,3"
-      : "metoda nieznana";
+      : value === "access_points"
+        ? "model punktów dostępu: parkingi, wjazdy, osiedla, drogi leśne"
+        : "metoda nieznana";
 }
 // Plan wdrozenia 1.6: discrete "zakazow nie sprawdzono"/"zrodlo zawiodlo"
 // notice, plus the as-of-preparation-date caveat -- shown only when it
@@ -276,6 +279,104 @@ export type SpeciesShare = {
   name: string;
   share: string;
 };
+export type AccessCard = {
+  d_parking_m: number | null;
+  d_entrance_m: number | null;
+  d_hard_forest_road_m: number | null;
+  top_point_id: string | null;
+  top_point_type: string | null;
+  top_point_source: string | null;
+  top_point_name: string | null;
+};
+export type AccessCollection = FeatureCollection<Geometry, Record<string, unknown>>;
+// Plan Faza 3.5: warstwy punktow dostepu przelaczane w legendzie.
+export type AccessLayerId =
+  | "parkings"
+  | "entrances"
+  | "roads"
+  | "fire"
+  | "settlements"
+  | "pressure";
+export const ACCESS_LAYERS: {
+  id: AccessLayerId;
+  label: string;
+  defaultOn: boolean;
+  needs: "points" | "roads" | "stands";
+}[] = [
+  { id: "parkings", label: "Parkingi", defaultOn: true, needs: "points" },
+  { id: "entrances", label: "Wjazdy i szlabany", defaultOn: true, needs: "points" },
+  { id: "roads", label: "Drogi leśne", defaultOn: true, needs: "roads" },
+  { id: "fire", label: "Dojazdy pożarowe BDL", defaultOn: false, needs: "roads" },
+  { id: "settlements", label: "Osiedla przy lesie", defaultOn: false, needs: "points" },
+  { id: "pressure", label: "Presja P", defaultOn: false, needs: "stands" },
+];
+export const SURFACE_COLORS: Record<string, string> = {
+  hard: "#2f4f6f",
+  gravel: "#b8862f",
+  compacted: "#8f7a4a",
+  unknown: "#8b8b8b",
+  dirt: "#7a5b3a",
+};
+export const SURFACE_LABELS: Record<string, string> = {
+  hard: "twarda",
+  gravel: "kruszywo",
+  compacted: "ubita",
+  unknown: "nieznana",
+  dirt: "gruntowa",
+};
+export function surfaceLabel(value: unknown): string {
+  return SURFACE_LABELS[String(value)] ?? "nieznana";
+}
+const POINT_TYPE_LABELS: Record<string, string> = {
+  parking: "Parking",
+  entrance: "Wjazd do lasu",
+  gate: "Szlaban",
+  road_fallback: "Droga asfaltowa przy lesie",
+  settlement: "Osiedle przy lesie",
+  forest_road: "Droga leśna",
+};
+export function pointTypeLabel(value: unknown): string {
+  return POINT_TYPE_LABELS[String(value)] ?? "Punkt dostępu";
+}
+const SOURCE_LABELS: Record<string, string> = {
+  bdl: "BDL",
+  osm: "OpenStreetMap",
+  gus: "GUS",
+  bdl_ppoz: "BDL, dojazd pożarowy",
+  wlasciciel: "korekta właściciela",
+};
+export function sourceLabel(value: unknown): string {
+  return SOURCE_LABELS[String(value)] ?? String(value ?? "");
+}
+export function roadKindLabel(kind: unknown): string {
+  return kind === "public"
+    ? "droga publiczna"
+    : kind === "fire"
+      ? "dojazd pożarowy BDL"
+      : "zamknięta droga leśna";
+}
+// Karta wydzielenia: "najbliższy parking X m, wjazd Y m, utwardzony dukt Z m".
+export function accessCardSummary(card?: AccessCard | null): string {
+  if (!card) return "";
+  const m = (v: number | null) =>
+    typeof v === "number" && Number.isFinite(v)
+      ? `${Math.round(v / 10) * 10} m`
+      : "brak w pobliżu";
+  return `najbliższy parking ${m(card.d_parking_m)} · wjazd lub szlaban ${m(card.d_entrance_m)} · utwardzony dukt ${m(card.d_hard_forest_road_m)}`;
+}
+export function topPointSummary(card?: AccessCard | null): string {
+  if (!card?.top_point_id) return "Żaden punkt dostępu nie sięga tego wydzielenia (P = 0).";
+  const name = card.top_point_name ? ` „${card.top_point_name}”` : "";
+  const source = card.top_point_source ? ` (${sourceLabel(card.top_point_source)})` : "";
+  return `Największy wpływ na presję: ${pointTypeLabel(card.top_point_type).toLocaleLowerCase("pl")}${name}${source}.`;
+}
+// Zwraca kolekcje albo null, gdy plik jest nieobecny; zle uksztaltowany to blad.
+export function parseAccessCollection(raw: unknown, file: string): AccessCollection | null {
+  if (raw === undefined) return null;
+  if (!object(raw) || raw.type !== "FeatureCollection" || !Array.isArray(raw.features))
+    throw new Error(`Plik ${file} jest niepoprawny. Uruchom synchronizację danych.`);
+  return raw as unknown as AccessCollection;
+}
 export type StandDetail = {
   stand_id: string;
   day: string;
@@ -302,6 +403,9 @@ export type StandDetail = {
   // details_{day}.json written before this field existed has no key for
   // it at all).
   searchability_hint?: string | null;
+  // Plan Faza 3.5: odleglosci do punktow dostepu i element o najwiekszym
+  // wkladzie w presje; null/brak poza modelem pressure.model: access_points.
+  access?: AccessCard | null;
 };
 
 export type Region = {
@@ -506,7 +610,8 @@ export function parseData(
           nullableString(d.prot_categ) &&
           (d.veg_cover === undefined || nullableString(d.veg_cover)) &&
           (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)) &&
-          (d.searchability_hint === undefined || nullableString(d.searchability_hint)),
+          (d.searchability_hint === undefined || nullableString(d.searchability_hint)) &&
+          (d.access === undefined || d.access === null || object(d.access)),
       )
     )
       throw new Error("Niepoprawny plik szczegółów wydzieleń.");
@@ -650,8 +755,29 @@ export async function loadData(basePath: string = "data/") {
       );
     }
   }
+  // access_points.json / forest_roads.json: optional layers (Faza 3.5), same
+  // tolerance for a missing file as the optional files above.
+  const optionalJson = async (file: string): Promise<unknown> => {
+    const response = await fetch(
+      `${import.meta.env.BASE_URL}${basePath}${file}`,
+      { cache: "no-cache", signal: AbortSignal.timeout(20000) },
+    ).catch(() => undefined);
+    if (!response?.ok || !isJsonResponse(response)) return undefined;
+    try {
+      return await response.json();
+    } catch {
+      throw new Error(`Plik ${file} jest niedostępny lub niepoprawny. Uruchom synchronizację danych.`);
+    }
+  };
+  const accessPoints = parseAccessCollection(await optionalJson("access_points.json"), "access_points.json");
+  const forestRoads = parseAccessCollection(await optionalJson("forest_roads.json"), "forest_roads.json");
   const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
-  return { ...parsed, conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day) };
+  return {
+    ...parsed,
+    conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day),
+    accessPoints,
+    forestRoads,
+  };
 }
 export type TripMeta = {
   id: string;

@@ -20,7 +20,13 @@ import {
   loadTrips,
   formatTripLabel,
   dayLabel,
+  accessCardSummary,
+  topPointSummary,
+  ACCESS_LAYERS,
+  SURFACE_COLORS,
+  SURFACE_LABELS,
 } from "./model";
+import type { AccessCollection, AccessLayerId } from "./model";
 import type {
   StandView,
   Score,
@@ -108,6 +114,58 @@ let selectedRegionId = "";
 // members, with a way back to the region view instead of the full list.
 let regionFilterId: string | null = null;
 const VIEW_MODE_KEY = "borowik.view-mode.v1";
+// Faza 3.5: ktore warstwy dostepu sa wlaczone (zapamietywane w przegladarce).
+const LAYERS_KEY = "borowik.access-layers.v1";
+let layerState: Record<AccessLayerId, boolean> = Object.fromEntries(
+  ACCESS_LAYERS.map((l) => [l.id, l.defaultOn]),
+) as Record<AccessLayerId, boolean>;
+try {
+  const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "null");
+  if (saved && typeof saved === "object")
+    for (const l of ACCESS_LAYERS)
+      if (typeof saved[l.id] === "boolean") layerState[l.id] = saved[l.id];
+} catch {
+  // Best-effort: domyslne ustawienia warstw.
+}
+function saveLayerState() {
+  try {
+    localStorage.setItem(LAYERS_KEY, JSON.stringify(layerState));
+  } catch {
+    // Best-effort.
+  }
+}
+function renderLayerControls(
+  points: AccessCollection | null,
+  roads: AccessCollection | null,
+) {
+  const has = (need: string) =>
+    need === "points" ? !!points : need === "roads" ? !!roads : true;
+  const available = ACCESS_LAYERS.filter((l) => has(l.needs));
+  const el = $("#layer-controls");
+  // Bez plikow warstw (starsza analiza) sama legenda, bez przelacznikow.
+  el.hidden = !points && !roads;
+  if (el.hidden) return;
+  const surfaces = Object.keys(SURFACE_COLORS)
+    .map(
+      (k) =>
+        `<span class="layer-key"><i style="background:${SURFACE_COLORS[k]}"></i>${SURFACE_LABELS[k]}</span>`,
+    )
+    .join("");
+  el.innerHTML = `<div class="layer-toggles">${available
+    .map(
+      (l) =>
+        `<label class="layer-toggle"><input type="checkbox" data-layer="${l.id}" ${layerState[l.id] ? "checked" : ""}> ${l.label}</label>`,
+    )
+    .join("")}</div><div class="layer-keys"><span class="layer-key"><i class="key-parking bdl"></i>parking BDL</span><span class="layer-key"><i class="key-parking osm"></i>parking OSM</span><span class="layer-key"><i class="key-entrance"></i>wjazd</span><span class="layer-key"><i class="key-gate"></i>szlaban</span>${surfaces}<span class="layer-key">linia ciągła: publiczna · przerywana: zamknięta droga leśna · grubość: atrakcyjność</span></div>`;
+  el.querySelectorAll<HTMLInputElement>("input[data-layer]").forEach((box) =>
+    box.addEventListener("change", () => {
+      const id = box.dataset.layer as AccessLayerId;
+      layerState[id] = box.checked;
+      saveLayerState();
+      map?.setLayerVisible(id, box.checked);
+    }),
+  );
+}
 function getViewModePreference(): "regions" | "stands" | null {
   try {
     const value = localStorage.getItem(VIEW_MODE_KEY);
@@ -136,7 +194,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section id="trips-bar" class="trips-bar" aria-label="Zapisane mapy"><label for="trips-select">${icon("bookmark")}<span>Zapisane mapy</span></label><select id="trips-select"><option value="">Aktualna</option></select></section>
     <section class="workspace" aria-label="Wydzielenia poszukiwań">
       <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Ranking porównuje miejsca w tej analizie.<br>Nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
-      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
+      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
     </section>
     <footer class="footer"><span>Borowik <span class="footer-dot">·</span> Dobry spacer zaczyna się od dobrego planu.</span><button id="about">O danych i ograniczeniach ${icon("info")}</button></footer>
   </main>
@@ -192,6 +250,11 @@ function assessment(score?: Score) {
   return `<div class="assessment"><div><small>SIEDLISKO</small><strong>${habitatClass(score?.H)}</strong></div><div><small>WARUNKI TERAZ</small><strong>${fruitingClass(score?.F)}</strong></div></div>`;
 }
 function access(score?: Score) {
+  // Faza 3.5: przy modelu punktow dostepu karta podaje odleglosci do
+  // parkingu/wjazdu/utwardzonego duktu i element o najwiekszym wplywie na P.
+  const accessCard = score ? detailFor(score.stand_id)?.access : null;
+  if (accessCard)
+    return `<div class="access"><div>${icon("location")}<span>Dostęp: <strong>${escape(accessCardSummary(accessCard))}</strong></span></div><small>${distanceMethod(score?.distance_method)}</small><p>${escape(topPointSummary(accessCard))}</p></div>`;
   return `<div class="access"><div>${icon("location")}<span>Orientacyjne dojście <strong>${distanceLabel(score?.d_park_m)}</strong></span></div><small>${distanceMethod(score?.distance_method)}</small><p>${entranceLabel(score?.entrance_status)} · brak współrzędnych wejścia w danych.</p></div>`;
 }
 // Plan 2.1 step B3 (spec §5.3 pkt 3): species composition, density, podszyt,
@@ -662,6 +725,9 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
       }
     }
     map?.setData(entries);
+    map?.setAccessData(data.accessPoints, data.forestRoads);
+    for (const l of ACCESS_LAYERS) map?.setLayerVisible(l.id, layerState[l.id]);
+    renderLayerControls(data.accessPoints, data.forestRoads);
     if (viewMode === "regions" && regionViews.length) {
       map?.selectGroup(
         regionViews[0].members.map((m) => m.score.stand_id),
@@ -684,6 +750,8 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
     // misleadingly looks like it's still the current view.
     entries = [];
     map?.setData([]);
+    map?.setAccessData(null, null);
+    $("#layer-controls").hidden = true;
     map?.select("");
     renderPanel();
   }
