@@ -1,6 +1,10 @@
 # Notatki przekazania dla Claude Code
 
-## 2026-09-28 — aktualne (28): Faza 1.5 — opad z radaru per wydzielenie (~1 km, ważony powierzchniowo)
+## 2026-09-28 — aktualne (29): Faza 2 (część autonomiczna: 2.1, 2.2, 2.3, projekt 2.0)
+
+Gałąź `ulepszenia-faza2` (z `master` po scaleniu 1.6). Raport: `docs/RAPORT_FAZA_2.md`. Zrobione: **2.2** archiwum prognoz (`pipeline/forecast_archive.py`, hak w `fetch_weather_raw`, `cache/archiwum_prognoz/`, tylko-dopisujące); **2.1** walidator zapisów wyjść (`pipeline/field_data.py`, `scripts/sprawdz_dane_terenowe.py`, `docs/ZAPIS_WYJSC.md`, szablony `dane_terenowe_szablony/`, `/dane_terenowe/` w `.gitignore`, przypomnienie w launcherze); **2.3** inwentaryzacja GBIF (`notebooks/10_…`, `11_…`): 1167 rekordów B. edulis w PL, 360 z niepewnością ≤ 100 m, z tego 274 w lesie D-STAN od 110 obserwatorów; region Katowice ma tylko 52 rekordy ≤ 100 m. **2.0** (`docs/WALIDACJA_REGULY.md`) to projekt czekający na zatwierdzenie właściciela — **do tego czasu nie uruchamiać 2.4 ani 2.5**. Nie zrobione: 2.4–2.8, opcjonalny `scripts/zapisz_prognoze.py`. Testy: backend 646 (przed dopisaniem `test_forecast_archive`/`test_field_data` było 639); frontend nietknięty.
+
+## 2026-09-28 — (28): Faza 1.5 — opad z radaru per wydzielenie (~1 km, ważony powierzchniowo)
 
 Zrealizowany `docs/PLAN_WDROZENIA.md` sekcja "Faza 1.5", pełny raport w `docs/RAPORT_FAZA_1_5.md`, gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`).
 
