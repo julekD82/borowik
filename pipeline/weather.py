@@ -254,6 +254,88 @@ def _exp_weighted_mean(series: pd.Series, window: int, half_life_days: float = 1
     return float((tail.to_numpy(dtype=float) * weights).sum() / weights.sum())
 
 
+def precip_derived_features(p: pd.Series, radar_frac: pd.Series | None = None) -> dict:
+    """Everything derived purely from a daily precipitation series (+ its
+    optional radar_frac companion): p5, p26w, days_since_p10,
+    rain_radar_coverage. Plan 1.5: pulled out of `compute_weather_features`
+    so the per-stand radar path (pipeline.orchestrate.run_poc's
+    `stand_precip_daily`) can recompute the SAME precip-only features from a
+    stand's own merged precip series -- combined there with the shared
+    weather point's et026w into a stand-specific cwb26 -- without
+    duplicating this logic (or its days_since_p10 edge cases) a second time.
+
+    `p5` feeds score_temperature's heat penalty (spec §4.3: Tmean5 > 17.5°C
+    AND P5 < 5 mm), profile key heat_penalty_p5_mm. `rain_radar_coverage` is
+    plan A1's exp-weighted share of the P26w window whose rain came from the
+    IMGW radar rather than Open-Meteo's model."""
+    p26w = _exp_weighted_sum(p, window=min(26, len(p)))
+    rain_radar_coverage = (
+        _exp_weighted_mean(radar_frac, window=min(26, len(p)))
+        if radar_frac is not None else 0.0
+    )
+    at_or_above_10 = p[p >= 10.0]
+    if len(at_or_above_10):
+        last_p10_pos = p.index.get_indexer(at_or_above_10.index).max()
+        days_since_p10 = (len(p) - 1) - last_p10_pos
+    else:
+        days_since_p10 = len(p)
+    return {
+        "p5": _rolling_sum(p, 5), "p26w": p26w,
+        "days_since_p10": days_since_p10, "rain_radar_coverage": rain_radar_coverage,
+    }
+
+
+def stand_precip_features_table(stand_precip_daily: pd.DataFrame) -> pd.DataFrame:
+    """Plan 1.5 performance: the same per-stand p5/p26w/rain_radar_coverage
+    `precip_derived_features` would give for each stand_id's own group, but
+    computed in one vectorized pass over the whole frame instead of
+    materialising one pandas group object per stand.
+
+    Why this exists: `{sid: g for sid, g in df.groupby("stand_id")}` (the
+    first version of this) forces pandas to build one full DataFrame per
+    group -- fine for the ~144 weather-point groups `compute_weather_features`
+    handles, but at the tens-of-thousands-of-stands scale of a real
+    prepare_trip run, materialising every group up front dominated total
+    run time (many minutes, still climbing, on a real 19716-stand Kieleczka
+    20 km run 2026-09-28) instead of the couple of seconds it should take.
+
+    Fast path: if every stand has the same number of rows in the same
+    chronological order (guaranteed by construction -- stand_radar_precip_
+    daily builds one row per stand per date of the SAME shared weather
+    fetch), reshape straight into a (n_stands, n_dates) matrix and compute
+    every stand's exp-weighted sum with two matrix-vector products, no
+    per-stand Python loop at all. Falls back to the exact per-group
+    computation (same numbers, just slower) when that assumption doesn't
+    hold, e.g. a hand-built test fixture with uneven series lengths -- never
+    silently wrong, only silently slower in that case."""
+    df = stand_precip_daily.sort_values(["stand_id", "date"], kind="mergesort")
+    sizes = df.groupby("stand_id", sort=False).size()
+    if sizes.nunique() != 1:
+        rows = []
+        for sid, g in df.groupby("stand_id", sort=False):
+            feat = precip_derived_features(g["precipitation_mm"], g["radar_frac"])
+            rows.append({"stand_id": sid, "p5": feat["p5"], "p26w": feat["p26w"],
+                        "rain_radar_coverage": feat["rain_radar_coverage"]})
+        return pd.DataFrame(rows).set_index("stand_id")
+
+    n_stands = len(sizes)
+    n_dates = int(sizes.iloc[0])
+    stand_order = df["stand_id"].to_numpy().reshape(n_stands, n_dates)[:, 0]
+    precip = df["precipitation_mm"].to_numpy(dtype=float).reshape(n_stands, n_dates)
+    radar_frac = df["radar_frac"].to_numpy(dtype=float).reshape(n_stands, n_dates)
+
+    window = min(26, n_dates)
+    ages = np.arange(window - 1, -1, -1)
+    weights = 0.5 ** (ages / 10.0)
+    p26w = precip[:, -window:] @ weights
+    rain_radar_coverage = (radar_frac[:, -window:] @ weights) / weights.sum()
+    p5 = precip[:, -min(5, n_dates):].sum(axis=1)
+
+    return pd.DataFrame(
+        {"p5": p5, "p26w": p26w, "rain_radar_coverage": rain_radar_coverage}, index=stand_order,
+    ).rename_axis("stand_id")
+
+
 def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
     """Each window is `.iloc[-N:]` on `group`, sorted chronologically --
     i.e. it ends on whatever the LAST row of `daily_df` is, not "today".
@@ -267,37 +349,29 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
     them as features -- redundant with P26w/CWB26), dead weight kept only
     for a table nobody read. days_since_p10 stays -- it's the one dead-to-F
     window feature spec §5.4 explicitly keeps, for the regional banner
-    ("ostatni opad >= 10 mm: X dni temu"), not as an F input."""
+    ("ostatni opad >= 10 mm: X dni temu"), not as an F input.
+
+    `et026w` (plan 1.5): the CWB26 window's evapotranspiration half, exposed
+    separately from `cwb26` itself so a per-stand radar-precip override
+    (orchestrate.run_poc) can recombine it with a stand-specific p26w
+    instead of this weather point's own -- ET0/temperature/climatology are
+    unaffected by Phase 1.5, only precipitation is."""
     rows = []
     for (lat, lon), group in daily_df.sort_values("date").groupby(["lat", "lon"]):
         p = group["precipitation_mm"]
         et0 = group["et0_mm"]
         tmean = group["tmean_c"]
         tmin = group["tmin_c"]
-        p26w = _exp_weighted_sum(p, window=min(26, len(p)))
         et026w = _exp_weighted_sum(et0, window=min(26, len(et0)))
-        # Plan A1: share of the P26w window's weight whose rain came from
-        # the IMGW radar (pipeline.radar) rather than Open-Meteo's model.
-        rain_radar_coverage = (
-            _exp_weighted_mean(group["radar_frac"], window=min(26, len(p)))
-            if "radar_frac" in group else 0.0
-        )
-        at_or_above_10 = group[p >= 10.0]
-        if len(at_or_above_10):
-            last_p10_pos = group.index.get_indexer(at_or_above_10.index).max()
-            days_since_p10 = (len(group) - 1) - last_p10_pos
-        else:
-            days_since_p10 = len(group)
+        precip_feat = precip_derived_features(p, group["radar_frac"] if "radar_frac" in group else None)
         rows.append({
             "lat": lat, "lon": lon, "date": group["date"].iloc[-1],
-            # p5 feeds score_temperature's heat penalty (spec §4.3: Tmean5 >
-            # 17.5 °C AND P5 < 5 mm), profile key heat_penalty_p5_mm.
-            "p5": _rolling_sum(p, 5),
-            "p26w": p26w, "cwb26": p26w - et026w,
+            "p5": precip_feat["p5"],
+            "p26w": precip_feat["p26w"], "cwb26": precip_feat["p26w"] - et026w, "et026w": et026w,
             "tmean5": tmean.iloc[-5:].mean(), "tmean20": tmean.iloc[-20:].mean(),
             "tmin3": tmin.iloc[-3:].min(),
-            "days_since_p10": days_since_p10,
-            "rain_radar_coverage": rain_radar_coverage,
+            "days_since_p10": precip_feat["days_since_p10"],
+            "rain_radar_coverage": precip_feat["rain_radar_coverage"],
         })
     return pd.DataFrame(rows)
 

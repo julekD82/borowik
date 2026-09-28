@@ -14,6 +14,8 @@ from pipeline.weather import (
     percentile_rank,
     climatology_window_insufficient,
     to_local_date,
+    precip_derived_features,
+    stand_precip_features_table,
 )
 
 _WARSAW = ZoneInfo("Europe/Warsaw")
@@ -410,3 +412,52 @@ def test_compute_weather_features_without_radar_frac_reports_zero_coverage():
                        "tmean_c": 12.0, "tmin_c": 6.0, "tmax_c": 18.0, "et0_mm": 1.0,
                        "soil_moisture": 0.3})
     assert compute_weather_features(df).iloc[0]["rain_radar_coverage"] == 0.0
+
+
+def _uniform_stand_precip(stand_specs: dict[str, tuple[float, float]], n_days: int = 30) -> pd.DataFrame:
+    """`stand_specs`: {stand_id: (precip_mm_per_day, radar_frac)} -- every
+    stand gets the SAME date range (n_days), just different constant values,
+    matching the real shape stand_radar_precip_daily always produces (one
+    row per stand per date of one shared weather fetch)."""
+    dates = pd.date_range("2026-08-01", periods=n_days, freq="D")
+    frames = []
+    for sid, (mm, frac) in stand_specs.items():
+        frames.append(pd.DataFrame({"stand_id": sid, "date": dates, "precipitation_mm": mm, "radar_frac": frac}))
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_stand_precip_features_table_matches_precip_derived_features_per_stand():
+    df = _uniform_stand_precip({"a": (2.0, 1.0), "b": (10.0, 0.25)}, n_days=30)
+    table = stand_precip_features_table(df)
+    for sid in ("a", "b"):
+        g = df[df["stand_id"] == sid].sort_values("date")
+        expected = precip_derived_features(g["precipitation_mm"], g["radar_frac"])
+        assert table.loc[sid, "p5"] == pytest.approx(expected["p5"])
+        assert table.loc[sid, "p26w"] == pytest.approx(expected["p26w"])
+        assert table.loc[sid, "rain_radar_coverage"] == pytest.approx(expected["rain_radar_coverage"])
+
+
+def test_stand_precip_features_table_row_order_does_not_matter():
+    df = _uniform_stand_precip({"a": (2.0, 1.0), "b": (10.0, 0.25)}, n_days=30)
+    shuffled = df.sample(frac=1.0, random_state=0).reset_index(drop=True)
+    table = stand_precip_features_table(shuffled)
+    expected = stand_precip_features_table(df)
+    assert table.loc["a"].tolist() == pytest.approx(expected.loc["a"].tolist())
+    assert table.loc["b"].tolist() == pytest.approx(expected.loc["b"].tolist())
+
+
+def test_stand_precip_features_table_falls_back_for_uneven_group_sizes():
+    # Real stand_radar_precip_daily output always has one row per stand per
+    # shared date range (uniform) -- this exercises the defensive fallback
+    # path for a hand-built fixture that doesn't hold that invariant.
+    dates_a = pd.date_range("2026-08-01", periods=10, freq="D")
+    dates_b = pd.date_range("2026-08-01", periods=5, freq="D")
+    df = pd.concat([
+        pd.DataFrame({"stand_id": "a", "date": dates_a, "precipitation_mm": 2.0, "radar_frac": 1.0}),
+        pd.DataFrame({"stand_id": "b", "date": dates_b, "precipitation_mm": 10.0, "radar_frac": 0.5}),
+    ], ignore_index=True)
+    table = stand_precip_features_table(df)
+    expected_a = precip_derived_features(pd.Series([2.0] * 10), pd.Series([1.0] * 10))
+    expected_b = precip_derived_features(pd.Series([10.0] * 5), pd.Series([0.5] * 5))
+    assert table.loc["a", "p26w"] == pytest.approx(expected_a["p26w"])
+    assert table.loc["b", "p26w"] == pytest.approx(expected_b["p26w"])

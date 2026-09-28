@@ -311,6 +311,47 @@ def test_build_weather_fetcher_returns_base_when_radar_disabled(tmp_path):
                                       cache_dir=tmp_path) is base
 
 
+def test_build_weather_fetcher_leaves_fetcher_raw_in_stand_mode(tmp_path):
+    # Plan 1.5: radar.mode: stand decides precipitation per stand elsewhere
+    # (stand_radar_precip_daily) -- the shared weather-point fetcher must NOT
+    # also get block-mode radar wrapped in, or precip would be double-counted.
+    import pipeline.prepare_trip as trip
+    base = object()
+    profile = {"radar": {"enabled": True, "window_days": 30, "min_coverage_for_quality": 0.8, "mode": "stand"}}
+    assert trip.build_weather_fetcher(base, use_radar=True, profile=profile, grid_spacing_m=4000.0,
+                                      cache_dir=tmp_path) is base
+
+
+def test_radar_mode_off_block_stand():
+    import pipeline.prepare_trip as trip
+    enabled = {"radar": {"enabled": True, "window_days": 30}}
+    disabled = {"radar": {"enabled": False, "window_days": 30}}
+    assert trip.radar_mode(disabled, use_radar=True) == "off"
+    assert trip.radar_mode(enabled, use_radar=False) == "off"
+    assert trip.radar_mode(enabled, use_radar=True) == "block"  # no "mode" key -- pre-1.5 default
+    assert trip.radar_mode({"radar": {**enabled["radar"], "mode": "stand"}}, use_radar=True) == "stand"
+
+
+def test_nearest_weather_point_per_stand_picks_the_closest_grid_point():
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    import pipeline.prepare_trip as trip
+
+    stands = gpd.GeoDataFrame(
+        {"stand_id": ["a", "b"]},
+        geometry=[box(0, 0, 10, 10), box(9990, 9990, 10000, 10000)],
+        crs="EPSG:2180",
+    )
+    grid_points_2180 = [(0.0, 0.0), (10000.0, 10000.0)]
+    from pyproj import Transformer
+    to_4326 = Transformer.from_crs("EPSG:2180", "EPSG:4326", always_xy=True)
+    grid_points = [(lat, lon) for lon, lat in (to_4326.transform(x, y) for x, y in grid_points_2180)]
+    out = trip.nearest_weather_point_per_stand(stands, grid_points)
+    assert out["a"] == grid_points[0]
+    assert out["b"] == grid_points[1]
+
+
 def test_points_within_radius_keeps_only_points_inside_the_circle():
     import pipeline.prepare_trip as trip
     center = (50.0555, 21.7889)

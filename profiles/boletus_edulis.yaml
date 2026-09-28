@@ -221,6 +221,15 @@ radar:
   enabled: true
   window_days: 30                # covers P26w (26 d) + P5
   min_coverage_for_quality: 0.8  # rain_radar_coverage threshold for pogoda_radar_1km
+  # Plan 1.5 (docs/RAPORT_FAZA_1_5.md ma uzasadnienie i liczby):
+  # "block" (sprzed 1.5, srednia RainGRS na cala kratke pogodowa, wspolna dla
+  # wielu wydzielen) albo "stand" (RainGRS wazona powierzchniowo na WLASNYM
+  # wielokacie kazdego wydzielenia, ~1 km). Tylko opad jest per-wydzielenie w
+  # trybie stand -- temperatura/ET0/klimatologia zostaja na siatce blokowej.
+  mode: stand
+  # Promien filtra przestrzennego (komorki 1 km) przed probkowaniem, 0..3.
+  # 0 = surowe dane 1 km. Patrz docs/RAPORT_FAZA_1_5.md 1.5.5 za uzasadnienie.
+  smoothing_km: 1
 
 flush:
   # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):

@@ -22,9 +22,12 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 from pyproj import Transformer
+from shapely.geometry import box as shapely_box
 
 from pipeline.weather import to_local_date
 
@@ -134,6 +137,185 @@ def sample_stack(stack: np.ndarray, slices) -> np.ndarray:
             block = stack[:, sl[0], sl[1]].reshape(stack.shape[0], -1)
             out[:, j] = np.nanmean(block, axis=1)
     return out
+
+
+def cell_bounds(header: GridHeader, row: int, col: int) -> tuple[float, float, float, float]:
+    """(minx, miny, maxx, maxy) of the grid cell at array index (row, col) --
+    row counted from the top (north), as in `parse_grs_asc`'s output and
+    `block_slices`'s slices. Plan 1.5.1: shared by the stand-polygon weight
+    builder below."""
+    cs = header.cellsize
+    y_top = header.yllcorner + (header.nrows - row) * cs
+    x_left = header.xllcorner + col * cs
+    return x_left, y_top - cs, x_left + cs, y_top
+
+
+def _bbox_cell_range(header: GridHeader, minx: float, miny: float, maxx: float, maxy: float,
+                      margin_cells: int = 0) -> tuple[int, int, int, int]:
+    """(row0, row1, col0, col1) array-index range (inclusive, row 0 = north)
+    of every cell overlapping [minx, maxx] x [miny, maxy], expanded by
+    `margin_cells` on every side and clipped to the grid -- the margin gives
+    `smooth_grid_stack` real neighbours at the edge of the cropped window
+    instead of an artificial zero-padded boundary."""
+    cs = header.cellsize
+    c0 = math.floor((minx - header.xllcorner) / cs) - margin_cells
+    c1 = math.floor((maxx - header.xllcorner) / cs) + margin_cells
+    k0 = math.floor((miny - header.yllcorner) / cs) - margin_cells  # k = row from bottom
+    k1 = math.floor((maxy - header.yllcorner) / cs) + margin_cells
+    c0, c1 = max(c0, 0), min(c1, header.ncols - 1)
+    k0, k1 = max(k0, 0), min(k1, header.nrows - 1)
+    row0, row1 = header.nrows - 1 - k1, header.nrows - 1 - k0
+    return row0, row1, c0, c1
+
+
+def smoothing_radius_cells(smoothing_km: float, cellsize_m: float) -> int:
+    """Plan 1.5.2: `radar.smoothing_km` in {0,1,2,3} as a whole number of
+    grid cells (RainGRS cellsize is 1000 m, so normally 1:1 -- the division
+    only matters if a test grid uses a different cellsize)."""
+    if smoothing_km <= 0:
+        return 0
+    return max(1, round(smoothing_km * 1000.0 / cellsize_m))
+
+
+def smooth_grid_stack(stack: np.ndarray, radius_cells: int) -> np.ndarray:
+    """NaN-aware spatial box filter over the last two axes of `stack`
+    (..., nrows, ncols): each cell becomes the mean of the (2r+1)x(2r+1)
+    square around it, counting only non-NaN neighbours (a cell with zero
+    valid neighbours stays NaN). Plan 1.5.2: protects against a single noisy
+    radar cell/beam-shadow artefact dominating a stand's sample; radius_cells
+    = 0 returns `stack` unchanged (no smoothing, raw 1 km field)."""
+    if radius_cells <= 0:
+        return stack
+    from scipy.ndimage import uniform_filter
+
+    size = 2 * radius_cells + 1
+    valid = ~np.isnan(stack)
+    filled = np.nan_to_num(stack, nan=0.0)
+    window_area = float(size * size)
+    axes = tuple(range(stack.ndim - 2, stack.ndim))
+    sum_vals = uniform_filter(filled, size=size, mode="constant", cval=0.0, axes=axes) * window_area
+    sum_valid = uniform_filter(valid.astype(np.float64), size=size, mode="constant", cval=0.0, axes=axes) * window_area
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)  # 0/0 where sum_valid == 0
+        smoothed = sum_vals / sum_valid
+    smoothed[sum_valid == 0] = np.nan
+    return smoothed
+
+
+@dataclass
+class StandWeights:
+    """Plan 1.5.1: a sparse (n_stands x n_crop_cells) area-weight matrix
+    mapping each stand polygon to the RainGRS 1 km cells it overlaps, plus
+    where that crop sits inside the full national grid (row0/col0) so the
+    same-shaped slice of any day's grid lines up with `weights`'s columns."""
+    stand_ids: list
+    row0: int
+    col0: int
+    n_rows: int
+    n_cols: int
+    weights: sp.csr_matrix  # (len(stand_ids), n_rows * n_cols), rows sum to <= 1
+    spatial_coverage: np.ndarray  # (len(stand_ids),) -- 1.0 unless part of the stand fell outside the grid
+
+
+def build_stand_cell_weights(stands: gpd.GeoDataFrame, header: GridHeader, margin_cells: int = 0) -> StandWeights:
+    """Plan 1.5.1: one weight per (stand, overlapping cell) pair, weight =
+    share of the stand's area covered by that cell. A stand smaller than one
+    cell (the common case -- a RainGRS cell is 100 ha, most wydzielenia are a
+    few ha) takes its centroid's cell with weight 1 (spec 1.5.1); a larger
+    stand's weight is the real intersection area with every cell it
+    overlaps, normalised by the total intersected area (so weights sum to 1
+    even if geometry/CRS rounding leaves a sliver uncovered). `stands` must
+    already be in the grid's own CRS (EPSG:2180 for RainGRS -- true for BDL
+    stand geometries, no reprojection needed)."""
+    cs = header.cellsize
+    cell_area = cs * cs
+    xll, yll, nrows, ncols = header.xllcorner, header.yllcorner, header.nrows, header.ncols
+    stand_ids = stands["stand_id"].tolist()
+    geoms = stands.geometry.to_numpy()
+    minx, miny, maxx, maxy = stands.total_bounds
+    row0, row1, col0, col1 = _bbox_cell_range(header, minx, miny, maxx, maxy, margin_cells)
+    n_rows, n_cols = row1 - row0 + 1, col1 - col0 + 1
+
+    cell_index: dict[tuple[int, int], int] = {}
+    rows_idx, cols_idx, weight_vals = [], [], []
+    spatial_coverage = np.ones(len(stand_ids), dtype=np.float64)
+
+    def _local_col(row: int, col: int) -> int:
+        key = (row - row0, col - col0)
+        idx = cell_index.get(key)
+        if idx is None:
+            idx = key[0] * n_cols + key[1]
+            cell_index[key] = idx
+        return idx
+
+    for i, geom in enumerate(geoms):
+        centroid = geom.centroid
+        cx, cy = centroid.x, centroid.y
+        c = math.floor((cx - xll) / cs)
+        k = math.floor((cy - yll) / cs)  # row from bottom
+        if not (0 <= c < ncols and 0 <= k < nrows):
+            spatial_coverage[i] = 0.0
+            continue
+        centroid_row = nrows - 1 - k
+        if geom.area <= cell_area:
+            rows_idx.append(i)
+            cols_idx.append(_local_col(centroid_row, c))
+            weight_vals.append(1.0)
+            continue
+        gminx, gminy, gmaxx, gmaxy = geom.bounds
+        r0, r1, cc0, cc1 = _bbox_cell_range(header, gminx, gminy, gmaxx, gmaxy)
+        found = []
+        for r in range(r0, r1 + 1):
+            for cidx in range(cc0, cc1 + 1):
+                cell_poly = shapely_box(*cell_bounds(header, r, cidx))
+                inter_area = geom.intersection(cell_poly).area
+                if inter_area > 0:
+                    found.append((r, cidx, inter_area))
+        total = sum(a for _, _, a in found)
+        if total <= 0:
+            # Geometry entirely outside the grid (shouldn't happen for a
+            # Polish forest stand, but a defensive fallback all the same):
+            # keep the centroid-cell behaviour rather than dropping the stand.
+            if 0 <= c < ncols and 0 <= k < nrows:
+                rows_idx.append(i)
+                cols_idx.append(_local_col(centroid_row, c))
+                weight_vals.append(1.0)
+            else:
+                spatial_coverage[i] = 0.0
+            continue
+        spatial_coverage[i] = min(1.0, total / geom.area)
+        for r, cidx, area in found:
+            rows_idx.append(i)
+            cols_idx.append(_local_col(r, cidx))
+            weight_vals.append(area / total)
+
+    weights = sp.csr_matrix(
+        (weight_vals, (rows_idx, cols_idx)), shape=(len(stand_ids), n_rows * n_cols),
+    )
+    return StandWeights(stand_ids=stand_ids, row0=row0, col0=col0, n_rows=n_rows, n_cols=n_cols,
+                        weights=weights, spatial_coverage=spatial_coverage)
+
+
+def sample_stack_weighted(stack: np.ndarray, stand_weights: StandWeights) -> np.ndarray:
+    """(hours, n_rows, n_cols) grid crop -> (hours, n_stands) area-weighted
+    means, NaN-aware: an hour where every cell a stand overlaps is NaN gives
+    NaN for that stand/hour; a partially-NaN set of cells renormalises the
+    weighted mean over just the valid ones (mirrors `sample_stack`'s
+    NaN handling for the block-mean path, generalised to real area weights
+    via one sparse matmul per hour-batch instead of a python loop -- plan
+    1.5.1's "implementacja wektorowa")."""
+    h = stack.shape[0]
+    flat = stack.reshape(h, -1)
+    valid = ~np.isnan(flat)
+    filled = np.nan_to_num(flat, nan=0.0)
+    w = stand_weights.weights  # (S, C)
+    numerator = np.asarray(w @ filled.T)  # (S, H)
+    denom = np.asarray(w @ valid.T.astype(np.float64))  # (S, H)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)  # 0/0 where denom == 0
+        result = numerator / denom
+    result[denom == 0] = np.nan
+    return result.T  # (H, S)
 
 
 _NODATA_Q = 65535
@@ -329,27 +511,40 @@ def expected_local_hours(day: date) -> int:
 _DAILY_COLUMNS = ["lat", "lon", "local_date", "radar_mm", "radar_hours", "expected_hours"]
 
 
-def radar_daily_at_points(hourly: pd.DataFrame) -> pd.DataFrame:
+def radar_daily_at_points(hourly: pd.DataFrame, key_cols: tuple[str, ...] = ("lat", "lon")) -> pd.DataFrame:
     """Sum hours into local days. An hour belongs to the local day of its
     START (hour_end - 1 h). NaN hours (no radar data at the point) are not
-    counted, so they get gap-filled in merge_radar_into_daily."""
+    counted, so they get gap-filled in merge_radar_into_daily.
+
+    `key_cols` (plan 1.5.1): defaults to the original (lat, lon) block-point
+    identity; the per-stand radar path (`radar_hourly_at_stands`) reuses this
+    exact function with `key_cols=("stand_id",)` instead of duplicating the
+    local-day grouping logic (including its DST handling) for stands."""
+    key_cols = list(key_cols)
+    columns = key_cols + ["local_date", "radar_mm", "radar_hours", "expected_hours"]
     valid = hourly.dropna(subset=["precip_mm"])
     if valid.empty:
-        return pd.DataFrame(columns=_DAILY_COLUMNS)
+        return pd.DataFrame(columns=columns)
     start_local = (pd.to_datetime(valid["hour_end_utc"], utc=True) - pd.Timedelta(hours=1)).dt.tz_convert("Europe/Warsaw")
     grouped = (
         valid.assign(local_date=start_local.dt.date)
-        .groupby(["lat", "lon", "local_date"], as_index=False)
+        .groupby(key_cols + ["local_date"], as_index=False)
         .agg(radar_mm=("precip_mm", "sum"), radar_hours=("precip_mm", "size"))
     )
     grouped["expected_hours"] = grouped["local_date"].map(expected_local_hours)
-    return grouped[_DAILY_COLUMNS]
+    return grouped[columns]
 
 
 def merge_radar_into_daily(weather_daily: pd.DataFrame, radar_daily: pd.DataFrame,
-                           window_start: date, window_end: date) -> pd.DataFrame:
+                           window_start: date, window_end: date,
+                           key_cols: tuple[str, ...] = ("lat", "lon")) -> pd.DataFrame:
     """Plan A1 D6: precip = radar_sum + model * (1 - k/n) for local days in
-    [window_start, window_end] with k>0 radar hours; untouched otherwise."""
+    [window_start, window_end] with k>0 radar hours; untouched otherwise.
+
+    `key_cols` (plan 1.5.1): generalises the original (lat, lon) join key so
+    the same merge formula -- and the same DST-safe local-date handling --
+    serves the per-stand radar path with `key_cols=("stand_id",)`."""
+    key_cols = list(key_cols)
     out = weather_daily.reset_index(drop=True).copy()
     out["precipitation_mm"] = out["precipitation_mm"].astype(float)
     out["precipitation_mm_model"] = out["precipitation_mm"]
@@ -361,8 +556,8 @@ def merge_radar_into_daily(weather_daily: pd.DataFrame, radar_daily: pd.DataFram
     # docstring for why the noon-recentering matters here.
     local_date = to_local_date(out["date"])
     in_window = ((local_date >= window_start) & (local_date <= window_end)).to_numpy()
-    joined = radar_daily.set_index(["lat", "lon", "local_date"]).reindex(
-        pd.MultiIndex.from_arrays([out["lat"], out["lon"], local_date]))
+    joined = radar_daily.set_index(key_cols + ["local_date"]).reindex(
+        pd.MultiIndex.from_arrays([out[c] for c in key_cols] + [local_date]))
     hours = joined["radar_hours"].to_numpy(dtype=float)
     expected = joined["expected_hours"].to_numpy(dtype=float)
     has = in_window & np.nan_to_num(hours, nan=0.0).astype(bool)
@@ -382,6 +577,126 @@ def radar_window(today: date, window_days: int, now_utc: datetime) -> tuple[date
     nxt = today + timedelta(days=1)
     end_utc = min(now_utc, datetime(nxt.year, nxt.month, nxt.day, tzinfo=WARSAW).astimezone(timezone.utc))
     return window_start, today, start_utc, end_utc
+
+
+def radar_hourly_at_stands(stands: gpd.GeoDataFrame, smoothing_km: float,
+                           start_utc: datetime, end_utc: datetime, cache_dir,
+                           http_get=None, now_utc: datetime | None = None) -> pd.DataFrame:
+    """Plan 1.5.1/1.5.2: hourly RainGRS, area-weighted per stand polygon
+    (`build_stand_cell_weights`) instead of a block mean around a shared
+    weather point, with an optional NaN-aware spatial smoothing pass
+    (`smooth_grid_stack`) first. Reuses the exact same per-day cache/fetch
+    path as `radar_hourly_at_points` (`_load_or_fetch_day`) -- a run that
+    already has block-mode radar cached for this window fetches nothing new
+    for stand mode, and vice versa.
+
+    Returns a long frame [stand_id, hour_end_utc, precip_mm] with a
+    `.attrs["spatial_coverage"]` dict {stand_id: fraction of the stand's own
+    area actually covered by a grid cell -- plan 1.5.1's "pokrycie
+    przestrzenne", tracked separately from the per-hour data-availability
+    fraction that `radar_daily_at_points`/`merge_radar_into_daily` already
+    compute as radar_hours/expected_hours}."""
+    http_get = http_get or _default_http_get
+    now_utc = now_utc or datetime.now(timezone.utc)
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    frames, sources = [], {}
+    stand_weights: StandWeights | None = None
+    day = start_utc.date()
+    while day <= end_utc.date():
+        if datetime(day.year, day.month, day.day, tzinfo=timezone.utc) > now_utc:
+            break
+        data, source = _load_or_fetch_day(day, cache_dir, http_get, now_utc)
+        sources[source] = sources.get(source, 0) + 1
+        day += timedelta(days=1)
+        if data is None:
+            continue
+        if stand_weights is None:
+            radius_cells = smoothing_radius_cells(smoothing_km, data.header.cellsize)
+            stand_weights = build_stand_cell_weights(stands, data.header, margin_cells=radius_cells)
+        keep = [i for i, h in enumerate(data.hour_ends) if start_utc < h <= end_utc]
+        if not keep:
+            continue
+        crop_q = data.q[np.ix_(keep,
+                               range(stand_weights.row0, stand_weights.row0 + stand_weights.n_rows),
+                               range(stand_weights.col0, stand_weights.col0 + stand_weights.n_cols))]
+        crop = dequantize(crop_q)
+        radius_cells = smoothing_radius_cells(smoothing_km, data.header.cellsize)
+        crop = smooth_grid_stack(crop, radius_cells)
+        values = sample_stack_weighted(crop, stand_weights)
+        hours = pd.DatetimeIndex([data.hour_ends[i] for i in keep])
+        frames.append(pd.DataFrame({
+            "stand_id": np.tile(stand_weights.stand_ids, len(keep)),
+            "hour_end_utc": hours.repeat(len(stand_weights.stand_ids)),
+            "precip_mm": values.reshape(-1),
+        }))
+    print("Radar IMGW (RainGRS, per wydzielenie): " +
+          ", ".join(f"{k} {v}" for k, v in sorted(sources.items())) + " dob", flush=True)
+    if not frames:
+        empty = pd.DataFrame({"stand_id": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"), "precip_mm": []})
+        empty.attrs["spatial_coverage"] = {}
+        return empty
+    out = pd.concat(frames, ignore_index=True)
+    out.attrs["spatial_coverage"] = (
+        dict(zip(stand_weights.stand_ids, stand_weights.spatial_coverage.tolist())) if stand_weights else {}
+    )
+    return out
+
+
+def stand_radar_precip_daily(stands: gpd.GeoDataFrame, nearest_weather_point: dict,
+                             base_weather_daily: pd.DataFrame, *, smoothing_km: float, window_days: int,
+                             cache_dir, http_get=None, now_utc: datetime | None = None,
+                             today: date | None = None, radar_hourly_fn=None) -> pd.DataFrame:
+    """Plan 1.5: per-stand daily precipitation -- RainGRS sampled over each
+    stand's own polygon for local days in the radar window, gap-filled
+    outside that window (and for hours radar doesn't cover inside it) with
+    the Open-Meteo model precip of `nearest_weather_point[stand_id]`, via the
+    exact same merge formula `make_radar_weather_fetcher` uses for the
+    block-mode path (`merge_radar_into_daily`, generalised with
+    `key_cols=("stand_id",)`).
+
+    `base_weather_daily` must be the RAW model fetch (no radar already
+    merged in) at the weather grid points -- the caller passes the
+    un-wrapped base fetcher's own output, not `build_weather_fetcher`'s
+    radar-wrapped one, precisely so precipitation is decided per stand here
+    instead of per weather point. IMGW failures never abort a run (D9, same
+    contract as `make_radar_weather_fetcher`): every stand just falls back
+    to 100% model precip with radar_frac = 0."""
+    radar_hourly_fn = radar_hourly_fn or radar_hourly_at_stands
+    now = now_utc or datetime.now(timezone.utc)
+    local_today = today or now.astimezone(WARSAW).date()
+    window_start, window_end, start_utc, end_utc = radar_window(local_today, window_days, now)
+
+    stand_ids = stands["stand_id"].tolist()
+    point_by_stand = pd.DataFrame({
+        "stand_id": stand_ids,
+        "lat": [nearest_weather_point[sid][0] for sid in stand_ids],
+        "lon": [nearest_weather_point[sid][1] for sid in stand_ids],
+    })
+    stand_model_daily = point_by_stand.merge(
+        base_weather_daily[["lat", "lon", "date", "precipitation_mm"]], on=["lat", "lon"], how="left",
+    )[["stand_id", "date", "precipitation_mm"]]
+
+    try:
+        hourly = radar_hourly_fn(stands, smoothing_km, start_utc, end_utc, cache_dir,
+                                 http_get=http_get, now_utc=now)
+        spatial_coverage = hourly.attrs.get("spatial_coverage", {})
+    except RadarUnavailableError as exc:
+        print(f"UWAGA: radar IMGW niedostepny ({exc}) -- opady na wydzielenie tylko z modelu Open-Meteo.",
+              flush=True)
+        hourly = pd.DataFrame({"stand_id": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"), "precip_mm": []})
+        spatial_coverage = {}
+    except Exception as exc:  # D9: never fail a run because of IMGW.
+        print(f"UWAGA: radar IMGW niedostepny (blad: {exc}) -- opady na wydzielenie tylko z modelu Open-Meteo.",
+              flush=True)
+        hourly = pd.DataFrame({"stand_id": [], "hour_end_utc": pd.DatetimeIndex([], tz="UTC"), "precip_mm": []})
+        spatial_coverage = {}
+
+    radar_daily = radar_daily_at_points(hourly, key_cols=("stand_id",))
+    merged = merge_radar_into_daily(stand_model_daily, radar_daily, window_start, window_end,
+                                    key_cols=("stand_id",))
+    merged.attrs["spatial_coverage"] = spatial_coverage
+    return merged
 
 
 def make_radar_weather_fetcher(base_fetcher, *, half_size_m: float, window_days: int, cache_dir,

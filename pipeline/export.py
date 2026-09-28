@@ -246,6 +246,10 @@ DIAGNOSTICS_FIELDS = [
     # Plan 1.3: share sum < 0.9 in this stand's package composition (does not
     # apply to a WFS-sourced S_host, which has no share sum to check).
     "sklad_niepelny",
+    # Plan 1.5.3: exp-weighted share of the P26w window whose rain came from
+    # the IMGW radar rather than Open-Meteo's model -- per stand (its own 1 km
+    # RainGRS series) in radar.mode: stand, per shared weather point otherwise.
+    "rain_radar_coverage",
 ]
 
 

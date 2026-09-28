@@ -1,6 +1,20 @@
 # Notatki przekazania dla Claude Code
 
-## 2026-09-27 — aktualne (27): A2 — model fazy wysypu NIE przeszedł bramki GBIF; wdrożono Plan-B (F na 7 dni + fakty o deszczu)
+## 2026-09-28 — aktualne (28): Faza 1.5 — opad z radaru per wydzielenie (~1 km, ważony powierzchniowo)
+
+Zrealizowany `docs/PLAN_WDROZENIA.md` sekcja "Faza 1.5", pełny raport w `docs/RAPORT_FAZA_1_5.md`, gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`).
+
+**Co się zmieniło:** opad (tylko opad — temperatura/ET0/klimatologia zostają na siatce pogodowej) jest teraz domyślnie liczony osobno dla każdego wydzielenia z siatki RainGRS ~1 km, ważony powierzchniowo przecięciem wielokąta wydzielenia z komórkami radaru (macierz rzadka, `pipeline.radar.build_stand_cell_weights`/`sample_stack_weighted`), zamiast jednej wspólnej średniej blokowej dla wielu wydzieleń na tym samym punkcie pogody. Nowy profil: `radar.mode: stand` (domyślnie, `block` = stare zachowanie nadal dostępne) i `radar.smoothing_km: 1` (filtr skrzynkowy NaN-aware przed próbkowaniem, wybrany empirycznie — patrz raport).
+
+**Realna usterka wydajności znaleziona i naprawiona w trakcie oceny:** pierwsza wersja per-wydzieleniowej agregacji (`{sid: g for sid, g in df.groupby("stand_id")}`) materializowała osobny obiekt DataFrame na każde z 19716 wydzieleń Kieleczki — znany antywzorzec pandas, w praktyce ~5 GB pamięci i dziesiątki minut bez końca widocznego postępu. Naprawione wektorowo (`pipeline.weather.stand_precip_features_table` — reshape do macierzy i iloczyn macierzowy zamiast pętli po grupach); bez tej poprawki `radar.mode: stand` byłby praktycznie nieużywalny w realnej skali wyszukiwania.
+
+**Walidacja na realnych danych (bez API — tylko cache lokalny):** porównanie ze stacjami Weathercloud dla `smoothing_km` 0–3 (wybrano 1); porównanie block vs stand na epizodzie burzowym 29.08–03.09 na wszystkich 19716 wydzieleniach Kieleczki (Spearman rho 0,933, różnice skoncentrowane i ograniczone, nie szum); pełny przebieg Kieleczka 20 km 2026-09-28 (`docs/porownania/faza1_5/` vs `docs/porownania/nowy/`): Spearman rho(R) = 0,9835, top-20 pokrywa się w 15/20, wszystkie największe awanse/spadki w rankingu tłumaczone realną zmianą pct_CWB26 (P niezmienione). Spójność percentyli (1.5.4) zmierzona i uznana za niewymagającą korekty — rozkład pct_CWB26 prawie identyczny w obu trybach.
+
+**Testy:** backend `pytest` 596/596, frontend `npx vitest run` 72/72 + `tsc --noEmit` czysto.
+
+**Otwarte:** ocena oparta na jednym przebiegu (Kieleczka, wrzesień, opad umiarkowany) i 4 stacjach Weathercloud — mała próba. Warto powtórzyć przy realnej okazji z wyraźniejszą konwekcją letnią i/lub innym promieniem wyszukiwania, zanim `smoothing_km`/`mode` zostaną uznane za w pełni skalibrowane (patrz też Faza 5 w planie — kalibracja dopiero po danych terenowych).
+
+## 2026-09-27 — (27): A2 — model fazy wysypu NIE przeszedł bramki GBIF; wdrożono Plan-B (F na 7 dni + fakty o deszczu)
 
 Zrealizowany plan `docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-a2-flush` na gałęzi `worktree-borowik-a2-flush`.
 
