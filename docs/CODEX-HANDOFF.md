@@ -1,5 +1,9 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-29 — aktualne (32): Faza 4 (pogoda) zrealizowana; gałąź `ulepszenia-faza4`
+
+Raport i decyzje wg reguł planu: `docs/RAPORT_FAZA_4.md`, surowe liczby `docs/porownania/faza4/`, skrypty `scripts/faza4_*.py`. **F, R, progi klas, α, wagi H bez zmian** (test przypięty `tests/test_faza4_r_niezmienione.py`). Nowe: profil `weather.temp_grid_km` (opcja, domyślnie `null` = jak dotąd; reguła 4.1 nie spełniona: p95 |ΔF| 0,11), `conditions.aggregation` (domyślnie `median_f_stands`, reguła 4.4 spełniona; `median_of_features` = stara metoda), `ui.forecast_uncertain_from_day`/`forecast_indicative_from_day` (4/8, dni naprzód), `conditions.heavy_rain_day_mm`. Nowe kolumny run_poc (tylko prezentacja): `p26_mm`, `cwb26_mm`, `cwb26_typical_mm`, `tmean20_c`, `tmean5_c`, `p5_mm`, `tmin3_c`, `tmin3_date`, `forecast_window_share`; `details_{day}.json` ma blok `weather`, `conditions_{day}.json` ma `components`, `uncertainty`, `frost_area_share`, `heavy_rain_area_share`, `F_by_aggregation` na każdy dzień. Mapowanie kwantylowe radar→ERA5 NIE wdrożone (4.2: mediana |Δpct| 0,095 ≤ 0,10, tuż pod progiem). **Otwarte:** panel 7 dni w trybie `radar.mode: stand` liczy z opadu modelu bez radaru → F panelu (0,45) ≠ mediana F wydzieleń (0,65); zob. raport 4.4.
+
 ## 2026-09-29 — aktualne (31): `habitat.age_mode: neutral` jest domyślny
 
 Decyzja właściciela po walidacji Fazy 2 (szczegóły i uzasadnienie: `docs/RAPORT_FAZA_2.md`, sekcja „Decyzje po walidacji”), gałąź `ulepszenia-wiek`. S_age = 1 dla wydzieleń spełniających maskę wieku (maska < 12 lat bez zmian, brak kary > 120 lat); tryb `curve` dostępny przez `habitat.age_mode: curve` w profilu. Świadomie bez krzywej faworyzującej 20–60 lat (dopasowanie do analizy eksploracyjnej). Nowe przebiegi dają inne R/H niż eksporty sprzed zmiany (Kieleczka: Spearman R 0,95 względem `curve`) — porównując z migawkami sprzed 29.09, pamiętać o tym.
