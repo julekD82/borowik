@@ -391,8 +391,10 @@ conditions:
   # median_of_features (dotychczasowa: mediana cech, potem jeden F) |
   # median_f_points | median_f_stands (wazona liczba wydzielen) | area_weighted_mean
   # (waga: powierzchnia lasu). Zmiana tylko wg reguly z planu 4.4 (roznica > 0,05
-  # w ktoryms dniu) -- patrz docs/RAPORT_FAZA_4.md.
-  aggregation: median_of_features
+  # w ktoryms dniu) -- patrz docs/RAPORT_FAZA_4.md. Od Fazy 4: median_f_stands
+  # (regula spelniona: max roznica metod 0,086; wybrana mediana po wydzieleniach,
+  # najblizsza dotychczasowej wartosci, <= 0,014 roznicy).
+  aggregation: median_f_stands
   # Faza 4.4: dobowy opad (mm) uznawany za "silny" w udziale powierzchni z silnym opadem.
   heavy_rain_day_mm: 15.0
 

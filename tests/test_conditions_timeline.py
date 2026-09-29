@@ -117,7 +117,8 @@ def test_build_conditions_timeline_seven_days_match_direct_recomputation():
     daily = _daily_multi_point(points, start, 47, tmean=lambda i: 5.0 + 0.4 * i)
     clim_df = _clim(points)
 
-    out = build_conditions_timeline(daily, points, clim_df, points, today, PROFILE)
+    legacy = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "median_of_features"}}
+    out = build_conditions_timeline(daily, points, clim_df, points, today, legacy)
 
     assert [d["date"] for d in out["days"]] == [(today + timedelta(days=k)).isoformat() for k in range(7)]
     assert out["days"][0]["forecast"] is False and all(d["forecast"] for d in out["days"][1:])
@@ -204,10 +205,12 @@ def test_timeline_days_carry_components_uncertainty_and_area_shares():
     assert set(d0["F_by_aggregation"]) == set(AGGREGATIONS)
 
 
-def test_timeline_default_aggregation_keeps_the_pre_faza4_f_and_option_changes_it():
+def test_timeline_default_aggregation_is_median_f_stands_and_legacy_option_keeps_the_pre_faza4_f():
+    assert PROFILE["conditions"]["aggregation"] == "median_f_stands"
     points = [(50.0, 21.0), (50.1, 21.1), (50.2, 21.2)]
     frost = {(50.2, 21.2): -3.0}
-    base = _timeline(points, tmin=frost)
+    legacy = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "median_of_features"}}
+    base = _timeline(points, tmin=frost, profile=legacy)
     weights = {(50.0, 21.0): {"area_ha": 1.0, "stands": 1}, (50.1, 21.1): {"area_ha": 1.0, "stands": 1},
                (50.2, 21.2): {"area_ha": 98.0, "stands": 98}}
     prof = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "area_weighted_mean"}}

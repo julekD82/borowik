@@ -55,7 +55,11 @@ def radar_daily_series(points, first, last):
     end_utc = datetime(last.year, last.month, last.day, tzinfo=timezone.utc) + timedelta(days=1, hours=2)
     hourly = radar_hourly_at_points(points, HALF_SIZE_M, start_utc, end_utc, CACHE / "radar_grs")
     d = radar_daily_at_points(hourly)
-    d["complete"] = d["radar_hours"] >= d["expected_hours"]
+    # Archiwum RainGRS ma w cache dni z brakujacymi godzinami (np. 19/24): dobe z >= 16 godzin
+    # uznaje za uzywalna, a jej sume skaluje o expected/hours (zaklada podobny opad w brakujacych
+    # godzinach -- zanotowane w raporcie jako ograniczenie); dobe z mniejsza liczba godzin odrzuca.
+    d["complete"] = d["radar_hours"] >= 16
+    d["radar_mm"] = d["radar_mm"] * d["expected_hours"] / d["radar_hours"]
     return d
 
 
