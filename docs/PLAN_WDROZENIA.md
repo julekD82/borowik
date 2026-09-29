@@ -1,6 +1,6 @@
 # Borowik — plan wdrożenia ulepszeń
 
-Wersja 3, 28.09.2026 (dodane Fazy 1.5 i 1.6). Plik przeznaczony do umieszczenia w `docs/PLAN_WDROZENIA.md` i realizacji przez Claude Code / Codex.
+Wersja 8, 29.09.2026 (dodane Fazy 1.5, 1.6 i UI; przebudowane Fazy 2, 3 i 4). Plik przeznaczony do umieszczenia w `docs/PLAN_WDROZENIA.md` i realizacji przez Claude Code / Codex.
 Kontekst techniczny: `docs/Borowik_opis_techniczny_i_walidacja.md` (numery rozdziałów [§] odnoszą się do tego dokumentu).
 
 Fazy 0 i 1 są przeznaczone do pracy autonomicznej (noc 27/28.09). Faza 1.5 (opad z radaru ~1 km) i Faza 1.6 (pełniejsze dane BDL) również mogą być realizowane autonomicznie, po Fazie 1, w dowolnej kolejności. Fazy 2–6 wymagają decyzji właściciela lub danych terenowych i są realizowane w kolejnych sesjach.
@@ -171,7 +171,7 @@ Nowy tryb staje się domyślny, jeśli wybrane wygładzenie daje MAE nie gorsze 
 
 ## Faza 1.6 — pełniejsze wykorzystanie danych BDL
 
-Cel: wykorzystać pola paczek BDL, które dziś trafiają tylko do kart informacyjnych albo w ogóle nie są czytane [§5.1, §7]. Dwie zmiany (1.6.2, 1.6.3) to korekty oczywistych braków i mogą zmienić H. Wszystkie pozostałe pola trafiają **wyłącznie do eksportu diagnostycznego, bez wagi w R**, do czasu oceny w Fazie 2.2 i Fazie 5.
+Cel: wykorzystać pola paczek BDL, które dziś trafiają tylko do kart informacyjnych albo w ogóle nie są czytane [§5.1, §7]. Dwie zmiany (1.6.2, 1.6.3) to korekty oczywistych braków i mogą zmienić H. Wszystkie pozostałe pola trafiają **wyłącznie do eksportu diagnostycznego, bez wagi w R**, do czasu oceny w Fazie 2.4 i Fazie 5.
 
 Wymaga ukończonych zadań 1.2 (eksport diagnostyczny) i 1.3 (paczki w głównym przepływie). Może być realizowana autonomicznie według zasad z sekcji 0, na gałęzi `ulepszenia-faza1-6` utworzonej z ostatniej ukończonej gałęzi. Raport w `docs/RAPORT_FAZA_1_6.md`.
 
@@ -185,7 +185,7 @@ Wynik: `docs/BDL_slownik_pol.md` z tabelą pól i ich wypełnieniem. Pola wypeł
 
 **1.6.2 Aktualizacja wieku (korekta, za flagą).** Wiek z opisu taksacyjnego nie jest dziś przeliczany na rok analizy [§7.4]. Nowy parametr `age.update_to_analysis_year: true` (domyślny po zmianie): `wiek_obecny = wiek_z_opisu + (rok_analizy − rok_stanu_opisu)`. Rok stanu brać z metadanych paczki lub pola daty opisu; gdy brak — z `a_year` warstwy WFS; gdy i tego brak — bez korekty i flaga w diagnostyce. Stare zachowanie przez `false`. Korekta dotyczy S_age i maski wieku (< 12 lat).
 
-**1.6.3 Skład z niższych pięter (korekta, za flagą).** Dziś do S_host wchodzi tylko piętro `DRZEW` [§5.1]. Nowy parametr `host.lower_storeys_weight` (domyślnie 0 = stare zachowanie; w raporcie wyniki dla 0, 0,25 i 0,5). Wariant liczony: `S_host = (1 − w) × S_host_drzew + w × S_host_niższe`, gdzie `S_host_niższe` liczone tym samym wzorem z udziałów gatunków w piętrach niższych (II piętro, podrost, przestoje — zgodnie ze słownikiem z 1.6.1); gdy brak niższych pięter — `S_host_niższe = S_host_drzew`. **Wartość domyślna pozostaje 0** do oceny w Fazie 2.2 — to jest hipoteza, nie korekta błędu.
+**1.6.3 Skład z niższych pięter (korekta, za flagą).** Dziś do S_host wchodzi tylko piętro `DRZEW` [§5.1]. Nowy parametr `host.lower_storeys_weight` (domyślnie 0 = stare zachowanie; w raporcie wyniki dla 0, 0,25 i 0,5). Wariant liczony: `S_host = (1 − w) × S_host_drzew + w × S_host_niższe`, gdzie `S_host_niższe` liczone tym samym wzorem z udziałów gatunków w piętrach niższych (II piętro, podrost, przestoje — zgodnie ze słownikiem z 1.6.1); gdy brak niższych pięter — `S_host_niższe = S_host_drzew`. **Wartość domyślna pozostaje 0** do oceny w Fazie 2.4 i 5 — to jest hipoteza, nie korekta błędu.
 
 **1.6.4 Cechy do diagnostyki (bez wagi w R).** O ile istnieją w paczkach i przechodzą próg wypełnienia z 1.6.1, dodać do eksportu diagnostycznego:
 - typ pokrywy gleby / runa i zbiorowisko roślinne (także z warstwy mapy fitosocjologicznej BDL, jeśli dostępna lokalnie lub przez WFS),
@@ -330,7 +330,6 @@ Zenodo, DOI 10.5281/zenodo.17881359, CC BY 4.0. Aktualne F jest najpewniej zbudo
 
 ---
 
-
 ## Faza 3 — presja grzybiarzy v2: punkty dostępu
 
 **Idea.** Presja trafia do wydzielenia wyłącznie przez **punkty dostępu**: parkingi, wjazdy do lasu, osiedla przy lesie i utwardzone drogi leśne. Ludność nie działa już na las bezpośrednio (jak dziś w modelu grawitacyjnym od centroidu wydzielenia [§9.1]), tylko **wzmacnia punkty dostępu** leżące blisko skupisk ludzi. Uzasadnienie: w lesie obowiązuje zakaz wjazdu poza wyznaczonymi drogami, więc auta stają na parkingach, przy wjazdach i szlabanach, a presja rozchodzi się od tych miejsc.
@@ -349,7 +348,7 @@ Wymaga ukończonych Faz 1 (manifest, diagnostyka, siatka GUS, normalizacja bezwz
 - **Nawierzchnia dróg leśnych:** BDOT10k `OT_SKDR_L` z `materialNawierzchni` ∈ {masa bitumiczna, beton, płyty betonowe, kostka, bruk, tłuczeń, żwir} (pobierane per powiat, bezpłatne); uzupełnienie OSM `surface`, `tracktype=grade1/grade2`, relacje `route=bicycle`. Nawierzchnia jest **atrybutem** odcinka sieci, a nie warunkiem jego istnienia: odcinek dojazdu pożarowego bez opisu nawierzchni ma klasę „nieznana”, nie „brak drogi”.
 - **Droga publiczna czy zamknięta droga leśna.** Asfalt w lesie nie zawsze oznacza dojazd autem: wiele asfaltowych dróg leśnych jest zamkniętych szlabanem i służy głównie rowerzystom. Rozróżnienie: kategoria zarządzania z BDOT10k (publiczna vs wewnętrzna), tagi OSM `access`, `motor_vehicle`, `highway` (track vs unclassified/tertiary i wyższe), szlaban na wjeździe. Droga publiczna → źródło punktów dostępu dla aut; zamknięta droga leśna → korytarz rowerowy (3.3).
 - **Nawierzchnia dróg publicznych** (do rozróżnienia asfaltu) z BDOT10k, uzupełniana tagami OSM.
-
+- **Korekty właściciela (najwyższy priorytet).** Plik `dane_terenowe/korekty_dostepu.geojson` (poza repozytorium): drogi potwierdzone w terenie z nawierzchnią, parkingi nieoficjalne, szlabany, drogi nieprzejezdne. Korekta nadpisuje dane z BDL, BDOT10k i OSM w swoim miejscu. Właściciel ma już w innym narzędziu warstwę „potwierdzona w terenie” — przewidzieć import z GeoJSON.
 
 **Akceptacja:** liczniki każdego typu i źródła w manifeście; testy deduplikacji, filtra wjazdów (z duktem / bez duktu), szlabanów, fallbacku, rozróżnienia droga publiczna / zamknięta droga leśna i nadpisywania przez korekty właściciela.
 
@@ -399,6 +398,7 @@ Parametry startowe (propozycja właściciela):
   - wjazdy do lasu — mały znacznik; szlaban osobnym symbolem,
   - drogi leśne — linia, kolor wg nawierzchni (twarda / kruszywo / ubita / nieznana), grubość wg atrakcyjności; zamknięte drogi leśne odróżnione od publicznych,
   - dojazdy pożarowe BDL — osobna warstwa, domyślnie wyłączona (jest gęsta),
+  - korekty właściciela — osobny symbol „potwierdzone w terenie”,
   - osiedla przy lesie — opcjonalnie, domyślnie wyłączone,
   - opcjonalnie półprzezroczysta warstwa P.
 - Kliknięcie w punkt lub drogę: typ, źródło, atrakcyjność (niska / średnia / wysoka).
@@ -418,13 +418,106 @@ Parametry startowe (propozycja właściciela):
 
 ---
 
+## Faza 4 — pogoda: przejrzystość, spójność i oszczędność API
 
-## Faza 4 — pogoda, rozdzielczość, saturacja
+**Kontekst po Fazach 1.5 i 2.** Opad z radaru per wydzielenie jest już zrobiony (1.5). Test 2.5 nie potwierdził ani nie obalił F: sam kalendarz i sama temperatura wypadły nie gorzej niż pełny F, a test miał małą moc dla wilgotności (M). Dlatego Faza 4 **nie stroi F pod lepsze wyniki** — nie ma na czym. Jej cele to:
+1. przejrzystość: użytkownik widzi składniki pogody zamiast jednej nieprzejrzystej liczby,
+2. spójność porównań (percentyle bieżące vs klimatologia z tego samego źródła),
+3. mniejsze zużycie API,
+4. uczciwe oznaczanie niepewności prognozy.
 
-- **4.1** Opad z radaru per wydzielenie jest realizowany w Fazie 1.5. Tu pozostaje rozrzedzenie siatki temperatury i ET0 (10–15 km), jeśli analiza z 1.5.5 potwierdzi, że to nie pogarsza wyników. Mniej wywołań API.
-- **4.2** Spójne percentyle: bieżący CWB i klimatologia z tego samego produktu albo mapowanie kwantylowe radar → produkt klimatologiczny na wspólnym okresie. Bez mechanicznego mnożenia przez 0,848.
-- **4.3** Saturacja F: analiza czułości (ile wydzieleń zmienia klasę przy ±10% parametrów). Zmiana progów tylko z uzasadnieniem z walidacji, nie dla kolorów mapy.
-- **4.4** Panel 7 dni: porównać F z median cech, medianę F po punktach i po wydzieleniach oraz wersję ważoną powierzchnią lasu; sprawdzić, czy agregacja nie ukrywa lokalnego przymrozku.
+Progi klas F, krzywa sezonowości, α i wagi H pozostają bez zmian. Każda zmiana zmieniająca wartość F idzie za flagą, z raportem przed/po. Raport w `docs/RAPORT_FAZA_4.md`. Gałąź `ulepszenia-faza4` z `master`.
+
+### 4.1 Rzadsza siatka temperatury i ET0
+
+Opad pochodzi z radaru per wydzielenie, a temperatura i ET0 zmieniają się w przestrzeni łagodnie. Parametr `weather.temp_grid_km` (obecna wartość = dzisiejsze zachowanie; warianty 10 i 15 km), opad z Open-Meteo nadal używany do uzupełnień i prognozy według obecnego scalenia.
+
+W raporcie dla Kieleczki: liczba wywołań Open-Meteo (koszt wg reguł Open-Meteo) przed/po, Spearman F i R, maksymalna i 95. percentyl |ΔF|, liczba wydzieleń zmieniających klasę F, osobno dni z przymrozkiem (czy rzadsza siatka nie gubi lokalnych przymrozków). **Reguła przyjęta z góry:** wariant staje się domyślny, jeśli 95. percentyl |ΔF| ≤ 0,02 i żadne wydzielenie nie traci ani nie zyskuje przymrozku w horyzoncie wyjazdu; inaczej zostaje jako opcja.
+
+### 4.2 Spójność percentyli (bieżące vs klimatologia)
+
+Bieżący CWB26 pochodzi z radaru (+ Open-Meteo), a klimatologia z ERA5 przez Open-Meteo. Wcześniej ta sama rozbieżność wymusiła wyłączenie wilgotności gleby.
+
+- **Najpierw zmierzyć.** Na okresie, dla którego jest archiwum RainGRS w cache (co najmniej kilka tygodni, najlepiej lato–jesień 2026), dla ~50 punktów w obszarze Kieleczki porównać 26-dniowe sumy opadu: radar vs ERA5 vs E-OBS (lokalnie z 2.6). Raport: obciążenie (mediana różnicy), rozrzut, różnica percentyla CWB26 wyliczonego z radaru i z ERA5 dla tych samych dni.
+- **Reguła przyjęta z góry:** mapowanie kwantylowe radar → ERA5 wdrażane (za flagą `weather.percentile_mapping: quantile`) tylko jeśli mediana |Δ pct_CWB26| > 0,10. W przeciwnym razie — raport i bez zmian.
+- Bez mechanicznego mnożenia przez stały współczynnik.
+- Przy okazji dokończyć 2.6: porównanie rozkładów percentyli E-OBS i ERA5 — opisowo, bez przełączania produkcji.
+
+### 4.3 Nasycenie F — diagnoza i przejrzysta prezentacja
+
+Problem: w eksporcie z 27.09 prawie wszystkie wydzielenia miały klasę „Bardzo dobre”, więc klasa nie niesie informacji.
+
+- **Diagnoza** (bez zmian w modelu): rozkład F, M, T i K_frost na przebiegach w cache; który składnik powoduje nasycenie (M przy sigmoidzie percentyla, T, oba); analiza czułości — ile wydzieleń zmienia klasę przy ±10% każdego parametru F.
+- **Progów klas nie zmieniamy** — test 2.5 nie daje do tego podstaw.
+- **Prezentacja** w panelu pogody i karcie wydzielenia (bez wpływu na R):
+  - składniki wprost, zrozumiale: „opad z ostatnich 26 dni: X mm, typowo o tej porze Y mm (percentyl Z)”, „średnia temperatura 20 dni: X °C (optimum ok. 13 °C)”, „przymrozek: tak/nie, kiedy”,
+  - F jako liczba obok klasy,
+  - krótka stała notka: „Ocena pogody nie została potwierdzona na danych o znaleziskach; traktuj ją jako orientację, nie prognozę wysypu.”
+
+### 4.4 Panel 7 dni — agregacja
+
+Porównać wartość panelu liczoną jako: F z median cech (obecnie), mediana F po punktach, mediana F po wydzieleniach, średnia F ważona powierzchnią lasu. Sprawdzić, czy agregacja nie ukrywa lokalnego przymrozku lub lokalnej burzy (odsetek powierzchni z przymrozkiem / z silnym opadem jako osobna informacja w panelu). Zmiana metody agregacji tylko jeśli różnice między metodami przekraczają 0,05 w którymkolwiek dniu przykładowych przebiegów; wybór uzasadniony w raporcie.
+
+### 4.5 Niepewność prognozy w interfejsie
+
+Do czasu weryfikacji prognoz (2.7, po ≥ 30 dniach archiwum): dni prognozy od 4. dnia wzwyż oznaczane w panelu jako „prognoza niepewna” (wyszarzone, z krótką notką), a dni ≥ 8 jako „orientacyjnie”. Progi horyzontu w profilu (`ui.forecast_uncertain_from_day`, `ui.forecast_indicative_from_day`), do aktualizacji po 2.7. Karta wydzielenia przy wyjeździe za ≥ 4 dni pokazuje udział prognozy w oknie 26 dni (z diagnostyki 1.5.3).
+
+### 4.6 Przebieg i raport
+
+Przebieg Kieleczki na nowym kodzie, migawka **„Kieleczka — faza 4”**. Raport: wyniki 4.1–4.4 z decyzjami wg reguł, zrzuty lub opis panelu i karty, liczba wywołań API przed/po.
+
+**Akceptacja:** testy dla nowej siatki temperatury, mapowania (jeśli wdrożone), agregacji panelu, oznaczeń horyzontu i nowych pól karty; R niezmienione przez 4.3 i 4.5 (test); pełne testy backendu i frontendu.
+
+---
+
+## Faza UI — czytelny interfejs i przełącznik presji
+
+Po Fazie 4 (panel pogody z 4.3/4.5 jest bazą). Cel: aplikacja pokazuje **wizualnie**, co wpływa na wynik, a tekst schodzi na drugi plan. Zasada: **nic nie jest usuwane, tylko chowane** — każda dzisiejsza informacja zostaje dostępna w rozwijanych „Szczegółach”. Gałąź `ulepszenia-ui` z `master`. Raport w `docs/RAPORT_UI.md` ze zrzutami ekranu (szerokość komputera i telefonu, przed/po).
+
+Zastępuje opcjonalne zadanie 1.10 (suwak α).
+
+### UI.1 Przełącznik presji grzybiarzy (backend + frontend)
+
+- Eksport wydzieleń zawiera H, F_loc, P, maskę, R oraz `R_bez_presji = 100 · H · F_loc` (sprawdzić, dodać brakujące pola).
+- Backend liczy rejony **dwa razy** tą samą procedurą: z presją (obecne) i bez presji (α = 0). Eksport obu zestawów (np. `regions` i `regions_bez_presji` albo osobny plik); synchronizator i migawki przenoszą oba. Stare migawki bez drugiego zestawu: przełącznik nieaktywny z krótką informacją.
+- Frontend: przełącznik „Uwzględniaj presję grzybiarzy” (domyślnie włączony). Przełącza sortowanie wydzieleń, listę rejonów, kolory mapy i wynik w karcie. Wybór zapamiętany lokalnie (odczyt/zapis w try/catch).
+- Maska prawna i strukturalna bez zmian w obu trybach.
+- Testy: `R_bez_presji` = 100·H·F_loc; przy włączonym przełączniku ranking i rejony identyczne jak przed zmianą; poprawne przełączanie zestawów rejonów; stare migawki.
+
+### UI.2 Rozbicie wyniku na paski
+
+- Trzy główne paski, wszystkie w konwencji **„więcej = lepiej”**:
+  - **Siedlisko** (H),
+  - **Pogoda** (F_loc),
+  - **Spokój** (1 − P) — zamiast mylącego „Dostępność dla innych odwiedzających (P)”.
+- Nad paskami wynik końcowy i jedna linijka: „Wynik = siedlisko × pogoda × spokój”.
+- Każdy pasek rozwijany do składowych:
+  - Siedlisko → skład drzewostanu (S_host), typ siedliska (S_site), wiek (S_age; w trybie `neutral` opis „nie wpływa na wynik”),
+  - Pogoda → wilgotność (M), temperatura (T), przymrozek (K_frost) — spójnie z opisem składników z 4.3,
+  - Spokój → 2–3 punkty o największym wkładzie w presję, np. „parking Łaziska 192n · 2,4 km”, „wjazd · 2,1 km”, „osiedle · 0,8 km”.
+- Przy paskach słowna ocena (np. niski / średni / wysoki); dokładna liczba po najechaniu lub dotknięciu.
+- Przy wyłączonej presji pasek Spokój jest wyszarzony z opisem „nie uwzględniony”.
+- Te same paski w karcie rejonu, liczone tą samą metodą co ranking rejonu (opisać w Szczegółach, np. „wartości najlepszego wydzielenia”).
+- Paski wyłącznie z wartości modelu z eksportu, bez przeliczeń innymi wzorami.
+
+### UI.3 Porządek w treści
+
+- **Czytelne nazwy:** wydzielenie jako „Oddz. 96a · Nadl. Koszęcin” (z adresu leśnego; leśnictwo, jeśli dostępne), pełny identyfikator w Szczegółach. Rejon jako „Rejon 1 · koło Łazisk” (najbliższa miejscowość z OSM) zamiast `region_4`.
+- **Lista po lewej:** jeden wiersz na pozycję: miejsce w rankingu, nazwa, wynik, trzy mini-paski, powierzchnia, odległość od punktu startu. Maksymalnie 2 linijki tekstu.
+- **Karta:** nagłówek → paski → 2–4 kluczowe fakty jako krótkie etykiety (najbliższy parking, utwardzony dukt, powierzchnia, dojazd) → przyciski (Zapisz, Nawiguj). Wszystko inne („Dlaczego tutaj”, zakresy odległości, przyczyny etykiety pewności, uwagi metodyczne, ranking i dostępność) w zwiniętej sekcji „Szczegóły”.
+- **Bez powtórzeń:** jedna ocena klasy zamiast trzech („Bardzo dobre”, „Wysoki potencjał”, „Warunki teraz”). Uwagi „model nieskalibrowany” i „ranking nie jest prawdopodobieństwem” — jedna krótka linijka w stopce i w Szczegółach, nie w każdej karcie.
+- **Pasek pogody u góry:** jedno zdanie + 7 dni jako małe słupki F (z oznaczeniem niepewności z 4.5) zamiast kropek i długiego tekstu.
+- Żargon (M=0.93, S_site=1.00) tylko w Szczegółach.
+
+### UI.4 Telefon
+
+Aplikacja jest używana w lesie, więc układ musi działać przy szerokości ok. 390 px: mapa na całą szerokość, lista i karta jako wysuwany panel od dołu albo zakładki; paski i przyciski wygodne do dotyku; brak poziomego przewijania strony.
+
+### UI.5 Akceptacja
+
+- Przy włączonej presji R, sortowanie i rejony identyczne jak przed zmianami (test).
+- Każda informacja z dzisiejszej karty dostępna w nowej karcie (lista kontrolna w raporcie: stare pole → nowe miejsce).
+- Pełne testy frontendu (vitest + tsc) i backendu; ręczne sprawdzenie w przeglądarce na szerokości komputera i telefonu; zrzuty ekranu w raporcie.
 
 ---
 
@@ -438,11 +531,11 @@ Parametry startowe (propozycja właściciela):
 
 Prywatność: dokładne współrzędne tylko lokalnie; do analizy agregacja do `stand_id`.
 
-**5.2 Import:** mapowanie wizyt na wydzielenia BDL; liczba borowików na godzinę jako miara.
+**5.2 Import:** dane w formacie z 2.1 (własne wyjścia) i z aplikacji kolegi; mapowanie śladów GPS na wydzielenia BDL (czas w każdym wydzieleniu, także bez znalezisk); liczba borowików na godzinę jako miara. Porównanie z rankingiem z migawki z dnia wyjazdu, nie z bieżącym.
 
-**5.3 Ocena:** zależność liczby na godzinę od decyli R oraz osobno H i P; GLM Poissona lub ujemny dwumianowy z log(czas) jako offset; wydzielenie roku jako efekt losowy.
+**5.3 Ocena:** zależność liczby na godzinę od decyli R oraz osobno H i P; GLM Poissona lub ujemny dwumianowy z log(czas) jako offset; rok jako efekt losowy. Analiza osobno dla `powod_wyboru = aplikacja` i pozostałych. Reguły decyzyjne zapisane z góry, jak w 2.0.
 
-**5.4 Własny mini-protokół:** 6–10 stałych wydzieleń o różnym H i P, wizyta co tydzień niezależnie od prognozy, stały czas (np. 20 min), zapis także zer.
+**5.4 Eksperyment parami (opcjonalny, gdy właściciel będzie miał czas):** aplikacja losuje parę wydzieleń w tym samym kompleksie, 1–2 km od siebie — jedno z górnych 5% R, jedno ze środka rankingu; równy czas szukania w każdym (np. 30 min), losowa kolejność, w „trybie eksperymentu” bez pokazywania, które jest które. Najbardziej rzetelny dostępny test; potrzeba rzędu kilkudziesięciu par.
 
 **5.5 Kalibracja** wag H, krzywej wieku, α i parametrów presji — dopiero po ≥ 1 sezonie danych, z testem na wyłączonym roku.
 
