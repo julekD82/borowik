@@ -1,0 +1,44 @@
+import numpy as np
+import pandas as pd
+
+from pipeline.eobs_fruiting import rolling_features, variant_scores
+from pipeline.habitat import load_profile
+from pipeline.weather import _exp_weighted_sum
+
+
+def _daily(n=60, rr=None):
+    idx = pd.date_range("2020-06-01", periods=n, freq="D")
+    rng = np.random.default_rng(1)
+    return pd.DataFrame({
+        "tg": 14.0 + rng.normal(0, 1, n), "tn": 9.0 + rng.normal(0, 1, n), "tx": 20.0 + rng.normal(0, 1, n),
+        "rr": rng.gamma(0.5, 4, n) if rr is None else rr,
+    }, index=idx)
+
+
+def test_rolling_features_match_production_window_formulas():
+    from pipeline.eobs import hargreaves_et0
+    d = _daily()
+    f = rolling_features(d, 50.5)
+    i = 40
+    et0 = hargreaves_et0(d["tn"], d["tx"], 50.5)
+    expected = _exp_weighted_sum(d["rr"].iloc[: i + 1], 26) - _exp_weighted_sum(et0.iloc[: i + 1], 26)
+    assert abs(f["cwb26"].iloc[i] - expected) < 1e-9
+    assert abs(f["tmean20"].iloc[i] - d["tg"].iloc[i - 19: i + 1].mean()) < 1e-9
+    assert abs(f["p5"].iloc[i] - d["rr"].iloc[i - 4: i + 1].sum()) < 1e-9
+    assert abs(f["tmin3"].iloc[i] - d["tn"].iloc[i - 2: i + 1].min()) < 1e-9
+    assert f["cwb26"].iloc[:25].isna().all()
+
+
+def test_missing_day_in_window_gives_nan():
+    d = _daily(100)
+    d.iloc[35, d.columns.get_loc("rr")] = np.nan
+    f = rolling_features(d, 50.5)
+    assert np.isnan(f["cwb26"].iloc[40]) and not np.isnan(f["cwb26"].iloc[70])
+
+
+def test_variant_scores_shape_and_constant_model():
+    profile = load_profile("profiles/boletus_edulis.yaml")
+    feat = pd.Series({"cwb26": 5.0, "tmean20": 14.0, "tmean5": 14.0, "p5": 5.0, "tmin3": 8.0})
+    out = variant_scores(feat, 260, np.linspace(-20, 20, 50), profile)
+    assert set(out) == {"F_bez_G_season", "F_z_G_season", "sam_kalendarz", "samo_M", "sama_T", "model_staly"}
+    assert out["model_staly"] == 1.0 and 0 <= out["F_z_G_season"] <= 1.0

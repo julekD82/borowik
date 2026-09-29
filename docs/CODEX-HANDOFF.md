@@ -1,6 +1,14 @@
 # Notatki przekazania dla Claude Code
 
-## 2026-09-28 — aktualne (28): Faza 1.5 — opad z radaru per wydzielenie (~1 km, ważony powierzchniowo)
+## 2026-09-29 — aktualne (30): Faza 2 zrealizowana (2.0–2.6); wyniki 2.4 i 2.5
+
+Reguły `docs/WALIDACJA_REGULY.md` zatwierdzone przez właściciela (v2). **2.4: „zgodne z modelem”** (AUC(H) 0,571 vs inne grzyby, 0,611 vs rośliny/zwierzęta VII–XI; 210 rekordów od 90 obserwatorów; efekt mały). **2.5: „brak rozróżnienia”** (średnia ranga F bez G_season 0,529 / 0,527, CI obejmuje ok. 0,5; bez dodatkowej czerwonej flagi; 482 rekordy, E-OBS). 2.6: `pipeline/eobs.py`, `cache/eobs/` (12 plików). Nowe: `scripts/zapisz_prognoze.py` (harmonogram Windows do zainstalowania ręcznie, `docs/ZAPIS_WYJSC.md`), `pipeline/{eobs,eobs_fruiting,spatial_check,validation_stats,gbif_client}.py`, notatniki 10–13. 2.7/2.8 nie ruszane. Raport: `docs/RAPORT_FAZA_2.md`. `netCDF4` w `pyproject.toml`, `uv.lock` do przeliczenia (`uv lock`). Analiza eksploracyjna (`notebooks/14_eksploracja_h.py`): sygnał H głównie z S_host i S_site, S_age ≈ 0,5, sam wiek AUC 0,40–0,42 (znaleziska w młodszych wydzieleniach); kody nieznane w 2.4 to głównie siedliska „G” (LGSW, LMGSW, BMGSW), w Kieleczce 0 nieznanych. Żadna zmiana wag H/F/α nie wynika automatycznie z tych wyników.
+
+## 2026-09-28 — (29): Faza 2 (część autonomiczna: 2.1, 2.2, 2.3, projekt 2.0)
+
+Gałąź `ulepszenia-faza2` (z `master` po scaleniu 1.6). Raport: `docs/RAPORT_FAZA_2.md`. Zrobione: **2.2** archiwum prognoz (`pipeline/forecast_archive.py`, hak w `fetch_weather_raw`, `cache/archiwum_prognoz/`, tylko-dopisujące); **2.1** walidator zapisów wyjść (`pipeline/field_data.py`, `scripts/sprawdz_dane_terenowe.py`, `docs/ZAPIS_WYJSC.md`, szablony `dane_terenowe_szablony/`, `/dane_terenowe/` w `.gitignore`, przypomnienie w launcherze); **2.3** inwentaryzacja GBIF (`notebooks/10_…`, `11_…`): 1167 rekordów B. edulis w PL, 360 z niepewnością ≤ 100 m, z tego 274 w lesie D-STAN od 110 obserwatorów; region Katowice ma tylko 52 rekordy ≤ 100 m. **2.0** (`docs/WALIDACJA_REGULY.md`) to projekt czekający na zatwierdzenie właściciela — **do tego czasu nie uruchamiać 2.4 ani 2.5**. Nie zrobione: 2.4–2.8, opcjonalny `scripts/zapisz_prognoze.py`. Testy: backend 646 (przed dopisaniem `test_forecast_archive`/`test_field_data` było 639); frontend nietknięty.
+
+## 2026-09-28 — (28): Faza 1.5 — opad z radaru per wydzielenie (~1 km, ważony powierzchniowo)
 
 Zrealizowany `docs/PLAN_WDROZENIA.md` sekcja "Faza 1.5", pełny raport w `docs/RAPORT_FAZA_1_5.md`, gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`).
 

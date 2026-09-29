@@ -9,3 +9,6 @@ notebooks/known_points.yaml
 launcher/launcher_config.json
 *.lnk
 /BDL/
+
+# Prywatne dane z wyjsc (plan 2.1) - nigdy do repozytorium
+/dane_terenowe/

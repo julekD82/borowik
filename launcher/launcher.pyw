@@ -253,6 +253,8 @@ class LauncherApp:
             if not ok:
                 self.set_status("Synchronizacja danych sie nie powiodla - zobacz log.")
                 return
+            # Plan 2.1: bez zapisanej migawki nie da sie pozniej ocenic rankingu z dnia wyjazdu.
+            self.log("Przypomnienie: zapisz migawke (Zapisz do listy), jesli jedziesz dzis do lasu.")
             self.ensure_dev_server_and_open()
         finally:
             self.worker_running = False
