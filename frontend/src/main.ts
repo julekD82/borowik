@@ -32,6 +32,7 @@ import {
   weatherComponentLines,
   weatherCardLines,
   localPhenomenaNote,
+  wfsOnlyBanner,
 } from "./model";
 import type { AccessCard, AccessCollection, AccessLayerId } from "./model";
 import type {
@@ -221,6 +222,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main>
     <section class="intro" aria-labelledby="page-title"><div><p class="eyebrow">MNIEJ SZUKANIA. WIĘCEJ LASU.</p><h1 id="page-title">Wybierz swój kawałek lasu.</h1><p class="intro-copy">Obiecujące wydzielenia na prawdziwki, wybrane na podstawie siedliska i pogody.</p></div><div class="trip-date">${icon("calendar")}<div><small>DATA ANALIZY</small><strong id="analysis-date">Wczytywanie…</strong></div></div></section>
     <section id="conditions" class="conditions" aria-live="polite"><span class="condition-symbol">${icon("leaf")}</span><div><strong>Sprawdzamy warunki w obszarze</strong><p>Wczytujemy przygotowaną analizę lasu.</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span></section>
+    <div id="wfs-banner" class="data-banner" role="note" hidden></div>
     <section id="trips-bar" class="trips-bar" aria-label="Zapisane mapy"><label for="trips-select">${icon("bookmark")}<span>Zapisane mapy</span></label><select id="trips-select"><option value="">Aktualna</option></select></section>
     <section class="workspace" aria-label="Wydzielenia poszukiwań">
       <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Ranking porównuje miejsca w tej analizie.<br>Nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
@@ -731,6 +733,9 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
         2
       : null;
     $("#conditions").innerHTML = conditionsHtml(median, data.conditions);
+    const wfsBanner = wfsOnlyBanner(data.wfsOnlyShare);
+    $("#wfs-banner").textContent = wfsBanner ?? "";
+    $("#wfs-banner").hidden = wfsBanner === null;
     if (!map) {
       try {
         map = new ForestMap(

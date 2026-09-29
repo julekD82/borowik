@@ -15,3 +15,6 @@ launcher/launcher_config.json
 
 # Worktree sesji Claude
 .claude/worktrees/
+
+# Lokalna konfiguracja maszyny (sciezki), Faza 4
+local_config.json

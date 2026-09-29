@@ -34,6 +34,7 @@ from pipeline.export import (
 )
 from pipeline.gdos import fetch_protected_areas
 from pipeline.habitat import load_profile
+from pipeline.local_config import resolve_bdl_packages_dir
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.neighbors import find_neighbor_labels
 from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M, DEFAULT_PAST_DAYS
@@ -516,7 +517,11 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # defaulting to the pre-1.3 cache_dir/bdl_packages location -- every
     # existing caller that never set this keeps reading from exactly the
     # same place as before this parameter existed.
-    bdl_packages_dir = pathlib.Path(bdl_packages_dir) if bdl_packages_dir else cache_dir / "bdl_packages"
+    bdl_packages_dir = resolve_bdl_packages_dir(bdl_packages_dir, cache_dir)
+    if not bdl_packages_dir.is_dir():
+        print(
+            f"UWAGA: katalog paczek BDL nie istnieje ({bdl_packages_dir}) -- caly sklad drzewostanu z WFS. "
+            "Ustaw bdl_packages_dir w local_config.json (albo --bdl-packages-dir).", flush=True)
 
     print(f"Resolving RDLP for ({lat}, {lon})...")
     rdlp_gdf = fetch_rdlp_boundaries_cached(cache_dir)
@@ -919,7 +924,7 @@ def main(argv=None) -> int:
             lat=args.lat, lon=args.lon, day=day, radius_km=args.radius_km,
             profile_path=args.profile, out_dir=pathlib.Path(args.out_dir), cache_dir=pathlib.Path(args.cache_dir),
             target_date=target_date, use_radar=not args.no_radar,
-            bdl_packages_dir=pathlib.Path(args.bdl_packages_dir) if args.bdl_packages_dir else None,
+            bdl_packages_dir=resolve_bdl_packages_dir(args.bdl_packages_dir, pathlib.Path(args.cache_dir)),
             population_grid_path=pathlib.Path(args.population_grid_path) if args.population_grid_path else None,
         )
     except TripPreparationError as exc:

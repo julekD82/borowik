@@ -884,9 +884,11 @@ export async function loadData(basePath: string = "data/") {
   };
   const accessPoints = parseAccessCollection(await optionalJson("access_points.json"), "access_points.json");
   const forestRoads = parseAccessCollection(await optionalJson("forest_roads.json"), "forest_roads.json");
+  const manifest = (await optionalJson("manifest.json")) as { wfs_only_share_of_masked?: unknown } | undefined;
   const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
   return {
     ...parsed,
+    wfsOnlyShare: finiteNumber(manifest?.wfs_only_share_of_masked) ? manifest.wfs_only_share_of_masked : null,
     conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day),
     accessPoints,
     forestRoads,
@@ -1015,4 +1017,11 @@ export function localPhenomenaNote(d: ConditionsDay): string | null {
   if (finiteNumber(d.heavy_rain_area_share) && d.heavy_rain_area_share > 0)
     parts.push(`silny opad na ${pl(Math.round(d.heavy_rain_area_share * 100))}% lasu`);
   return parts.length ? parts.join(", ") : null;
+}
+
+/** Plan 1.3: ostrzezenie, gdy > 20% wydzielen w masce ma sklad tylko z WFS (brak paczki BDL). */
+export const WFS_ONLY_BANNER_THRESHOLD = 0.2;
+export function wfsOnlyBanner(share: number | null | undefined): string | null {
+  if (!finiteNumber(share) || share <= WFS_ONLY_BANNER_THRESHOLD) return null;
+  return `Skład drzewostanu tylko z opisu WFS (bez paczki BDL) dla ${pl(Math.round(share * 100))}% wydzieleń w masce — ocena siedliska H jest tu mniej dokładna.`;
 }

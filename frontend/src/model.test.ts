@@ -817,3 +817,15 @@ describe("Faza 4.4: lokalne zjawiska w panelu", () => {
     ).not.toThrow();
   });
 });
+
+import { wfsOnlyBanner } from "./model";
+describe("Plan 1.3: baner składu tylko z WFS", () => {
+  it("pokazuje się dopiero powyżej 20% i podaje odsetek", () => {
+    expect(wfsOnlyBanner(0.2)).toBeNull();
+    expect(wfsOnlyBanner(0.05)).toBeNull();
+    expect(wfsOnlyBanner(null)).toBeNull();
+    expect(wfsOnlyBanner(undefined)).toBeNull();
+    expect(wfsOnlyBanner(1)).toContain("100%");
+    expect(wfsOnlyBanner(0.211)).toContain("21%");
+  });
+});
