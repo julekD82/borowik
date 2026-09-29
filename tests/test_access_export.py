@@ -69,3 +69,16 @@ def test_access_card_only_for_access_points_model():
         "top_point_source": "bdl", "top_point_name": "Lesny"}))
     assert card["d_parking_m"] == 850.0 and card["d_hard_forest_road_m"] is None
     assert card["top_point_name"] == "Lesny"
+
+
+def test_access_card_is_json_safe_when_stand_has_no_top_point():
+    # Regresja z realnego przebiegu: wydzielenie bez punktu o najwiekszym
+    # wkladzie ma w kolumnach tekstowych NaN (nie None) i musi dac null w JSON.
+    nan = float("nan")
+    card = build_access_card(pd.Series({
+        "pressure_model": "access_points", "d_parking_m": nan, "d_entrance_m": nan,
+        "d_hard_forest_road_m": nan, "top_point_id": "", "top_point_type": nan,
+        "top_point_source": nan, "top_point_name": nan}))
+    assert json.dumps(card, allow_nan=False) == json.dumps(
+        {"d_parking_m": None, "d_entrance_m": None, "d_hard_forest_road_m": None, "top_point_id": None,
+         "top_point_type": None, "top_point_source": None, "top_point_name": None})

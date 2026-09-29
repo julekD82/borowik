@@ -222,6 +222,12 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
     return out_path
 
 
+def _text_or_none(value) -> str | None:
+    """Pusty tekst, None i NaN (pandas zamienia None w kolumnie tekstowej na
+    NaN, a NaN jest "prawdziwe") -> None; inaczej tekst."""
+    return value if isinstance(value, str) and value else None
+
+
 def build_access_card(row) -> dict | None:
     """Plan Faza 3.5: dane karty z modelu punktow dostepu -- None, gdy P
     pochodzi z modelu gravity (albo wiersz nie ma kolumn punktow dostepu)."""
@@ -231,10 +237,10 @@ def build_access_card(row) -> dict | None:
         "d_parking_m": _json_safe(row.get("d_parking_m")),
         "d_entrance_m": _json_safe(row.get("d_entrance_m")),
         "d_hard_forest_road_m": _json_safe(row.get("d_hard_forest_road_m")),
-        "top_point_id": row.get("top_point_id") or None,
-        "top_point_type": row.get("top_point_type") or None,
-        "top_point_source": row.get("top_point_source") or None,
-        "top_point_name": row.get("top_point_name") or None,
+        "top_point_id": _text_or_none(row.get("top_point_id")),
+        "top_point_type": _text_or_none(row.get("top_point_type")),
+        "top_point_source": _text_or_none(row.get("top_point_source")),
+        "top_point_name": _text_or_none(row.get("top_point_name")),
     }
 
 
