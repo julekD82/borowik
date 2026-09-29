@@ -300,7 +300,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section id="workspace" class="workspace" data-pane="list" aria-label="Wydzielenia poszukiwań">
       <div class="mobile-tabs" role="tablist" aria-label="Widok"><button role="tab" data-pane="list" class="mobile-tab active">${icon("list")}Lista</button><button role="tab" data-pane="map" class="mobile-tab">${icon("map")}Mapa</button></div>
       <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="pressure-switch" class="pressure-switch"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Model ekspercki, nieskalibrowany. Ranking porównuje miejsca w tej analizie, nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
-      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><div id="color-modes" class="color-modes"></div><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
+      <div class="map-area"><div class="map-stage"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div></div><div class="map-legend"><div id="color-modes" class="color-modes"></div><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span><span class="map-caption">Granice lasu, nie gwarancja zbioru.</span></div></div>
     </section>
     <footer class="footer"><span>Borowik <span class="footer-dot">·</span> Dobry spacer zaczyna się od dobrego planu.</span><button id="about">O danych i ograniczeniach ${icon("info")}</button></footer>
   </main>
@@ -862,14 +862,15 @@ function switchView(mode: "regions" | "stands") {
   page = 0;
   setViewModePreference(mode);
   renderPanel();
+  // Przelaczenie Rejony <-> Wydzielenia zmienia tylko liste i podswietlenie; widok mapy
+  // (przyblizenie i pozycja) zostaje tam, gdzie go ustawil uzytkownik.
   if (mode === "regions") {
-    if (regionViews.length) selectRegionCard(regionViews[0].region.region_id);
+    if (regionViews.length) selectRegionCard(regionViews[0].region.region_id, false);
   } else if (selected) {
     // select() removes any group marker and resets the highlight filter to
     // just this stand, so switching out of region mode needs no separate
     // "clear group" call.
     map?.select(selected);
-    map?.fitAll();
   }
 }
 // Faza UI.4: zakladki Lista / Mapa na waskim ekranie (na szerokim sa ignorowane przez CSS).

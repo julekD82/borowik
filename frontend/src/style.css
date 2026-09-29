@@ -1074,7 +1074,7 @@ dialog li {
   .workspace {
     grid-template-columns: 360px minmax(0, 1fr);
   }
-  .map-caption {
+  .map-caption-old {
     display: none;
   }
   .model-label {
@@ -1620,4 +1620,42 @@ dialog li {
   .moisture-note { min-width: 0; font-size: 11px; }
   .moisture-legend { width: 100%; }
   .map-legend { bottom: 34px; max-height: 58%; overflow-y: auto; }
+}
+
+/* ===== Legenda pod mapa (nie zaslania mapy) ===== */
+.map-area { display: flex; flex-direction: column; overflow: hidden; }
+.map-stage { position: relative; flex: 1 1 auto; min-height: 0; }
+.map-legend {
+  position: static;
+  flex: 0 0 auto;
+  max-width: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: #fbfcf7;
+  backdrop-filter: none;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  max-height: 34%;
+  overflow-y: auto;
+}
+.map-legend .color-modes { margin: 0; }
+.map-legend .color-mode-hint { flex-basis: 100%; }
+.map-legend .layer-controls { flex: 1 1 320px; min-width: 0; }
+.map-legend #legend-content { flex: 1 1 100%; }
+.map-legend .map-caption {
+  position: static;
+  margin-left: auto;
+  padding: 0;
+  background: none;
+  font-size: 10px;
+  color: #59724d;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .map-legend { max-height: 45%; padding: 8px 10px; gap: 8px; }
+  .map-legend .map-caption { display: none; }
 }
