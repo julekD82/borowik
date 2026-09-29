@@ -730,3 +730,102 @@ describe("regionAccessSummary", () => {
     expect(regionAccessSummary([card(900, 900, 900, null)])!.top).toContain("P = 0");
   });
 });
+
+// ---- Faza 4.3-4.5 ----
+import {
+  uncertaintyLabel,
+  uncertaintyNote,
+  weatherComponentLines,
+  weatherCardLines,
+  localPhenomenaNote,
+  WEATHER_DISCLAIMER,
+} from "./model";
+import type { WeatherCard, ConditionsDay } from "./model";
+
+const weatherCard = (over: Partial<WeatherCard> = {}): WeatherCard => ({
+  p26_mm: 61.2,
+  cwb26_mm: 22.5,
+  cwb26_typical_mm: 18,
+  pct_cwb26: 0.62,
+  tmean20_c: 12.4,
+  temp_optimum_c: 13,
+  tmin3_c: 3.1,
+  frost: "brak",
+  frost_date: null,
+  F: 0.66,
+  forecast_days: 1,
+  forecast_window_share: 0,
+  ...over,
+});
+
+describe("Faza 4: oznaczenia niepewności prognozy", () => {
+  it("oznacza dni niepewne i orientacyjne, dni pewne bez etykiety", () => {
+    expect(uncertaintyLabel("ok")).toBeNull();
+    expect(uncertaintyLabel(undefined)).toBeNull();
+    expect(uncertaintyLabel("uncertain")).toBe("prognoza niepewna");
+    expect(uncertaintyLabel("indicative")).toBe("orientacyjnie");
+    expect(uncertaintyNote("uncertain")).toMatch(/niedokładna/);
+    expect(uncertaintyNote("ok")).toBeNull();
+  });
+});
+
+describe("Faza 4: składniki pogody", () => {
+  it("podaje opad, typowy bilans z percentylem i temperaturę z optimum", () => {
+    const lines = weatherCardLines(weatherCard());
+    expect(lines[0]).toBe("Opad z ostatnich 26 dni: 61 mm");
+    expect(lines[1]).toContain("23 mm, typowo o tej porze 18 mm (percentyl 62)");
+    expect(lines[2]).toBe("Średnia temperatura 20 dni: 12,4 °C (optimum ok. 13 °C)");
+    expect(lines).toContain("Przymrozek w ostatnich 3 dobach: nie");
+    expect(lines).toContain("Ocena pogody F: 0,66");
+  });
+
+  it("przymrozek: tak, z siłą, minimum i datą", () => {
+    const lines = weatherCardLines(weatherCard({ frost: "silny", tmin3_c: -3, frost_date: "2026-09-28" }));
+    expect(lines.some((l) => l === "Przymrozek w ostatnich 3 dobach: tak (silny, min -3,0 °C, 28.09)")).toBe(true);
+  });
+
+  it("udział prognozy w oknie pokazuje dopiero przy wyjeździe za co najmniej 4 dni", () => {
+    expect(weatherCardLines(weatherCard({ forecast_days: 4, forecast_window_share: 0.2 })).join("\n")).not.toMatch(/prognozy, nie z obserwacji/);
+    const four = weatherCardLines(weatherCard({ forecast_days: 5, forecast_window_share: 0.2 }));
+    expect(four.join("\n")).toContain("Wyjazd za 4 dni: ok. 20% oceny opadu pochodzi z prognozy");
+  });
+
+  it("pomija brakujące składniki zamiast pisać NaN", () => {
+    const lines = weatherComponentLines({ cwb26_mm: null, cwb26_typical_mm: null, pct_cwb26: null, tmean20_c: null, temp_optimum_c: null });
+    expect(lines).toEqual([]);
+    expect(WEATHER_DISCLAIMER).toContain("nie została potwierdzona");
+  });
+});
+
+describe("Faza 4.4: lokalne zjawiska w panelu", () => {
+  const day = (over: Partial<ConditionsDay>): ConditionsDay => ({ date: "2026-09-29", F: 0.5, level: 2, forecast: false, ...over });
+  it("pokazuje udział lasu z przymrozkiem i silnym opadem tylko gdy > 0", () => {
+    expect(localPhenomenaNote(day({}))).toBeNull();
+    expect(localPhenomenaNote(day({ frost_area_share: 0, heavy_rain_area_share: 0 }))).toBeNull();
+    expect(localPhenomenaNote(day({ frost_area_share: 0.124, heavy_rain_area_share: 0.3 }))).toBe(
+      "przymrozek na 12% lasu, silny opad na 30% lasu",
+    );
+  });
+  it("parseConditions przyjmuje dni z nowymi polami i bez nich", () => {
+    const base = { day: "2026-09-27", generated_for: "2026-09-27", horizon_days: 7, pulse_min_mm: 15, rains: [], summary: "x" };
+    expect(() => parseConditions({ ...base, days: [{ date: "2026-09-27", F: 0.8, level: 3, forecast: false }] }, "2026-09-27")).not.toThrow();
+    expect(() =>
+      parseConditions(
+        { ...base, days: [{ date: "2026-09-27", F: 0.8, level: 3, forecast: false, uncertainty: "uncertain", days_ahead: 4, frost_area_share: 0.1 }] },
+        "2026-09-27",
+      ),
+    ).not.toThrow();
+  });
+});
+
+import { wfsOnlyBanner } from "./model";
+describe("Plan 1.3: baner składu tylko z WFS", () => {
+  it("pokazuje się dopiero powyżej 20% i podaje odsetek", () => {
+    expect(wfsOnlyBanner(0.2)).toBeNull();
+    expect(wfsOnlyBanner(0.05)).toBeNull();
+    expect(wfsOnlyBanner(null)).toBeNull();
+    expect(wfsOnlyBanner(undefined)).toBeNull();
+    expect(wfsOnlyBanner(1)).toContain("100%");
+    expect(wfsOnlyBanner(0.211)).toContain("21%");
+  });
+});

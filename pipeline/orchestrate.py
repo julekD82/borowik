@@ -15,7 +15,7 @@ from pipeline.scoring import (
 )
 from pipeline.weather import (
     make_grid, compute_weather_features, climatology_window_values, percentile_rank,
-    climatology_window_insufficient, stand_precip_features_table,
+    climatology_window_insufficient, stand_precip_features_table, forecast_window_share,
 )
 from pipeline.phenology import compute_g_season
 
@@ -178,7 +178,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         stand_feat_index = dict(zip(
             stand_feat_table.index.to_numpy(),
             zip(stand_feat_table["p5"].to_numpy(), stand_feat_table["p26w"].to_numpy(),
-                stand_feat_table["rain_radar_coverage"].to_numpy()),
+                stand_feat_table["rain_radar_coverage"].to_numpy(), stand_feat_table["p26_sum"].to_numpy()),
         ))
     else:
         stand_feat_index = {}
@@ -196,6 +196,10 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # auditable trail.
     pct_cwb26_values, pct_sm_values, pct_m_values, q_values = [], [], [], []
     insufficient_climatology_values = []
+    # Faza 4.3: skladniki pogody do prezentacji (panel/karta) -- NIE wchodza do F/R.
+    p26_mm_values, cwb26_mm_values, cwb26_typical_values = [], [], []
+    tmean20_values, tmin3_values, tmin3_date_values = [], [], []
+    tmean5_values, p5_values = [], []
     weather_lat_values, weather_lon_values = [], []
     climatology_lat_values, climatology_lon_values = [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
@@ -307,13 +311,17 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         # point's/cell's own, unchanged -- only precipitation is per-stand.
         stand_feat = stand_feat_index.get(row["stand_id"])
         if stand_feat is not None:
-            p5_value, stand_p26w, rain_coverage_value = stand_feat
+            p5_value, stand_p26w, rain_coverage_value, p26_sum_value = stand_feat
             cwb26_hist = history_by_cell[cell][0]
-            pct_cwb26 = percentile_rank(stand_p26w - wrow["et026w"], cwb26_hist)
+            cwb26_value = stand_p26w - wrow["et026w"]
+            pct_cwb26 = percentile_rank(cwb26_value, cwb26_hist)
             stand_precip_used_count += 1
         else:
             p5_value = wrow["p5"]
             rain_coverage_value = float(wrow.get("rain_radar_coverage", 0.0))
+            cwb26_value = wrow["cwb26"]
+            p26_sum_value = wrow["p26_sum"]
+            cwb26_hist = history_by_cell[cell][0]
         rain_radar_coverage_values.append(rain_coverage_value)
 
         m = score_moisture(pct_cwb26, pct_sm, profile)
@@ -326,6 +334,15 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         f_loc = apply_moisture_modulation(f, moisture_cls, pct_m, profile)
         r = compute_ranking(mask, h, f_loc)
 
+        p26_mm_values.append(float(p26_sum_value))
+        cwb26_mm_values.append(float(cwb26_value))
+        valid_hist = cwb26_hist[~pd.isna(cwb26_hist)]
+        cwb26_typical_values.append(float(pd.Series(valid_hist).median()) if len(valid_hist) else None)
+        tmean20_values.append(float(wrow["tmean20"]))
+        tmean5_values.append(float(wrow["tmean5"]))
+        p5_values.append(float(p5_value))
+        tmin3_values.append(float(wrow["tmin3"]))
+        tmin3_date_values.append(wrow["tmin3_date"])
         pct_cwb26_values.append(pct_cwb26)
         insufficient_climatology_values.append(insufficient_climatology)
         pct_sm_values.append(pct_sm)
@@ -380,6 +397,15 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # ile dni okna pochodzi z prognozy"), matching how every other weather-
     # derived column already flows through to scores_{day}.json.
     stands["forecast_days"] = forecast_days
+    stands["p26_mm"] = p26_mm_values
+    stands["cwb26_mm"] = cwb26_mm_values
+    stands["cwb26_typical_mm"] = cwb26_typical_values
+    stands["tmean20_c"] = tmean20_values
+    stands["tmean5_c"] = tmean5_values
+    stands["p5_mm"] = p5_values
+    stands["tmin3_c"] = tmin3_values
+    stands["tmin3_date"] = tmin3_date_values
+    stands["forecast_window_share"] = forecast_window_share(forecast_days - 1)
     stands["G_season"] = g_season
     stands["age_update_status"] = age_update_status_values
     stands.attrs["diagnostics"] = {

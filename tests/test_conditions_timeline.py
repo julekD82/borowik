@@ -117,7 +117,8 @@ def test_build_conditions_timeline_seven_days_match_direct_recomputation():
     daily = _daily_multi_point(points, start, 47, tmean=lambda i: 5.0 + 0.4 * i)
     clim_df = _clim(points)
 
-    out = build_conditions_timeline(daily, points, clim_df, points, today, PROFILE)
+    legacy = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "median_of_features"}}
+    out = build_conditions_timeline(daily, points, clim_df, points, today, legacy)
 
     assert [d["date"] for d in out["days"]] == [(today + timedelta(days=k)).isoformat() for k in range(7)]
     assert out["days"][0]["forecast"] is False and all(d["forecast"] for d in out["days"][1:])
@@ -152,3 +153,85 @@ def test_conditions_timeline_does_not_use_the_disproven_wave_model():
     for name in ["wave_intensity", "wave_phase", "peak_window", "build_area_timeline",
                  "PHASE_LABELS", "degree_days_after", "timeline_summary", "flush_series"]:
         assert name not in src, name
+
+
+# --- Faza 4.3-4.5: skladniki, agregacja, niepewnosc ---
+
+from pipeline.conditions_timeline import (  # noqa: E402
+    aggregate_point_f, uncertainty_level, weighted_median, AGGREGATIONS,
+)
+
+
+def test_uncertainty_level_follows_profile_thresholds_in_days_ahead():
+    assert [uncertainty_level(k, PROFILE) for k in (0, 3, 4, 7, 8, 12)] == [
+        "ok", "ok", "uncertain", "uncertain", "indicative", "indicative"]
+    custom = {"ui": {"forecast_uncertain_from_day": 2, "forecast_indicative_from_day": 5}}
+    assert [uncertainty_level(k, custom) for k in (1, 2, 4, 5)] == ["ok", "uncertain", "uncertain", "indicative"]
+
+
+def test_weighted_median_and_aggregations():
+    assert weighted_median([1, 2, 3], [1, 1, 1]) == 2
+    assert weighted_median([1, 2, 3], [10, 1, 1]) == 1          # jeden punkt z wiekszoscia wydzielen
+    f = [0.2, 0.6, 0.8]
+    assert aggregate_point_f(f, "median_f_points") == pytest.approx(0.6)
+    assert aggregate_point_f(f, "median_f_stands", stand_weights=[10, 1, 1]) == pytest.approx(0.2)
+    assert aggregate_point_f(f, "area_weighted_mean", area_weights=[1, 1, 2]) == pytest.approx((0.2 + 0.6 + 1.6) / 4)
+    with pytest.raises(ValueError):
+        aggregate_point_f(f, "nie_ma")
+
+
+def _timeline(points, tmin=None, profile=PROFILE, weights=None, tmean_by_point=None):
+    today = date(2026, 9, 27)
+    start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
+    daily = _daily_multi_point(points, start, 47, tmean=lambda i: 8.0 + 0.1 * i)
+    if tmin:
+        for (lat, lon), value in tmin.items():
+            daily.loc[(daily["lat"] == lat) & (daily["lon"] == lon), "tmin_c"] = value
+    return build_conditions_timeline(daily, points, _clim(points), points, today, profile, point_weights=weights)
+
+
+def test_timeline_days_carry_components_uncertainty_and_area_shares():
+    points = [(50.0, 21.0), (50.1, 21.1)]
+    out = _timeline(points, tmin={(50.1, 21.1): -1.0},
+                    weights={(50.0, 21.0): {"area_ha": 300.0, "stands": 30}, (50.1, 21.1): {"area_ha": 100.0, "stands": 10}})
+    d0, d5 = out["days"][0], out["days"][5]
+    assert d0["days_ahead"] == 0 and d0["uncertainty"] == "ok"
+    assert d5["days_ahead"] == 5 and d5["uncertainty"] == "uncertain"
+    c = d0["components"]
+    assert set(c) >= {"cwb26_mm", "cwb26_typical_mm", "pct_cwb26", "tmean20_c", "temp_optimum_c", "tmin3_c", "M", "T", "K_frost"}
+    assert c["temp_optimum_c"] == PROFILE["fruiting"]["temp_optimum_c"]
+    # przymrozek tylko w punkcie z 25% powierzchni lasu -> mediana tmin3 go nie pokazuje, udzial tak
+    assert d0["frost_area_share"] == pytest.approx(0.25)
+    assert set(d0["F_by_aggregation"]) == set(AGGREGATIONS)
+
+
+def test_timeline_default_aggregation_is_the_pre_faza4_median_of_features():
+    assert PROFILE["conditions"]["aggregation"] == "median_of_features"
+    points = [(50.0, 21.0), (50.1, 21.1), (50.2, 21.2)]
+    frost = {(50.2, 21.2): -3.0}
+    legacy = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "median_of_features"}}
+    base = _timeline(points, tmin=frost, profile=legacy)
+    weights = {(50.0, 21.0): {"area_ha": 1.0, "stands": 1}, (50.1, 21.1): {"area_ha": 1.0, "stands": 1},
+               (50.2, 21.2): {"area_ha": 98.0, "stands": 98}}
+    prof = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "area_weighted_mean"}}
+    weighted = _timeline(points, tmin=frost, profile=prof, weights=weights)
+    assert base["days"][0]["F"] == base["days"][0]["F_by_aggregation"]["median_of_features"]
+    assert weighted["days"][0]["F"] == weighted["days"][0]["F_by_aggregation"]["area_weighted_mean"]
+    assert weighted["days"][0]["F"] < base["days"][0]["F"]      # wieksza czesc lasu dostala przymrozek
+
+
+def test_timeline_rejects_an_unknown_aggregation():
+    prof = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "x"}}
+    with pytest.raises(ValueError):
+        _timeline([(50.0, 21.0)], profile=prof)
+
+
+def test_timeline_is_strict_json_even_with_an_empty_climatology_window():
+    import json
+    points = [(50.0, 21.0)]
+    today = date(2026, 9, 27)
+    daily = _daily_multi_point(points, pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40), 47)
+    out = build_conditions_timeline(daily, points, _clim(points).iloc[:0], points, today, PROFILE)
+    json.dumps(out, allow_nan=False)
+    assert out["days"][0]["components"]["cwb26_typical_mm"] is None
+    assert out["uncertainty_thresholds"] == {"uncertain_from_day": 4, "indicative_from_day": 8}

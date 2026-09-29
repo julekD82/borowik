@@ -26,6 +26,13 @@ import {
   ACCESS_LAYERS,
   SURFACE_COLORS,
   SURFACE_LABELS,
+  WEATHER_DISCLAIMER,
+  uncertaintyLabel,
+  uncertaintyNote,
+  weatherComponentLines,
+  weatherCardLines,
+  localPhenomenaNote,
+  wfsOnlyBanner,
 } from "./model";
 import type { AccessCard, AccessCollection, AccessLayerId } from "./model";
 import type {
@@ -82,12 +89,35 @@ function conditionsHtml(median: number | null, conditions: ConditionsTimeline | 
   if (!conditions)
     return `<span class="condition-symbol">${icon("leaf")}</span><div><strong>Warunki w obszarze: ${moisture}</strong><p>Ocena pogody z analizy · mediana dla wydzieleń przechodzących filtry</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
   const tiles = conditions.days
-    .map(
-      (d, i) =>
-        `<li class="conditions-day level-${d.level}${d.forecast ? " forecast" : ""}" title="${escape(formatDate(d.date))}: ${Math.round(d.F * 100)}/100"><span>${dayLabel(d.date, i)}</span><b aria-label="poziom ${d.level} z 3">${"●".repeat(d.level)}${"○".repeat(3 - d.level)}</b></li>`,
-    )
+    .map((d, i) => {
+      const uncertain = uncertaintyLabel(d.uncertainty);
+      const local = localPhenomenaNote(d);
+      const title = `${formatDate(d.date)}: ${Math.round(d.F * 100)}/100${uncertain ? ` · ${uncertain}` : ""}${local ? ` · ${local}` : ""}`;
+      return `<li class="conditions-day level-${d.level}${d.forecast ? " forecast" : ""}${d.uncertainty && d.uncertainty !== "ok" ? ` uncertain-${d.uncertainty}` : ""}" title="${escape(title)}"><span>${dayLabel(d.date, i)}</span><b aria-label="poziom ${d.level} z 3">${"●".repeat(d.level)}${"○".repeat(3 - d.level)}</b>${uncertain ? `<small class="uncertain-label">${escape(uncertain)}</small>` : ""}</li>`;
+    })
     .join("");
-  return `<span class="condition-symbol">${icon("mushroom")}</span><div><strong>${escape(conditions.summary)}</strong><p>Warunki wilgotności: ${moisture} · prognoza F na kolejne dni z pogody (radar/model), bez przewidywania szczytu wysypu</p><ol class="conditions-days" aria-label="Warunki wzrostu w kolejnych dniach">${tiles}</ol></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
+  const today = conditions.days[0];
+  const componentLines = today?.components ? weatherComponentLines(today.components) : [];
+  const localLines = conditions.days
+    .map((d, i) => ({ label: dayLabel(d.date, i), note: localPhenomenaNote(d) }))
+    .filter((x) => x.note)
+    .map((x) => `${x.label}: ${x.note}`);
+  const firstUncertain = conditions.days.find((d) => d.uncertainty && d.uncertainty !== "ok");
+  const uncertainNote = firstUncertain ? uncertaintyNote(firstUncertain.uncertainty) : null;
+  const details = [
+    componentLines.length ? `<ul class="weather-components" aria-label="Składniki pogody">${componentLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>` : "",
+    localLines.length ? `<p class="weather-local">Lokalnie: ${escape(localLines.join(" · "))}</p>` : "",
+    uncertainNote ? `<p class="weather-uncertain">${escape(uncertainNote)}</p>` : "",
+    `<p class="weather-disclaimer">${escape(WEATHER_DISCLAIMER)}</p>`,
+  ].join("");
+  return `<span class="condition-symbol">${icon("mushroom")}</span><div><strong>${escape(conditions.summary)}</strong><p>Warunki wilgotności: ${moisture} · prognoza F na kolejne dni z pogody (radar/model), bez przewidywania szczytu wysypu</p><ol class="conditions-days" aria-label="Warunki wzrostu w kolejnych dniach">${tiles}</ol>${details}</div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
+}
+function weatherSection(score: Score | undefined): string {
+  const w = score ? detailFor(score.stand_id)?.weather : null;
+  if (!w) return "";
+  const lines = weatherCardLines(w);
+  if (!lines.length) return "";
+  return `<div class="weather-card"><h3>Pogoda w tym miejscu</h3><ul>${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul><p class="weather-disclaimer">${escape(WEATHER_DISCLAIMER)}</p></div>`;
 }
 let entries: StandView[] = [];
 let allScores: Score[] = [];
@@ -192,6 +222,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main>
     <section class="intro" aria-labelledby="page-title"><div><p class="eyebrow">MNIEJ SZUKANIA. WIĘCEJ LASU.</p><h1 id="page-title">Wybierz swój kawałek lasu.</h1><p class="intro-copy">Obiecujące wydzielenia na prawdziwki, wybrane na podstawie siedliska i pogody.</p></div><div class="trip-date">${icon("calendar")}<div><small>DATA ANALIZY</small><strong id="analysis-date">Wczytywanie…</strong></div></div></section>
     <section id="conditions" class="conditions" aria-live="polite"><span class="condition-symbol">${icon("leaf")}</span><div><strong>Sprawdzamy warunki w obszarze</strong><p>Wczytujemy przygotowaną analizę lasu.</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span></section>
+    <div id="wfs-banner" class="data-banner" role="note" hidden></div>
     <section id="trips-bar" class="trips-bar" aria-label="Zapisane mapy"><label for="trips-select">${icon("bookmark")}<span>Zapisane mapy</span></label><select id="trips-select"><option value="">Aktualna</option></select></section>
     <section class="workspace" aria-label="Wydzielenia poszukiwań">
       <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Ranking porównuje miejsca w tej analizie.<br>Nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
@@ -303,7 +334,7 @@ function card(entry: StandView, index: number) {
   const isSaved = getSaved().some(
     (s) => s.key === savedKey(entry.score.stand_id, entry.point),
   );
-  return `<article class="region-card ${isSelected ? "selected" : ""}" data-card="${escape(entry.score.stand_id)}"><button class="card-select" data-select="${escape(entry.score.stand_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Wydzielenie ${escape(entry.score.stand_id)}</strong><small> ${coordinates(entry.point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(entry.score?.F)}</span>${confidence(entry.score)}</div>${assessment(entry.score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(entry.score)}${isSelected ? `${access(entry.score)}<div class="point-note">Punkt orientacyjny: środek wydzielenia.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking wydzielenia: ${entry.score.R!.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(entry.score?.P) ? entry.score!.P!.toFixed(2) : "brak danych"}. To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-save="${escape(entry.score.stand_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz miejsce"}</button><a class="navigation-link" href="${navigationUrl(entry.point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego wydzielenia ${escape(entry.score.stand_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-detail="${escape(entry.score.stand_id)}">Szczegóły wydzielenia ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(entry.score.day)}</div></div></article>`;
+  return `<article class="region-card ${isSelected ? "selected" : ""}" data-card="${escape(entry.score.stand_id)}"><button class="card-select" data-select="${escape(entry.score.stand_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Wydzielenie ${escape(entry.score.stand_id)}</strong><small> ${coordinates(entry.point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(entry.score?.F)}</span>${confidence(entry.score)}</div>${assessment(entry.score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(entry.score)}${isSelected ? `${weatherSection(entry.score)}${access(entry.score)}<div class="point-note">Punkt orientacyjny: środek wydzielenia.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking wydzielenia: ${entry.score.R!.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(entry.score?.P) ? entry.score!.P!.toFixed(2) : "brak danych"}. To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-save="${escape(entry.score.stand_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz miejsce"}</button><a class="navigation-link" href="${navigationUrl(entry.point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego wydzielenia ${escape(entry.score.stand_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-detail="${escape(entry.score.stand_id)}">Szczegóły wydzielenia ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(entry.score.day)}</div></div></article>`;
 }
 function regionPoint(view: RegionView): [number, number] {
   return [view.region.centroid_lon, view.region.centroid_lat];
@@ -315,7 +346,7 @@ function regionCard(view: RegionView, index: number) {
     (s) => s.key === savedKey(view.region.region_id, point),
   );
   const score = view.top.score;
-  return `<article class="region-card ${isSelected ? "selected" : ""}" data-region-card="${escape(view.region.region_id)}"><button class="card-select" data-region-select="${escape(view.region.region_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Rejon ${escape(view.region.region_id)}</strong><small> ${view.members.length} wydzieleń · ${coordinates(point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(score?.F)}</span>${confidence(score)}</div>${assessment(score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(score)}${isSelected ? `${regionAccess(view, score)}<div class="point-note">Punkt orientacyjny: środek najlepiej ocenionego wydzielenia w rejonie.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking rejonu: ${view.region.rank_score.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · mediana najlepszych wydzieleń, model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(score?.P) ? score!.P!.toFixed(2) : "brak danych"} (najlepiej ocenione wydzielenie). To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-region-save="${escape(view.region.region_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz rejon"}</button><a class="navigation-link" href="${navigationUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego rejonu ${escape(view.region.region_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-region-detail="${escape(view.region.region_id)}">Zobacz wydzielenia w rejonie (${view.members.length}) ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(view.region.day)}</div></div></article>`;
+  return `<article class="region-card ${isSelected ? "selected" : ""}" data-region-card="${escape(view.region.region_id)}"><button class="card-select" data-region-select="${escape(view.region.region_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Rejon ${escape(view.region.region_id)}</strong><small> ${view.members.length} wydzieleń · ${coordinates(point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(score?.F)}</span>${confidence(score)}</div>${assessment(score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(score)}${isSelected ? `${weatherSection(score)}${regionAccess(view, score)}<div class="point-note">Punkt orientacyjny: środek najlepiej ocenionego wydzielenia w rejonie.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking rejonu: ${view.region.rank_score.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · mediana najlepszych wydzieleń, model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(score?.P) ? score!.P!.toFixed(2) : "brak danych"} (najlepiej ocenione wydzielenie). To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-region-save="${escape(view.region.region_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz rejon"}</button><a class="navigation-link" href="${navigationUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego rejonu ${escape(view.region.region_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-region-detail="${escape(view.region.region_id)}">Zobacz wydzielenia w rejonie (${view.members.length}) ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(view.region.day)}</div></div></article>`;
 }
 function renderRegionsPanel() {
   $("#panel-heading").innerHTML =
@@ -414,7 +445,7 @@ function renderDetail() {
   $("#panel-heading").innerHTML =
     '<button class="back-button" id="back">← Wróć do listy wydzieleń</button>';
   $("#cards").innerHTML =
-    `<div class="stand-panel">${score ? `<p class="eyebrow detail-eyebrow">SZCZEGÓŁY WYDZIELENIA</p><h3 class="stand-id">${escape(score.stand_id)}</h3><div class="badge-row"><span class="badge">${fruitingClass(score.F)}</span>${confidence(score)}</div>${assessment(score)}<dl class="metrics"><div><dt>Ranking R</dt><dd>${finite(score.R) ? score.R.toFixed(1) : "—"}</dd></div><div><dt>Siedlisko H</dt><dd>${finite(score.H) ? score.H.toFixed(2) : "—"}</dd></div><div><dt>Warunki regionalne F</dt><dd>${fruitingClass(score.F)}</dd></div><div><dt>Warunki lokalne F</dt><dd>${fruitingClass(score.F_loc)}</dd></div><div><dt>Dostępność dla odwiedzających P</dt><dd>${finite(score.P) ? score.P.toFixed(2) : "—"}</dd></div></dl><p class="muted">Model ekspercki, nieskalibrowany. P jest szacunkiem dostępności, nie pomiarem tłoku.</p><h3>Co wpływa na wynik?</h3>${explanations(score, true)}${access(score)}<h3>Drzewostan i otoczenie</h3>${packageSection(detail)}${structureSection(detail)}${neighborsSection(detail)}<div class="data-note"><strong>Zakres danych</strong><p>${score.mask ? "Wydzielenie przeszło filtry modelu. Nie jest to potwierdzenie pełnej dostępności prawnej." : "Wydzielenie wykluczone przez filtr modelu."}</p><p>Analiza: ${formatDate(score.day)}.<br>Daty pobrania poszczególnych źródeł: brak danych.</p><p>Zakazy wstępu do lasu są sprawdzane na dzień przygotowania analizy, nie na dzień wyjazdu.${zakazNote(score.zakaz_status) ? ` ${zakazNote(score.zakaz_status)}` : ""}</p></div>` : "<p>Brak szczegółów.</p>"}</div>`;
+    `<div class="stand-panel">${score ? `<p class="eyebrow detail-eyebrow">SZCZEGÓŁY WYDZIELENIA</p><h3 class="stand-id">${escape(score.stand_id)}</h3><div class="badge-row"><span class="badge">${fruitingClass(score.F)}</span>${confidence(score)}</div>${assessment(score)}<dl class="metrics"><div><dt>Ranking R</dt><dd>${finite(score.R) ? score.R.toFixed(1) : "—"}</dd></div><div><dt>Siedlisko H</dt><dd>${finite(score.H) ? score.H.toFixed(2) : "—"}</dd></div><div><dt>Warunki regionalne F</dt><dd>${fruitingClass(score.F)}</dd></div><div><dt>Warunki lokalne F</dt><dd>${fruitingClass(score.F_loc)}</dd></div><div><dt>Dostępność dla odwiedzających P</dt><dd>${finite(score.P) ? score.P.toFixed(2) : "—"}</dd></div></dl><p class="muted">Model ekspercki, nieskalibrowany. P jest szacunkiem dostępności, nie pomiarem tłoku.</p><h3>Co wpływa na wynik?</h3>${explanations(score, true)}${weatherSection(score)}${access(score)}<h3>Drzewostan i otoczenie</h3>${packageSection(detail)}${structureSection(detail)}${neighborsSection(detail)}<div class="data-note"><strong>Zakres danych</strong><p>${score.mask ? "Wydzielenie przeszło filtry modelu. Nie jest to potwierdzenie pełnej dostępności prawnej." : "Wydzielenie wykluczone przez filtr modelu."}</p><p>Analiza: ${formatDate(score.day)}.<br>Daty pobrania poszczególnych źródeł: brak danych.</p><p>Zakazy wstępu do lasu są sprawdzane na dzień przygotowania analizy, nie na dzień wyjazdu.${zakazNote(score.zakaz_status) ? ` ${zakazNote(score.zakaz_status)}` : ""}</p></div>` : "<p>Brak szczegółów.</p>"}</div>`;
   $("#map-title").textContent = `Wydzielenie ${entry.score.stand_id}`;
   $("#legend-content").innerHTML =
     '<span class="gradient-legend"></span> Niższy → wyższy ranking (skala wg rozkładu ocen w tej analizie)';
@@ -702,6 +733,9 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
         2
       : null;
     $("#conditions").innerHTML = conditionsHtml(median, data.conditions);
+    const wfsBanner = wfsOnlyBanner(data.wfsOnlyShare);
+    $("#wfs-banner").textContent = wfsBanner ?? "";
+    $("#wfs-banner").hidden = wfsBanner === null;
     if (!map) {
       try {
         map = new ForestMap(

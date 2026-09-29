@@ -326,6 +326,13 @@ pressure:
       compacted_surfaces: ["compacted"]
       dirt_surfaces: ["dirt", "ground", "earth", "mud", "grass", "sand", "grass_paver"]
 
+weather:
+  # Faza 4.1: odstep siatki pogodowej w km (temperatura, ET0, opad modelu).
+  # null = dotychczasowe zachowanie (5 km przy promieniu 25 km, skalowane z
+  # promieniem); 10 / 15 = odstep bezwzgledny, mniej wywolan Open-Meteo. Decyzja
+  # o domyslnej wartosci: docs/RAPORT_FAZA_4.md (regula z planu 4.1).
+  temp_grid_km: null
+
 radar:
   # Plan 2026-09-26 A1 (docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
   # IMGW-PIB RainGRS replaces Open-Meteo precipitation for local days in the
@@ -380,6 +387,24 @@ conditions:
   lookback_days: 45
   horizon_days: 7
   max_rains: 2
+  # Faza 4.4: jak z F punktow siatki powstaje wartosc panelu 7 dni:
+  # median_of_features (dotychczasowa: mediana cech, potem jeden F) |
+  # median_f_points | median_f_stands (wazona liczba wydzielen) | area_weighted_mean
+  # (waga: powierzchnia lasu). Zmiana tylko wg reguly z planu 4.4 (roznica > 0,05
+  # w ktoryms dniu). Po poprawce spojnosci panelu z mapa (opad z radaru jak w
+  # wydzieleniach, percentyl wzgledem komorki punktu) max roznica metod wynosi 0,043
+  # -- regula nie jest spelniona, wiec zostaje dotychczasowa metoda (wczesniejsza
+  # roznica 0,086 wynikala z panelu liczonego z opadu modelu; docs/RAPORT_FAZA_4.md).
+  aggregation: median_of_features
+  # Faza 4.4: dobowy opad (mm) uznawany za "silny" w udziale powierzchni z silnym opadem.
+  heavy_rain_day_mm: 15.0
+
+ui:
+  # Faza 4.5: oznaczenia niepewnosci prognozy w panelu 7 dni, w dniach naprzod od dzis
+  # (dzis = 0). Hipoteza -- do zaktualizowania po weryfikacji prognoz (Faza 2.7,
+  # po >= 30 dniach archiwum).
+  forecast_uncertain_from_day: 4     # "prognoza niepewna"
+  forecast_indicative_from_day: 8    # "orientacyjnie"
 
 osm:
   parking_amenity: "parking"

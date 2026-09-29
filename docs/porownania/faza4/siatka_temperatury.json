@@ -1,0 +1,161 @@
+{
+  "date": "2026-09-29",
+  "radius_km": 25.0,
+  "stands": 29953,
+  "api_cost": {
+    "domyslny_5km": {
+      "spacing_km": 5.0,
+      "points": 144,
+      "points_in_radius": 79,
+      "weight_main_fd1": 573.9428571428572,
+      "weight_conditions_fd7": 335.18571428571425,
+      "weight_total": 909.1285714285714
+    },
+    "10km": {
+      "spacing_km": 10.0,
+      "points": 49,
+      "points_in_radius": 19,
+      "weight_main_fd1": 195.29999999999998,
+      "weight_conditions_fd7": 80.61428571428571,
+      "weight_total": 275.9142857142857
+    },
+    "15km": {
+      "spacing_km": 15.0,
+      "points": 30,
+      "points_in_radius": 9,
+      "weight_main_fd1": 119.57142857142858,
+      "weight_conditions_fd7": 38.18571428571428,
+      "weight_total": 157.75714285714287
+    }
+  },
+  "cel_dzis_fd1": {
+    "10km": {
+      "stands_in_mask": 21716,
+      "spearman_F": 0.9411211883662647,
+      "spearman_R": 0.9594971728651329,
+      "abs_dF_max": 0.1906863878119086,
+      "abs_dF_p95": 0.11419361967714681,
+      "abs_dF_median": 0.009576555546876864,
+      "class_changes": 2157,
+      "frost_status_changes_at_target": 0,
+      "frost_class_changes_at_target": 0
+    },
+    "15km": {
+      "stands_in_mask": 21716,
+      "spearman_F": 0.9461654559728951,
+      "spearman_R": 0.9648616244937227,
+      "abs_dF_max": 0.14581014658641522,
+      "abs_dF_p95": 0.11393219279201094,
+      "abs_dF_median": 0.012839150269298938,
+      "class_changes": 1507,
+      "frost_status_changes_at_target": 0,
+      "frost_class_changes_at_target": 0
+    },
+    "_base_F_quartiles": [
+      0.44971627018230476,
+      0.5520549984653725,
+      0.6469329469255827,
+      0.7325701004519202,
+      0.8107208111179942
+    ]
+  },
+  "cel_plus6_fd7": {
+    "10km": {
+      "stands_in_mask": 21716,
+      "spearman_F": 0.9496434525048479,
+      "spearman_R": 0.9563671863270565,
+      "abs_dF_max": 0.15631853799552697,
+      "abs_dF_p95": 0.06315216299962444,
+      "abs_dF_median": 0.010230940970233277,
+      "class_changes": 2353,
+      "frost_status_changes_at_target": 0,
+      "frost_class_changes_at_target": 0
+    },
+    "15km": {
+      "stands_in_mask": 21716,
+      "spearman_F": 0.9424410282748832,
+      "spearman_R": 0.9608710526794804,
+      "abs_dF_max": 0.16255268409546503,
+      "abs_dF_p95": 0.06655742652576044,
+      "abs_dF_median": 0.009654046572395658,
+      "class_changes": 2911,
+      "frost_status_changes_at_target": 0,
+      "frost_class_changes_at_target": 0
+    },
+    "_base_F_quartiles": [
+      0.17544733817725514,
+      0.20989600085185867,
+      0.26976757590074524,
+      0.3803107237300505,
+      0.5442383517354127
+    ]
+  },
+  "fresh_api_calls_in_this_script": [
+    [
+      13,
+      92,
+      1
+    ],
+    [
+      12,
+      92,
+      1
+    ],
+    [
+      65,
+      92,
+      7
+    ],
+    [
+      13,
+      92,
+      7
+    ],
+    [
+      12,
+      92,
+      7
+    ]
+  ],
+  "frost_horizon": {
+    "domyslny_5km": {
+      "soft_days_any_stand_share": 0.0,
+      "hard_days_any_stand_share": 0.0
+    },
+    "10km": {
+      "soft_days_any_stand_share": 0.0,
+      "hard_days_any_stand_share": 0.0,
+      "stands_gaining_frost_any_day": 0,
+      "stands_losing_frost_any_day": 0,
+      "stands_changing_hard_frost_any_day": 0
+    },
+    "15km": {
+      "soft_days_any_stand_share": 0.0,
+      "hard_days_any_stand_share": 0.0,
+      "stands_gaining_frost_any_day": 0,
+      "stands_losing_frost_any_day": 0,
+      "stands_changing_hard_frost_any_day": 0
+    }
+  },
+  "frost_horizon_dates": [
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30",
+    "2026-10-01",
+    "2026-10-02",
+    "2026-10-03",
+    "2026-10-04"
+  ],
+  "rule": {
+    "10km": {
+      "p95_abs_dF_worst_case": 0.11419361967714681,
+      "frost_status_changes_total": 0,
+      "meets_rule_p95_le_0_02_and_no_frost_change": false
+    },
+    "15km": {
+      "p95_abs_dF_worst_case": 0.11393219279201094,
+      "frost_status_changes_total": 0,
+      "meets_rule_p95_le_0_02_and_no_frost_change": false
+    }
+  }
+}

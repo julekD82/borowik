@@ -134,7 +134,7 @@ def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list
 def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
                            tie_break_index: dict, extra_features_index: dict | None = None,
-                           access: dict | None = None) -> dict:
+                           access: dict | None = None, weather: dict | None = None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -161,6 +161,8 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         # Plan Faza 3.5: odleglosci do punktow dostepu i element o najwiekszym
         # wkladzie w presje (None poza modelem pressure.model: access_points).
         "access": access,
+        # Faza 4.3/4.5: skladniki pogody i udzial prognozy w oknie (prezentacja).
+        "weather": weather,
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -190,7 +192,8 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
 
 def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, neighbors_by_stand: dict,
                          dictionaries: dict, day: str, out_path, tie_break_index: dict,
-                         extra_features_index: dict | None = None) -> pathlib.Path:
+                         extra_features_index: dict | None = None,
+                         profile: dict | None = None) -> pathlib.Path:
     """Plan 2.1 step B3: card-detail data (species composition, density,
     understory, soil type, neighbours, stand_stru/prot_categ) for every
     wydzielenie in `stands`, kept in its own file rather than
@@ -215,11 +218,49 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             day, package_details_index, neighbors_by_stand, dictionaries, tie_break_index,
             extra_features_index=extra_features_index,
             access=build_access_card(row),
+            weather=build_weather_card(row, profile),
         )
         for _, row in stands.iterrows()
     ]
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path
+
+
+def build_weather_card(row, profile: dict | None = None) -> dict | None:
+    """Faza 4.3/4.5: skladniki pogody tego wydzielenia w postaci zrozumialej dla
+    czlowieka (opad z 26 dni i typowy bilans, srednia temperatura 20 dni z optimum,
+    przymrozek i kiedy) + F jako liczba i udzial prognozy w oknie 26 dni. Tylko
+    prezentacja -- nic stad nie wraca do F/R. None dla wiersza bez tych kolumn."""
+    if "p26_mm" not in row.index:
+        return None
+    cfg = (profile or {}).get("fruiting", {})
+    tmin3 = _json_safe(row.get("tmin3_c"))
+    if tmin3 is None:
+        frost = None
+    elif tmin3 < cfg.get("frost_tmin3_hard_c", -2.0):
+        frost = "silny"
+    elif tmin3 < cfg.get("frost_tmin3_soft_c", 0.0):
+        frost = "slaby"
+    else:
+        frost = "brak"
+    return {
+        "p26_mm": _json_safe(row.get("p26_mm")),
+        "cwb26_mm": _json_safe(row.get("cwb26_mm")),
+        "cwb26_typical_mm": _json_safe(row.get("cwb26_typical_mm")),
+        "pct_cwb26": _json_safe(row.get("pct_CWB26")),
+        "tmean20_c": _json_safe(row.get("tmean20_c")),
+        "temp_optimum_c": cfg.get("temp_optimum_c"),
+        "tmin3_c": tmin3,
+        "frost": frost,
+        "frost_date": _text_or_none(row.get("tmin3_date")) if frost in ("slaby", "silny") else None,
+        "F": _json_safe(row.get("F")),
+        "M": _json_safe(row.get("M")),
+        "T": _json_safe(row.get("T")),
+        "K_frost": _json_safe(row.get("K_frost")),
+        "G_season": _json_safe(row.get("G_season")),
+        "forecast_days": _json_safe(row.get("forecast_days")),
+        "forecast_window_share": _json_safe(row.get("forecast_window_share")),
+    }
 
 
 def _text_or_none(value) -> str | None:

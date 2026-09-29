@@ -481,6 +481,24 @@ export type StandDetail = {
   // Plan Faza 3.5: odleglosci do punktow dostepu i element o najwiekszym
   // wkladzie w presje; null/brak poza modelem pressure.model: access_points.
   access?: AccessCard | null;
+  // Faza 4.3/4.5: skladniki pogody tego wydzielenia (tylko prezentacja, nie wplywaja na F/R);
+  // brak/null w plikach sprzed Fazy 4.
+  weather?: WeatherCard | null;
+};
+
+export type WeatherCard = {
+  p26_mm: number | null;
+  cwb26_mm: number | null;
+  cwb26_typical_mm: number | null;
+  pct_cwb26: number | null;
+  tmean20_c: number | null;
+  temp_optimum_c: number | null;
+  tmin3_c: number | null;
+  frost: "brak" | "slaby" | "silny" | null;
+  frost_date: string | null;
+  F: number | null;
+  forecast_days: number | null;
+  forecast_window_share: number | null;
 };
 
 export type Region = {
@@ -704,7 +722,27 @@ export function parseData(
   return { entries: joinData(scores, stands), scores, stands, regions, details };
 }
 
-export type ConditionsDay = { date: string; F: number; level: 0 | 1 | 2 | 3; forecast: boolean };
+export type ConditionsComponents = {
+  cwb26_mm: number | null;
+  cwb26_typical_mm: number | null;
+  pct_cwb26: number | null;
+  tmean20_c: number | null;
+  temp_optimum_c: number | null;
+  tmin3_c: number | null;
+};
+export type ForecastUncertainty = "ok" | "uncertain" | "indicative";
+export type ConditionsDay = {
+  date: string;
+  F: number;
+  level: 0 | 1 | 2 | 3;
+  forecast: boolean;
+  // Faza 4.3-4.5 (opcjonalne: conditions_{day}.json sprzed Fazy 4 ich nie ma)
+  days_ahead?: number;
+  uncertainty?: ForecastUncertainty;
+  components?: ConditionsComponents;
+  frost_area_share?: number;
+  heavy_rain_area_share?: number;
+};
 export type ConditionsRain = { start: string; end: string; rain_mm: number; days_ago: number };
 export type ConditionsTimeline = {
   day: string;
@@ -846,9 +884,11 @@ export async function loadData(basePath: string = "data/") {
   };
   const accessPoints = parseAccessCollection(await optionalJson("access_points.json"), "access_points.json");
   const forestRoads = parseAccessCollection(await optionalJson("forest_roads.json"), "forest_roads.json");
+  const manifest = (await optionalJson("manifest.json")) as { wfs_only_share_of_masked?: unknown } | undefined;
   const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
   return {
     ...parsed,
+    wfsOnlyShare: finiteNumber(manifest?.wfs_only_share_of_masked) ? manifest.wfs_only_share_of_masked : null,
     conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day),
     accessPoints,
     forestRoads,
@@ -899,4 +939,89 @@ export async function loadTrips(): Promise<TripMeta[]> {
   } catch {
     return [];
   }
+}
+
+// ---- Faza 4.3-4.5: skladniki pogody, niepewnosc prognozy (czyste funkcje, testowane) ----
+
+export const WEATHER_DISCLAIMER =
+  "Ocena pogody nie została potwierdzona na danych o znaleziskach; traktuj ją jako orientację, nie prognozę wysypu.";
+
+const pl = (value: number, digits = 0) =>
+  value.toLocaleString("pl-PL", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+/** Oznaczenie dnia prognozy: "prognoza niepewna" (od progu 1) i "orientacyjnie" (od progu 2). */
+export function uncertaintyLabel(level: ForecastUncertainty | undefined): string | null {
+  if (level === "uncertain") return "prognoza niepewna";
+  if (level === "indicative") return "orientacyjnie";
+  return null;
+}
+
+export function uncertaintyNote(level: ForecastUncertainty | undefined): string | null {
+  if (level === "uncertain")
+    return "Prognoza pogody na kilka dni naprzód bywa niedokładna; ocena tego dnia może się zmienić.";
+  if (level === "indicative")
+    return "Prognoza odległa o tydzień lub więcej — wartość tylko orientacyjna.";
+  return null;
+}
+
+const finiteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Linie skladnikow pogody dla panelu (mediana obszaru) lub karty wydzielenia. */
+export function weatherComponentLines(c: {
+  cwb26_mm: number | null;
+  cwb26_typical_mm: number | null;
+  pct_cwb26: number | null;
+  tmean20_c: number | null;
+  temp_optimum_c: number | null;
+}): string[] {
+  const lines: string[] = [];
+  if (finiteNumber(c.cwb26_mm) && finiteNumber(c.cwb26_typical_mm) && finiteNumber(c.pct_cwb26))
+    lines.push(
+      `Bilans wodny z 26 dni (opad minus parowanie): ${pl(c.cwb26_mm)} mm, typowo o tej porze ${pl(c.cwb26_typical_mm)} mm (percentyl ${pl(Math.round(c.pct_cwb26 * 100))})`,
+    );
+  if (finiteNumber(c.tmean20_c))
+    lines.push(
+      `Średnia temperatura 20 dni: ${pl(c.tmean20_c, 1)} °C${finiteNumber(c.temp_optimum_c) ? ` (optimum ok. ${pl(c.temp_optimum_c)} °C)` : ""}`,
+    );
+  return lines;
+}
+
+const dayMonth = (iso: string) => {
+  const d = new Date(`${iso}T12:00:00`);
+  return `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+/** Pelne linie karty wydzielenia: skladniki, przymrozek (tak/nie, kiedy), F jako liczba, udzial prognozy. */
+export function weatherCardLines(w: WeatherCard): string[] {
+  const daysAhead = finiteNumber(w.forecast_days) ? w.forecast_days - 1 : null;
+  const lines = weatherComponentLines(w);
+  if (w.p26_mm !== null && finiteNumber(w.p26_mm)) lines.unshift(`Opad z ostatnich 26 dni: ${pl(w.p26_mm)} mm`);
+  if (w.frost === "brak") lines.push("Przymrozek w ostatnich 3 dobach: nie");
+  else if (w.frost === "slaby" || w.frost === "silny")
+    lines.push(
+      `Przymrozek w ostatnich 3 dobach: tak (${w.frost === "silny" ? "silny" : "słaby"}, min ${finiteNumber(w.tmin3_c) ? pl(w.tmin3_c, 1) : "?"} °C${w.frost_date ? `, ${dayMonth(w.frost_date)}` : ""})`,
+    );
+  if (finiteNumber(w.F)) lines.push(`Ocena pogody F: ${pl(w.F, 2)}`);
+  if (daysAhead !== null && daysAhead >= 4 && finiteNumber(w.forecast_window_share))
+    lines.push(
+      `Wyjazd za ${daysAhead} dni: ok. ${pl(Math.round(w.forecast_window_share * 100))}% oceny opadu pochodzi z prognozy, nie z obserwacji`,
+    );
+  return lines;
+}
+
+/** Udzial powierzchni z przymrozkiem / silnym opadem w panelu (tylko gdy niezerowy). */
+export function localPhenomenaNote(d: ConditionsDay): string | null {
+  const parts: string[] = [];
+  if (finiteNumber(d.frost_area_share) && d.frost_area_share > 0)
+    parts.push(`przymrozek na ${pl(Math.round(d.frost_area_share * 100))}% lasu`);
+  if (finiteNumber(d.heavy_rain_area_share) && d.heavy_rain_area_share > 0)
+    parts.push(`silny opad na ${pl(Math.round(d.heavy_rain_area_share * 100))}% lasu`);
+  return parts.length ? parts.join(", ") : null;
+}
+
+/** Plan 1.3: ostrzezenie, gdy > 20% wydzielen w masce ma sklad tylko z WFS (brak paczki BDL). */
+export const WFS_ONLY_BANNER_THRESHOLD = 0.2;
+export function wfsOnlyBanner(share: number | null | undefined): string | null {
+  if (!finiteNumber(share) || share <= WFS_ONLY_BANNER_THRESHOLD) return null;
+  return `Skład drzewostanu tylko z opisu WFS (bez paczki BDL) dla ${pl(Math.round(share * 100))}% wydzieleń w masce — ocena siedliska H jest tu mniej dokładna.`;
 }

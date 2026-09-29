@@ -335,7 +335,8 @@ def stand_precip_features_table(stand_precip_daily: pd.DataFrame) -> pd.DataFram
         for sid, g in df.groupby("stand_id", sort=False):
             feat = precip_derived_features(g["precipitation_mm"], g["radar_frac"])
             rows.append({"stand_id": sid, "p5": feat["p5"], "p26w": feat["p26w"],
-                        "rain_radar_coverage": feat["rain_radar_coverage"]})
+                        "rain_radar_coverage": feat["rain_radar_coverage"],
+                        "p26_sum": _rolling_sum(g["precipitation_mm"], 26)})
         return pd.DataFrame(rows).set_index("stand_id")
 
     n_stands = len(sizes)
@@ -350,10 +351,31 @@ def stand_precip_features_table(stand_precip_daily: pd.DataFrame) -> pd.DataFram
     p26w = precip[:, -window:] @ weights
     rain_radar_coverage = (radar_frac[:, -window:] @ weights) / weights.sum()
     p5 = precip[:, -min(5, n_dates):].sum(axis=1)
+    p26_sum = precip[:, -window:].sum(axis=1)
 
     return pd.DataFrame(
-        {"p5": p5, "p26w": p26w, "rain_radar_coverage": rain_radar_coverage}, index=stand_order,
+        {"p5": p5, "p26w": p26w, "rain_radar_coverage": rain_radar_coverage, "p26_sum": p26_sum}, index=stand_order,
     ).rename_axis("stand_id")
+
+
+def _coldest_recent_day(group: pd.DataFrame, days: int = 3) -> str | None:
+    """Faza 4.3: data (ISO, lokalna) najzimniejszej doby sposrod ostatnich `days`."""
+    tail = group.iloc[-days:]
+    if not len(tail) or tail["tmin_c"].isna().all():
+        return None
+    local = to_local_date(tail["date"])
+    return str(local.iloc[int(np.argmin(tail["tmin_c"].to_numpy()))])
+
+
+def forecast_window_share(days_ahead: int, window: int = 26, half_life_days: float = 10.0) -> float:
+    """Faza 4.5: wykladniczo wazony (tak jak P26w) udzial okna, ktory lezy w przyszlosci
+    wzgledem dzisiaj, gdy wyjazd jest za `days_ahead` dni -- czyli ile z oceny opadu to
+    prognoza, nie obserwacja. 0 dla wyjazdu dzisiaj."""
+    if days_ahead <= 0:
+        return 0.0
+    ages = np.arange(window)               # 0 = dzien wyjazdu
+    weights = 0.5 ** (ages / half_life_days)
+    return float(weights[: min(days_ahead, window)].sum() / weights.sum())
 
 
 def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
@@ -392,6 +414,10 @@ def compute_weather_features(daily_df: pd.DataFrame) -> pd.DataFrame:
             "tmin3": tmin.iloc[-3:].min(),
             "days_since_p10": precip_feat["days_since_p10"],
             "rain_radar_coverage": precip_feat["rain_radar_coverage"],
+            # Faza 4.3: skladniki do prezentacji (nie wchodza do F): zwykla suma
+            # opadu z 26 dni w mm oraz data najzimniejszej doby z ostatnich 3.
+            "p26_sum": _rolling_sum(p, 26),
+            "tmin3_date": _coldest_recent_day(group),
         })
     return pd.DataFrame(rows)
 

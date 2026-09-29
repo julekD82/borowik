@@ -1,0 +1,232 @@
+{
+  "date": "2026-09-29",
+  "diagnoza_dzis": {
+    "stands_in_mask": 21716,
+    "quantiles_5_25_50_75_95": {
+      "F": [
+        0.44971627018230476,
+        0.5520549984653725,
+        0.6469329469255827,
+        0.7325701004519202,
+        0.8107208111179942
+      ],
+      "M": [
+        0.32967012263933515,
+        0.4597646070902748,
+        0.6033288581320457,
+        0.7414969280130331,
+        0.877368367933789
+      ],
+      "T": [
+        0.9707175719298958,
+        0.9854586228983866,
+        0.9886331173689555,
+        0.9915661252696345,
+        0.9991898765683799
+      ],
+      "K_frost": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "pct_CWB26": [
+        0.42903225806451617,
+        0.4838709677419355,
+        0.5419354838709678,
+        0.6053763440860215,
+        0.6967741935483871
+      ]
+    },
+    "class_share": {
+      "Słabe warunki": 0.0,
+      "Umiarkowane": 0.05010130779149015,
+      "Dobre": 0.5762110885982685,
+      "Bardzo dobre": 0.3736876036102413
+    },
+    "variance_share_of_log_F": {
+      "M": 0.9996721083184034,
+      "T": 0.0003278916815964915,
+      "K_frost": 0.0,
+      "G_season": 0.0
+    },
+    "G_season": 0.8801132342533616,
+    "share_M_above_0_9": 0.03766807883588138,
+    "share_T_above_0_9": 0.9993553140541536,
+    "share_frost": 0.0,
+    "class_changes_under_pm10pct_of_parameter": {
+      "moisture_midpoint": {
+        "-10%": 5247,
+        "+10%": 8133
+      },
+      "moisture_slope": {
+        "-10%": 733,
+        "+10%": 656
+      },
+      "temp_optimum_c": {
+        "-10%": 2683,
+        "+10%": 290
+      },
+      "temp_sigma_c": {
+        "-10%": 14,
+        "+10%": 54
+      },
+      "dry_pct_threshold": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "wet_pct_threshold": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "heat_penalty_tmean5_c": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "heat_penalty_p5_mm": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "heat_penalty_factor": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "frost_tmin3_hard_c": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "frost_hard_factor": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "frost_soft_factor": {
+        "-10%": 0,
+        "+10%": 0
+      },
+      "G_season(x)": {
+        "-10%": 6758,
+        "+10%": 4284
+      }
+    }
+  },
+  "historia_klas": {
+    "2026-09-25": {
+      "n": 3656,
+      "F_median": 0.6127001936236502,
+      "Słabe warunki": 0.0,
+      "Umiarkowane": 0.09,
+      "Dobre": 0.416,
+      "Bardzo dobre": 0.495
+    },
+    "2026-09-26": {
+      "n": 3656,
+      "F_median": 0.5488057836716463,
+      "Słabe warunki": 0.0,
+      "Umiarkowane": 0.209,
+      "Dobre": 0.296,
+      "Bardzo dobre": 0.495
+    },
+    "2026-09-27": {
+      "n": 3656,
+      "F_median": 0.8226364013291431,
+      "Słabe warunki": 0.0,
+      "Umiarkowane": 0.0,
+      "Dobre": 0.002,
+      "Bardzo dobre": 0.998
+    },
+    "2026-09-28": {
+      "n": 14397,
+      "F_median": 0.7159468800143939,
+      "Słabe warunki": 0.0,
+      "Umiarkowane": 0.012,
+      "Dobre": 0.437,
+      "Bardzo dobre": 0.552
+    },
+    "2026-09-29": {
+      "n": 21716,
+      "F_median": 0.6469329469255827,
+      "Słabe warunki": 0.0,
+      "Umiarkowane": 0.05,
+      "Dobre": 0.576,
+      "Bardzo dobre": 0.374
+    }
+  },
+  "panel_7_dni": {
+    "points_in_radius": 79,
+    "days": [
+      {
+        "date": "2026-09-29",
+        "median_of_features": 0.452,
+        "median_f_points": 0.452,
+        "median_f_stands": 0.462,
+        "area_weighted_mean": 0.501,
+        "max_diff": 0.049,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      },
+      {
+        "date": "2026-09-30",
+        "median_of_features": 0.363,
+        "median_f_points": 0.361,
+        "median_f_stands": 0.377,
+        "area_weighted_mean": 0.433,
+        "max_diff": 0.072,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      },
+      {
+        "date": "2026-10-01",
+        "median_of_features": 0.288,
+        "median_f_points": 0.287,
+        "median_f_stands": 0.297,
+        "area_weighted_mean": 0.371,
+        "max_diff": 0.084,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      },
+      {
+        "date": "2026-10-02",
+        "median_of_features": 0.237,
+        "median_f_points": 0.235,
+        "median_f_stands": 0.247,
+        "area_weighted_mean": 0.321,
+        "max_diff": 0.086,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      },
+      {
+        "date": "2026-10-03",
+        "median_of_features": 0.197,
+        "median_f_points": 0.196,
+        "median_f_stands": 0.209,
+        "area_weighted_mean": 0.28,
+        "max_diff": 0.084,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      },
+      {
+        "date": "2026-10-04",
+        "median_of_features": 0.184,
+        "median_f_points": 0.183,
+        "median_f_stands": 0.191,
+        "area_weighted_mean": 0.256,
+        "max_diff": 0.073,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      },
+      {
+        "date": "2026-10-05",
+        "median_of_features": 0.173,
+        "median_f_points": 0.172,
+        "median_f_stands": 0.177,
+        "area_weighted_mean": 0.232,
+        "max_diff": 0.06,
+        "frost_area_share": 0.0,
+        "heavy_rain_area_share": 0.0
+      }
+    ],
+    "max_diff_any_day": 0.086,
+    "rule_switch_if_diff_gt_0_05": true
+  }
+}
