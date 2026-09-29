@@ -96,6 +96,44 @@ Różnica (F bez G_season − sam kalendarz): tło (a) −0,023 (−0,063…0,01
 
 Zastrzeżenia: tło (a) jest zawyżone (ludzie chodzą do lasu, gdy spodziewają się grzybów), tło (b) zaniżone; sygnał M pochodzi w praktyce z samego opadu (E-OBS nie ma wilgotności gleby, `soil_moisture_weight` = 0); ET0 z Hargreaves-Samani, nie z ERA5; klasa wilgotności siedliska przyjęta jako 1 (jak w notatniku 03).
 
+## 2.4 — analiza EKSPLORACYJNA: która część H niesie sygnał
+
+**Eksploracyjna, po zobaczeniu wyników 2.4; nie wpływa na decyzje wg reguł 2.0** (bez uzasadnienia dla zmiany wag). Kod: `notebooks/14_eksploracja_h.py`. Te same zamrożone rekordy i tła co analiza główna 2.4 (od 2021 r.: 210 pozytywów, tło (a) 1024, tło (b) 329). Zbiory nie zawierały atrybutów wydzieleń, więc odtworzono je ponownym, małym zapytaniem BDL WFS per rekord (za zgodą właściciela; bez GBIF, bez nowego losowania). Kontrola: H odtworzone z atrybutów różni się od zamrożonego o ≤ 3·10⁻¹⁶, AUC(H) = 0,571 / 0,610 jak w 2.4. CI: bootstrap po obserwatorach, 1000 powtórzeń (w 2.4 było 2000).
+
+| Miara | AUC vs tło (a) inne grzyby | AUC vs tło (b) rośliny/zwierzęta |
+|---|---|---|
+| H (całość) | 0,571 (0,529–0,609) | 0,610 (0,555–0,662) |
+| S_host | 0,569 (0,530–0,609) | 0,577 (0,534–0,632) |
+| S_site | 0,561 (0,503–0,601) | 0,628 (0,559–0,680) |
+| S_age | 0,486 (0,446–0,538) | 0,498 (0,452–0,562) |
+| udział sosny+świerka (SO, SW; z WFS: `part_cd`/10 dla panującego SO/SW, inaczej 0) | 0,571 (0,521–0,616) | 0,570 (0,516–0,630) |
+| binarnie panujący SO lub SW | 0,549 (0,505–0,588) | 0,531 (0,484–0,583) |
+| sam wiek (lata, po przeliczeniu na 2026; im więcej, tym wyższa wartość) | **0,403** (0,360–0,457) | **0,424** (0,373–0,485) |
+
+Odczyt opisowy (bez wniosków o skuteczności): sygnał H pochodzi głównie ze składu gatunkowego (S_host) i siedliska (S_site); S_age nie odróżnia miejsc znalezisk od tła (≈ 0,49–0,50). Sam wiek ma AUC poniżej 0,5: wydzielenia ze znaleziskami są średnio **młodsze** niż tło, czyli w tych danych nie ma podstaw do zakładania, że starsze drzewostany są bardziej wiązane ze znaleziskami; krzywa S_age pozostaje więc hipotezą bez poparcia w tej próbie (mogą działać efekty dostępności: młodsze drzewostany są częściej przy drogach, oraz zmiana wieku względem „wiek z opisu”). Udział sosny+świerka jest tak samo informatywny jak cały S_host, ale to zbieżność w małej próbie. Wielokrotne testowanie: 7 miar × 2 tła bez korekty. WFS zawiera tylko gatunek panujący z `part_cd`, więc „udział sosny+świerka” to przybliżenie, nie skład z paczek.
+
+## 2.4 — kody siedlisk i gatunków nieznane profilowi
+
+Zliczenie w zamrożonych rekordach 2.4 od 2021 r. (rekordów z co najmniej jednym wydzieleniem w buforze przechodzącym maskę z tym kodem; jeden rekord może mieć kilka kodów). Profil nie był zmieniany.
+
+| Kod | Rodzaj | Pozytywy | Tło (a) | Tło (b) |
+|---|---|---|---|---|
+| LGSW | siedlisko | 19 | 60 | 27 |
+| LMGSW | siedlisko | 11 | 40 | 37 |
+| BMGSW | siedlisko | 8 | 15 | 9 |
+| BGSW | siedlisko | 0 | 3 | 0 |
+| LGW | siedlisko | 0 | 3 | 7 |
+| LLG | siedlisko | 0 | 2 | 3 |
+| LMGW | siedlisko | 0 | 2 | 1 |
+| BMGW | siedlisko | 1 | 0 | 0 |
+| BMWYZW, BWG | siedlisko | 0 | 1 + 1 | 1 + 1 |
+| BMGB | siedlisko | 0 | 1 | 0 |
+| BST | gatunek | 0 | 1 | 0 |
+
+Nieznanych kodów jest 17,0% pozytywów (poniżej progu 20%, więc analiza główna ich nie pomijała). Prawie wszystkie to kody siedlisk z „G” w środku (prawdopodobnie warianty górskie, np. LGSW, LMGSW, BMGSW; interpretacja kodów do potwierdzenia w słowniku BDL, nie w profilu). Zaznaczam: takie wydzielenia dostają `unknown_site_score` z profilu.
+
+Przebieg Kieleczki (manifesty w `docs/porownania/{nowy,faza1_5,faza1_6}/`): `unknown_site_count` = 0 i `unknown_species_count` = 0 (19 716 wydzieleń); problem kodów nieznanych dotyczy więc obszarów górskich/podgórskich z 2.4, nie Kieleczki.
+
 ## Czego te testy nie pokazują
 
 - GBIF zawiera tylko znaleziska. Nie wiadomo, gdzie i kiedy szukano bez skutku, ani ile czasu na to poświęcono, więc **nie da się rzetelnie zmierzyć, czy aplikacja wskazuje miejsca z większą liczbą borowików**.
