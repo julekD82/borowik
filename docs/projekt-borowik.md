@@ -413,7 +413,7 @@ REJON            = grupa sąsiadujących wydzieleń z wysokim R (warstwa prezent
 
 **Poprawka wyjaśnień (2.1):** S_host miesza powinowactwo gatunku panującego z neutralnym 0,5 dla reszty. Tekst wyjaśnienia ma rozróżniać „gatunek słabo pasuje” od „gatunek pasuje, ale ma tylko X/10 udziału”.
 
-**S_age** (wiek gatunku panującego, `spec_age`), funkcja odcinkowo-liniowa:
+**S_age** (wiek gatunku panującego, `spec_age`). **Od 29.09.2026 domyślnie `habitat.age_mode: neutral`: S_age = 1 dla każdego wydzielenia przechodzącego maskę wieku** (decyzja po walidacji Fazy 2, `docs/RAPORT_FAZA_2.md` „Decyzje po walidacji”: S_age nie odróżnia miejsc znalezisk od tła, rozkład wieku znalezisk przeczy karze dla 12–35 lat). Poniższa funkcja odcinkowo-liniowa opisuje dawny tryb `curve`, nadal dostępny w profilu:
 
 ```
 wiek < 12        → maska (uprawa, proxy — patrz zastrzeżenie 5.2)

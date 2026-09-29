@@ -1,6 +1,6 @@
 # Raport Fazy 2 — kontrole wiarygodności i przygotowanie walidacji
 
-Stan: 29.09.2026, gałąź `ulepszenia-faza2`. Zrealizowane: 2.0 (reguły zatwierdzone), 2.1, 2.2, 2.3, 2.4, 2.5, 2.6 oraz `scripts/zapisz_prognoze.py`. Nie ruszane na polecenie właściciela: 2.7, 2.8.
+Stan: 29.09.2026. Faza 2 (gałąź `ulepszenia-faza2`) jest scalona do `master`; zrealizowane: 2.0 (reguły zatwierdzone), 2.1, 2.2, 2.3, 2.4, 2.5, 2.6 oraz `scripts/zapisz_prognoze.py`. Nie ruszane na polecenie właściciela: 2.7, 2.8. Decyzja właściciela po walidacji (domyślny `habitat.age_mode: neutral`) jest wdrożona na gałęzi `ulepszenia-wiek` — patrz „Decyzje po walidacji”.
 
 ## Status zadań
 
@@ -154,9 +154,9 @@ Przebieg Kieleczki (manifesty w `docs/porownania/{nowy,faza1_5,faza1_6}/`): `unk
 
 Podział na gatunek panujący (największe wydzielenie w buforze), tylko klasy z ≥ 20 rekordami: **sosna** pozytywy 40–60: 29, 60–80: 26, 80–100: 27 (mediana wieku 65,7; Q1–Q3 45,5–87,7; n = 118); tło (a) 20–40: 42, 40–60: 74, 60–80: 130, 80–100: 106, 100–120: 73, > 120: 50 (mediana 75,0); tło (b) 40–60: 21, 60–80: 40, 80–100: 33, 100–120: 20 (mediana 72,6). **Świerk**: w żadnej klasie nie ma ≥ 20 rekordów (pozytywy n = 17; tło (a) n = 54, mediana 70,8; tło (b) n = 45, mediana 72,0), więc rozkładu klasowego nie podaję. Odczyt opisowy: pozytywy są przesunięte ku młodszym klasom (20–60 lat: 36% wobec 20% w obu tłach) i rzadziej występują w drzewostanach > 100 lat (21% wobec 32% / 28%); podobnie wśród samych sosen (mediana 65,7 wobec 75,0 / 72,6). Nie oznacza to, że młodsze drzewostany są „lepsze”: możliwe jest skrzywienie dostępnością (młodsze drzewostany blisko dróg i osad, gdzie ludzie chodzą).
 
-### (b) Przełącznik `habitat.age_mode` (`curve` domyślny, `neutral`)
+### (b) Przełącznik `habitat.age_mode` (`curve` / `neutral`; w chwili tej analizy domyślny był `curve`, od decyzji poniżej domyślny jest `neutral`)
 
-Dodano do profilu (`habitat.age_mode: curve`, kod w `pipeline/habitat.py::score_age`): `neutral` daje S_age = 1 dla każdego wydzielenia przechodzącego maskę wieku (< 12 lat nadal odpada; również bez kary 0,9 dla > 120 lat). **Domyślny tryb nie został zmieniony.** 4 nowe testy w `tests/test_habitat.py`.
+Dodano do profilu (wtedy `habitat.age_mode: curve`, kod w `pipeline/habitat.py::score_age`): `neutral` daje S_age = 1 dla każdego wydzielenia przechodzącego maskę wieku (< 12 lat nadal odpada; również bez kary 0,9 dla > 120 lat). W tej analizie domyślny tryb nie był zmieniany (zmianę wprowadza dopiero decyzja właściciela poniżej). 4 nowe testy w `tests/test_habitat.py`.
 
 - **AUC(H) na zamrożonych danych:** `neutral`: 0,574 (CI 0,528–0,611) vs tło (a), 0,615 (0,556–0,668) vs tło (b); `curve` (2.4): 0,571 i 0,610. Różnica pomijalna (o 0,003–0,005 na korzyść `neutral`, dużo poniżej szerokości CI).
 - **Przebieg Kieleczki offline** (`docs/porownania/faza1_6`; R = 100·H·F_loc·(1 − αP), H bez S_age; bez zmiany F_loc, P i maski). Kontrola: odtworzone R w trybie `curve` równa się R z eksportu (maks. różnica 0,0) i odtworzone rejony mają te same rozmiary co zapisane (23/21/15/13/38):
@@ -169,6 +169,20 @@ Dodano do profilu (`habitat.age_mode: curve`, kod w `pipeline/habitat.py::score_
 | mediana H | 0,860 w obu trybach (mediana wydzieleń ma S_age = 1 już w `curve`) |
 
 `neutral` zmienia więc ranking umiarkowanie (połowa top-20), głównie przez usunięcie kar za drzewostany młodsze niż 35 lat i starsze niż 120 lat. Wynik dotyczy jednego przebiegu (Kieleczka) i jest zależny od kształtu krzywej; nie jest oceną skuteczności żadnego trybu.
+
+## Decyzje po walidacji
+
+Decyzja właściciela (29.09.2026), wdrożona na gałęzi `ulepszenia-wiek`:
+
+1. **`habitat.age_mode: neutral` staje się domyślny** (S_age = 1 dla wydzieleń spełniających maskę wieku). Tryb `curve` (dawna krzywa z `age_breakpoints`) zostaje dostępny przez profil. Maska < 12 lat bez zmian; przestaje obowiązywać także kara 0,9 dla drzewostanów > 120 lat. Zmiana obejmuje wszystko, co używa `score_age` (H, S_age w eksporcie i diagnostyce).
+   **Uzasadnienie:**
+   - S_age nie odróżnia miejsc znalezisk od tła (AUC 0,486 / 0,498, CI obejmują 0,5),
+   - rozkład wieku znalezisk przeczy karze dla drzewostanów 12–35 lat (klasa 20–40 lat: 13,3% znalezisk wobec 7,1% i 6,7% w tłach),
+   - to **usunięcie niepotwierdzonego założenia, nie dopasowanie nowej krzywej**; potwierdza to wcześniejsze stanowisko z `docs/projekt-borowik.md` (brak podstaw do penalizowania wieku 20–120 lat, funkcja „celowo płaska”).
+   Skutek na Kieleczce (offline, z analizy eksploracyjnej): Spearman R 0,952 względem `curve`, 10 z 20 wspólnych w top-20, 78 ze 110 wydzieleń wspólnych w rejonach; AUC(H) na zamrożonych danych 0,574 / 0,615 (wobec 0,571 / 0,610).
+2. **Świadomie NIE wprowadzamy krzywej faworyzującej 20–60 lat.** Byłoby to dopasowanie do analizy eksploracyjnej (te same dane, po zobaczeniu wyników, z możliwym skrzywieniem dostępnością — młodsze drzewostany blisko dróg). Ewentualne oceny wieku należą do Fazy 5 (dane terenowe z zerami).
+
+Wpływ na analizy: wyniki 2.4 i 2.5 w tym raporcie były liczone przed tą zmianą; H w 2.4 (`curve`) i tryb `neutral` różnią się o ≤ 0,005 AUC. Manifest i diagnostyka nowych przebiegów odzwierciedlają tryb neutral (S_age = 1).
 
 ## Czego te testy nie pokazują
 
@@ -188,4 +202,4 @@ Dodano do profilu (`habitat.age_mode: curve`, kod w `pipeline/habitat.py::score_
 1. Sesja z właścicielem: co robić z wynikiem 2.5 („brak rozróżnienia”) i słabym AUC w 2.4. Reguły nie przewidują automatycznej zmiany modelu.
 2. Zainstalować harmonogram `Borowik-prognoza` (polecenie w `docs/ZAPIS_WYJSC.md`); po ≥ 30 dniach archiwum (od ok. 28.10) można uruchomić 2.7.
 3. Porównać rozkłady percentyli E-OBS i ERA5, zanim produkcja przejdzie na E-OBS (reszta 2.6).
-4. `netCDF4` dopisano do `pyproject.toml`, ale `uv.lock` wymaga przeliczenia poleceniem `uv lock` (w tym środowisku brak `uv` w PATH; pakiet zainstalowano przez pip w `.venv`).
+4. ~~`uv.lock`~~ — zrobione: `netCDF4` w `pyproject.toml` i `uv.lock` (`uv lock`, dodane tylko `cftime`, `netcdf4`, `networkx`; `uv` zainstalowany w `.venv` przez pip). `uv lock --check` bez zmian.

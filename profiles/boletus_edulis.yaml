@@ -108,11 +108,14 @@ age_breakpoints:
   above_120: 0.9
 
 habitat:
-  # Faza 2 (eksploracyjnie): "curve" (domyslny) = krzywa S_age z age_breakpoints;
-  # "neutral" = S_age = 1 dla wydzielen spelniajacych maske wieku (< mask_below
-  # nadal odpada). Analiza 2.4 (docs/RAPORT_FAZA_2.md) nie potwierdza krzywej
-  # wieku, ale domyslnego trybu NIE zmieniono -- decyzja nalezy do wlasciciela.
-  age_mode: curve
+  # "neutral" (domyslny od decyzji wlasciciela po walidacji Fazy 2, sekcja
+  # "Decyzje po walidacji" w docs/RAPORT_FAZA_2.md) = S_age = 1 dla wydzielen
+  # spelniajacych maske wieku (< mask_below nadal odpada, bez kary za > 120 lat);
+  # "curve" = dawna krzywa z age_breakpoints (zostaje dostepna). Powod: S_age nie
+  # odroznia miejsc znalezisk od tla (AUC ~0,49-0,50), a rozklad wieku znalezisk
+  # przeczy karze dla 12-35 lat. To usuniecie niepotwierdzonego zalozenia, nie
+  # nowa krzywa.
+  age_mode: neutral
 
 age:
   # Plan wdrozenia 1.6.2: spec_age (from WFS/BDL a_year, "opisu
