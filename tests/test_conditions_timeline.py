@@ -205,8 +205,8 @@ def test_timeline_days_carry_components_uncertainty_and_area_shares():
     assert set(d0["F_by_aggregation"]) == set(AGGREGATIONS)
 
 
-def test_timeline_default_aggregation_is_median_f_stands_and_legacy_option_keeps_the_pre_faza4_f():
-    assert PROFILE["conditions"]["aggregation"] == "median_f_stands"
+def test_timeline_default_aggregation_is_the_pre_faza4_median_of_features():
+    assert PROFILE["conditions"]["aggregation"] == "median_of_features"
     points = [(50.0, 21.0), (50.1, 21.1), (50.2, 21.2)]
     frost = {(50.2, 21.2): -3.0}
     legacy = {**PROFILE, "conditions": {**PROFILE["conditions"], "aggregation": "median_of_features"}}
