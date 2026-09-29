@@ -27,7 +27,7 @@ def _model():
          "fire_no": ["", ""], "highway": ["track", "tertiary"]},
         geometry=[LineString(coords), LineString([(473000, 310100), (474000, 310100)])], crs=CRS)
     return build_access_model(AccessSet(points=pts, roads=roads), np.array([[473000.0, 310000.0]]),
-                              np.array([30000.0]), CFG)
+                              np.array([30000.0]), CFG, pop_d_forest=np.array([0.0]))
 
 
 def test_points_geojson_has_type_source_and_attractiveness(tmp_path):

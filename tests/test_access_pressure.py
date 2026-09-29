@@ -287,10 +287,11 @@ def test_unknown_population_split_is_rejected_and_saturation_dict_is_resolved():
 CFG_ALL = {**PROFILE_CFG, "population_split": "huff_all"}
 
 
-def test_profile_default_is_huff_all_with_external_option_documented():
-    assert PROFILE_CFG["population_split"] == "huff_all"
+def test_profile_default_is_two_stage_with_temporary_parameters_present():
+    assert PROFILE_CFG["population_split"] == "two_stage"
     assert PROFILE_CFG["external_option_c"] > 0
-    assert set(PROFILE_CFG["saturation_s"]) == {"huff_all", "huff", "none"}
+    assert 0 < PROFILE_CFG["walk_share_max"] <= 1 and PROFILE_CFG["walk_reach_km"] > 0
+    assert set(PROFILE_CFG["saturation_s"]) == {"two_stage", "huff_all", "huff", "none"}
 
 
 def test_external_option_c_gives_about_20_percent_from_one_parking_at_15km():
@@ -370,3 +371,90 @@ def test_huff_all_corridor_inherits_persons_by_network_and_keeps_halving():
     assert pressure_weight(CFG_ALL, "forest_road") == CFG_ALL["types"]["forest_road"]["weight"]
     assert pressure_weight(CFG_ALL, "entrance") == 1.0
     assert pressure_weight(CFG, "entrance") == CFG["types"]["entrance"]["weight"]
+
+
+# --- population_split: two_stage -----------------------------------------------
+
+CFG_TS = {**PROFILE_CFG, "population_split": "two_stage"}
+
+
+def _ts(pts, pop, d_forest, cfg=None):
+    a, _ = compute_attractiveness(_pts(pts), np.array([[0.0, 0.0]]), np.array([pop]), cfg or CFG_TS,
+                                  pop_d_forest=np.array([d_forest]))
+    return a
+
+
+def test_two_stage_requires_distance_to_forest():
+    with pytest.raises(ValueError):
+        compute_attractiveness(_pts([(0, 0, "settlement")]), np.array([[0.0, 0.0]]), np.array([100.0]), CFG_TS)
+
+
+def test_two_stage_walk_share_falls_linearly_with_distance_to_forest():
+    # jedno osiedle na miejscu, brak punktow samochodowych: A osiedla = pieszo
+    pmax, reach = CFG_TS["walk_share_max"], CFG_TS["walk_reach_km"] * 1000.0
+    for d in (0.0, 750.0, 1499.0):
+        a = _ts([(0, 0, "settlement")], 1000.0, d)
+        assert a[0] == pytest.approx(1000.0 * pmax * (1 - d / reach))
+    assert _ts([(0, 0, "settlement")], 1000.0, 1500.0)[0] == 0.0     # dalej niz 1,5 km od lasu: nikt nie idzie
+    assert _ts([(0, 0, "settlement")], 1000.0, float("inf"))[0] == 0.0
+
+
+def test_two_stage_walkers_are_not_diluted_by_hundreds_of_car_points():
+    # regresja huff_all: setki punktow samochodowych nie moga zabrac pieszych osiedlu
+    car = [(3000 + 10 * i, 0, "entrance") for i in range(300)]
+    a = _ts([(0, 0, "settlement")] + car, 1000.0, 0.0)
+    assert a[0] == pytest.approx(1000.0 * CFG_TS["walk_share_max"])    # cala pieszo-czesc, bez konkurencji
+    # a w huff_all ta sama sytuacja rozwadnia osiedle prawie do zera
+    a_all, _ = compute_attractiveness(_pts([(0, 0, "settlement")] + car), np.array([[0.0, 0.0]]),
+                                      np.array([1000.0]), CFG_ALL)
+    assert a_all[0] < 0.05 * a[0]
+
+
+def test_two_stage_walk_part_moves_to_car_when_no_settlement_in_reach():
+    pt = [(1000, 0, "parking")]
+    a_two = _ts(pt, 1000.0, 0.0)
+    g = float(kernel(1000.0, 20000.0))
+    # cala ludnosc jedzie autem: u = w g / (w g + c)
+    assert a_two[0] == pytest.approx(1000.0 * g / (g + CFG_TS["external_option_c"]))
+    # tyle samo co w huff_all
+    a_all, _ = compute_attractiveness(_pts(pt), np.array([[0.0, 0.0]]), np.array([1000.0]), CFG_ALL)
+    assert a_two[0] == pytest.approx(a_all[0])
+
+
+def test_two_stage_car_part_uses_remaining_population_and_external_option():
+    pop, d_forest = 1000.0, 500.0
+    p_walk = CFG_TS["walk_share_max"] * (1 - d_forest / (CFG_TS["walk_reach_km"] * 1000.0))
+    a = _ts([(0, 0, "settlement"), (1000, 0, "parking")], pop, d_forest)
+    g = float(kernel(1000.0, 20000.0))
+    assert a[0] == pytest.approx(pop * p_walk)                                        # pieszo bez c
+    assert a[1] == pytest.approx(pop * (1 - p_walk) * g / (g + CFG_TS["external_option_c"]))
+    assert a.sum() < pop                                                              # c zabiera czesc "autem"
+
+
+def test_two_stage_walkers_split_between_settlements_by_weight_times_kernel():
+    a = _ts([(200, 0, "settlement"), (-1000, 0, "settlement")], 1000.0, 0.0)
+    w = CFG_TS["types"]["settlement"]["weight"]
+    g1, g2 = float(kernel(200.0, 1500.0)), float(kernel(1000.0, 1500.0))
+    walk_pop = 1000.0 * CFG_TS["walk_share_max"]
+    assert a[0] == pytest.approx(walk_pop * g1 / (g1 + g2)) and a[1] == pytest.approx(walk_pop * g2 / (g1 + g2))
+    assert a.sum() == pytest.approx(walk_pop)                                          # bez opcji zewnetrznej
+
+
+def test_two_stage_pressure_uses_persons_and_display_a_norm_is_separate():
+    model = build_access_model(AccessSet(points=_pts([(0, 0, "settlement")]), roads=_empty_roads()),
+                               np.array([[0.0, 0.0]]), np.array([4000.0]), CFG_TS, pop_d_forest=np.array([0.0]))
+    a_k = float(model.points["A"].iloc[0])
+    assert a_k == pytest.approx(4000.0 * CFG_TS["walk_share_max"])
+    out = compute_access_pressure(np.array([[100.0, 0.0]]), model)
+    raw = a_k * float(kernel(100.0, CFG_TS["types"]["settlement"]["range_m"]))
+    assert out["access_raw"].iloc[0] == pytest.approx(raw)
+    assert model.points["A_norm"].iloc[0] == pytest.approx(a_k / (a_k + CFG_TS["attractiveness_display_a_half"]))
+
+
+def test_distance_to_forest_zero_inside_and_inf_beyond_max():
+    from shapely.geometry import box
+    from pipeline.access_pressure import distance_to_forest
+    forest = box(0, 0, 1000, 1000)
+    d = distance_to_forest(np.array([[500.0, 500.0], [1500.0, 500.0], [9000.0, 9000.0]]), forest, 2000.0)
+    assert d[0] == 0.0 and d[1] == pytest.approx(500.0) and np.isinf(d[2])
+    assert np.isinf(distance_to_forest(np.array([[1.0, 1.0]]), None, 2000.0)[0])

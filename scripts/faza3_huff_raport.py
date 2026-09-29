@@ -29,7 +29,7 @@ from scipy.stats import spearmanr  # noqa: E402
 
 import faza3_raport as base  # noqa: E402
 from pipeline.access_points import build_access_set  # noqa: E402
-from pipeline.access_pressure import build_access_model, compute_access_pressure  # noqa: E402
+from pipeline.access_pressure import build_access_model, compute_access_pressure, distance_to_forest  # noqa: E402
 from pipeline.habitat import load_profile  # noqa: E402
 from pipeline.regions import group_into_regions  # noqa: E402
 from pipeline.scoring import compute_ranking  # noqa: E402
@@ -58,12 +58,13 @@ class Ctx:
             pop_points=data["pop"], tiles=data["tiles"], cfg=self.cfg)
         self.pop_xy = np.array([(g.x, g.y) for g in data["pop"].geometry])
         self.pop_vals = data["pop"]["population"].astype(float).values
+        self.pop_d_forest = distance_to_forest(self.pop_xy, data["forest"], self.cfg["walk_reach_km"] * 1000.0)
         self.frame = self.stands[["stand_id", "geometry", "mask"]].copy()
         self.frame["mask_full"] = self.frame["mask"]
         self.target = float(np.median(self.p_grav[self.mask]))
 
     def model(self, cfg):
-        return build_access_model(self.aset, self.pop_xy, self.pop_vals, cfg)
+        return build_access_model(self.aset, self.pop_xy, self.pop_vals, cfg, self.pop_d_forest)
 
     def raw(self, model):
         return compute_access_pressure(self.xy, model)

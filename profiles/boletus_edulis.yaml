@@ -283,7 +283,13 @@ pressure:
     # huff_all (domyslny, decyzja wlasciciela 2026-09-29): jednolity podzial ludnosci
     # miedzy WSZYSTKIE typy punktow (rowniez osiedla), z opcja zewnetrzna c;
     # A_k w osobach, bez A/(A+a_half); waga typu tylko w podziale. huff i none zostaja do porownan.
-    population_split: huff_all
+    # two_stage (domyslny, decyzja wlasciciela 2026-09-29): etap 1 -- sposob dotarcia oczka
+    # (pieszo: p_walk_max * max(0, 1 - d_las/walk_reach), reszta autem), etap 2 -- podzial
+    # w obrebie sposobu (pieszo miedzy osiedla bez opcji zewnetrznej, autem jak huff_all z c).
+    # huff_all, huff i none zostaja do porownan. Parametry tymczasowe, NIESKALIBROWANE.
+    population_split: two_stage
+    walk_share_max: 0.5      # p_walk_max: udzial idacych pieszo dla oczka przy samym lesie
+    walk_reach_km: 1.5       # odleglosc oczka od lasu, przy ktorej p_walk spada do 0
     # Opcja zewnetrzna c ("nie jade do tego lasu") w mianowniku udzialu u_jk. TYMCZASOWE:
     # oczko z jednym parkingiem (w=1) w odleglosci 15 km oddaje mu 19,9% ludnosci
     # (g(15 km) = 0,191; 0,191 / (0,191 + 0,77)); dalej mniej. NIESKALIBROWANE.
@@ -292,7 +298,7 @@ pressure:
     attractiveness_display_a_half: 500.0
     # S per wariant (te same mediany P co gravity w przebiegu Kieleczki, 0,373).
     # TYMCZASOWE, NIESKALIBROWANE (jak d_half w 1.5). none: 2026-09-29 offline.
-    saturation_s: {huff_all: 2489.0, huff: 0.1385, none: 7.0}
+    saturation_s: {two_stage: 1997.0, huff_all: 2489.0, huff: 0.1385, none: 7.0}
     # 3.1 -- dane punktow dostepu
     parking_osm_max_dist_to_forest_m: 200.0
     parking_dedupe_m: 100.0            # pierwszenstwo BDL

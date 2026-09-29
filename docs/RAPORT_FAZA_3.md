@@ -16,7 +16,7 @@ usuwano ani nie czyszczono; do `cache/` doszedł tylko nowy podkatalog `cache/ac
 |---|---|---|
 | 3.1 Dane punktów dostępu | DONE, z odstępstwem | Parkingi, wjazdy, szlabany, fallback, osiedla, sieć dróg leśnych, nawierzchnia z OSM, publiczna/zamknięta. **BDOT10k `OT_SKDR_L` (materialNawierzchni) i relacje OSM `route=bicycle`: BLOCKED** — patrz niżej |
 | 3.2 Atrakcyjność punktu | DONE | `A_k`, `A_norm_k` (normalizacja bezwzględna), korytarz po sieci drogowej |
-| 3.2b Podział ludności (Huff) | DONE, wynik wątpliwy | `population_split: huff_all` (domyślny), `huff`, `none`; `huff_all` wyzerowuje wpływ osiedli — patrz „Ciąg dalszy 2” |
+| 3.2b Podział ludności (Huff) | DONE, kryterium sensowności spełnione częściowo | `population_split: two_stage` (domyślny), `huff_all`, `huff`, `none`; `huff_all` wyzerowywał osiedla („Ciąg dalszy 2”), `two_stage` naprawia to, ale pas > 5 km przekracza tolerancję („Ciąg dalszy 3”); brak przebiegu na żywo, gałąź nie oznaczona jako gotowa |
 | 3.3 Zasięg oddziaływania | DONE | jądro `max(0, 1−(d/R)²)²`, parametry startowe właściciela w profilu; odległość w linii prostej (wariant po sieci duktów: opcjonalny, nie zrobiony) |
 | 3.4 Łączenie w P | DONE | suma po punktach, korytarz jako jeden składnik, `P = 1 − exp(−raw/S)`, `S` dobrane offline (huff 0,1385; none 7,0); wkład każdego typu i punkt o największym wkładzie w diagnostyce |
 | 3.5 Mapa i karta wydzielenia | DONE | eksporty `access_points_{day}.geojson` i `forest_roads_{day}.geojson`, warstwy w legendzie, popup, karta, synchronizator i migawki |
@@ -487,3 +487,128 @@ Backend `pytest`: 736 zaliczonych; frontend `tsc` bez błędów, `vitest` 84 zal
 Nowe testy `huff_all` w `tests/test_access_pressure.py`: opcja zewnętrzna (19,9% przy 15 km),
 suma udziałów oczka < ludność, osiedla w tym samym podziale, A w osobach i waga tylko w podziale,
 poglądowa atrakcyjność 0–1 osobno od P, korytarz w osobach z połową co 3 km.
+
+---
+
+# Ciąg dalszy 3 (2026-09-29): `population_split: two_stage`
+
+Decyzja właściciela po diagnozie `huff_all` (pieszy i autem w jednym mianowniku): wariant 1,
+dwa etapy. `two_stage` jest nowym domyślnym; `huff_all`, `huff` i `none` zostają do porównań.
+**Wynik: kryterium sensowności spełnione częściowo (a tak, b nie), więc zatrzymuję się:
+bez przebiegu na żywo i bez migawki, gałąź NIE jest oznaczona jako gotowa do scalenia.**
+
+## Implementacja
+
+- **Etap 1** (sposób dotarcia oczka GUS *j*): `p_walk_j = p_walk_max · max(0, 1 − d_las_j / 1,5 km)`,
+  `p_walk_max = 0,5` (`walk_share_max`, tymczasowy), `d_las_j` = odległość centroidu oczka od
+  granicy lasu (`pipeline.access_pressure.distance_to_forest`; 1043 z 10 237 oczek w lesie lub przy
+  nim, 2354 w zasięgu 1,5 km). Reszta jedzie autem. Jeśli w zasięgu pieszym nie ma osiedla,
+  udział pieszo przechodzi do „autem”.
+- **Etap 2**: pieszo — między osiedla przy lesie w zasięgu 1,5 km proporcjonalnie do
+  `w_t·g_walk(d)`, bez opcji zewnętrznej; autem — jak `huff_all` (`w_t·g_car(d)/(Σ + c)`,
+  `c = 0,77`).
+- `A_k` w osobach, `P = 1 − exp(−Σ A_k·k(d)/S)`, waga typu tylko w podziale, korytarz dróg leśnych
+  bez zmian (waga 0,4, dziedziczenie po sieci). `S = 1997` dobrane do mediany P = 0,373
+  (w profilu `saturation_s.two_stage`).
+- Testy jednostkowe: liniowy spadek `p_walk`, brak rozwadniania pieszych przez 300 punktów
+  samochodowych (regresja `huff_all`), przejście pieszych do „autem” bez osiedla w zasięgu, podział
+  pieszych między osiedla, `A` w osobach w presji.
+
+## Kryterium ustalone z góry (sprawdzone, nie strojone)
+
+(a) P przy osiedlach wyraźnie wyższe niż 2–3 km w głąb: średnia P w pasach 0–0,5 i 0,5–1 km
+(ważona liczbą wydzieleń) ≥ P(2–3 km) + 0,10; (b) brak ponownego wzrostu dalej: P(3–5 km) i
+P(> 5 km) ≤ P(2–3 km) + 0,05. Stabilność: top-20 (≥ 0,5 ha) w każdym wariancie ±30% ≥ 14 z 20.
+
+| | wynik | próg | |
+|---|---|---|---|
+| (a) P przy osiedlu (0–1 km) vs 2–3 km | 0,612 vs 0,351 (+0,26) | +0,10 | spełnione |
+| (b) P(3–5 km) | 0,365 (+0,014 wobec 2–3 km) | +0,05 | spełnione |
+| (b) P(> 5 km) | 0,454 (**+0,103** wobec 2–3 km) | +0,05 | **niespełnione** |
+| stabilność, minimum top-20 | 16 z 20 | ≥ 14 | spełnione |
+
+Profil P przy Lublińcu (≤ 8 km od centrum; średnie P wg odległości od najbliższego dużego osiedla):
+
+| Pas | wydz. | gravity | huff | huff_all | **two_stage** |
+|---|---|---|---|---|---|
+| 0–0,5 km | 14 | 0,63 | 0,97 | 0,45 | **0,60** |
+| 0,5–1 km | 67 | 0,66 | 0,92 | 0,54 | **0,61** |
+| 1–2 km | 384 | 0,52 | 0,72 | 0,47 | **0,49** |
+| 2–3 km | 460 | 0,40 | 0,37 | 0,35 | **0,35** |
+| 3–5 km | 1021 | 0,38 | 0,32 | 0,37 | **0,37** |
+| > 5 km | 118 | 0,44 | 0,42 | 0,46 | **0,45** |
+
+Interpretacja: `two_stage` naprawia to, co zepsuł `huff_all` — presja przy osiedlu wraca (0,60–0,61,
+przy P = 0,35 w 2–3 km) i maleje z odległością (0,61 → 0,49 → 0,35). W pasie > 5 km (tylko 118
+wydzieleń, na skraju 8-kilometrowego koła wokół Lublińca, przy innych osiedlach i parkingach)
+P wraca do 0,45. Ten sam efekt jest w gravity (0,44 vs 0,40, różnica +0,04, w tolerancji) i w
+`huff_all` (+0,11); w `two_stage` różnica wynosi +0,10, więc przekracza tolerancję 0,05.
+Kryterium jako całość: **niespełnione**. Nie stroiłem pod nie i nie próbowałem kolejnych wariantów.
+
+## Porównanie (Kieleczka, maska 14 399)
+
+| Miara | gravity | huff | huff_all | two_stage |
+|---|---|---|---|---|
+| mediana P | 0,373 | 0,373 | 0,373 | 0,373 |
+| udział lasu z P > 0,5 | 32,3% | 33,8% | 30,5% | **30,1%** |
+| Spearman R vs gravity | | 0,951 | 0,960 | 0,959 |
+| top-20 wspólnych z gravity | | 5 | 5 | 6 |
+| rejony zachowane vs gravity | | 3/5 | 4/5 | 4/5 |
+
+two_stage vs huff_all: Spearman P 0,997, Spearman R 0,9995, top-20 18/20, rejony 5/5 (praktycznie
+ten sam ranking — różnią się głównie wkładem osiedli). two_stage vs huff: Spearman R 0,978,
+top-20 19/20, rejony 4/5.
+
+Udział typów w łącznej presji surowej (maska):
+
+| Typ / podtyp | huff | huff_all | two_stage |
+|---|---|---|---|
+| wjazd, razem | 27,8% | 61,0% | **59,0%** |
+| — crossing_public / crossing_track / junction | 5,2 / 12,9 / 9,6% | 11,4 / 28,5 / 21,1% | 10,9 / 27,8 / 20,2% |
+| szlaban | 2,7% | 6,1% | 5,9% |
+| parking, razem (OSM / BDL) | 22,9% | 31,1% | 30,5% (17,9 / 12,6) |
+| osiedle przy lesie | 45,3% | 0,0% | **2,9%** |
+| korytarz dróg leśnych | 1,3% | 1,7% | 1,7% |
+
+Największy składnik presji wydzielenia: parking 67%, wjazd 22%, korytarz 4,6%, osiedle 4,4%.
+Mediana `A` osiedla to teraz 50 osób (w `huff_all`: 0,75), parkingu 534, wjazdu 229.
+
+**Uwaga do interpretacji.** W `two_stage` osiedla dają tylko 2,9% presji surowej w skali całego
+obszaru, mimo że przy samym mieście P jest podwyższone (0,60). To wynik przyjętej struktury:
+pieszo idzie najwyżej 50% oczek leżących przy lesie (2354 z 10 237 oczek w 1,5 km), a
+wydzielenia oddalone od osiedla o > 500 m dostają presję głównie od parkingów i wjazdów.
+Wjazdy nadal dają 59% presji (jak w `none` i `huff_all`), więc pytanie o `junction` i o liczbę
+wjazdów (1693) pozostaje aktualne.
+
+## Stabilność ±30% (two_stage)
+
+Baza: `S = 1997`. Top-20 (≥ 0,5 ha), rejony jak wcześniej; ostatnia kolumna: czy kryterium
+sensowności byłoby spełnione w danym wariancie (informacyjnie).
+
+| Parametr | −30%: top-20 / rejony | +30%: top-20 / rejony | kryterium −30% / +30% |
+|---|---|---|---|
+| p_walk_max | 19 / 5 | 19 / 5 | nie / nie |
+| c (opcja zewnętrzna) | 20 / 5 | 20 / 5 | nie / nie |
+| zasięg wjazdów (wjazd i szlaban) | 16 / 4 | 16 / 5 | nie / **tak** |
+| zasięg parkingów | 18 / 5 | 18 / 5 | nie / nie |
+
+Minimum top-20: **16 z 20** (≥ 14: spełnione); rejony 4–5 z 5. Ranking jest stabilny wobec
+`p_walk_max` i `c` (19–20/20) i najbardziej wrażliwy na zasięg wjazdów (16/20). Kryterium (b)
+jest niespełnione w 7 z 8 wariantów i spełnione tylko przy zasięgu wjazdów +30%, więc problem
+pasa > 5 km nie jest skutkiem konkretnej wartości `p_walk_max` ani `c`.
+
+## Stan profilu i decyzja
+
+`population_split: two_stage` jest domyślny w profilu zgodnie z decyzją; `saturation_s.two_stage`
+to 1997 (dobrane offline do mediany P 0,373, tymczasowe). Przebieg na żywo i migawka „Kieleczka —
+faza 3 (two_stage)” **nie zostały wykonane** (warunek: kryterium spełnione). Ostatnia wykonana
+migawka to „Kieleczka — faza 3 (huff_all)”, z modelem sprzed tej zmiany.
+
+Do decyzji właściciela: (1) czy odchylenie w pasie > 5 km (118 wydzieleń, 0,45 vs 0,35) jest
+akceptowalne (jest zbliżone do tego, co daje gravity), czyli czy kryterium (b) powinno mieć
+lokalną definicję pasa, czy pas > 5 km należy do innego osiedla; (2) `junction` i liczba wjazdów;
+(3) potem kalibracja parametrów danymi terenowymi. Jeśli kryterium (b) zostanie uznane za
+spełnione, brakuje tylko przebiegu na żywo i migawki.
+
+Dane: `docs/porownania/faza3/raport_two_stage.json`, `roznice_P_two_stage.csv`;
+skrypt `scripts/faza3_two_stage_raport.py`.

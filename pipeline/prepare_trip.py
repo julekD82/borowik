@@ -19,7 +19,7 @@ from pyproj import Transformer
 from pipeline.access_data import load_access_sources, _default_bdl_get
 from pipeline.access_export import write_access_points_geojson, write_forest_roads_geojson
 from pipeline.access_points import build_access_set
-from pipeline.access_pressure import build_access_model
+from pipeline.access_pressure import build_access_model, distance_to_forest
 from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_extra_features import load_extra_features, ExtraStandFeatures
@@ -441,7 +441,11 @@ def _build_access_model(*, profile, tiles, cache_dir, context_stands, forest_bou
         pop_values = pop["population"].fillna(0.0).astype(float).values
     else:
         pop_xy, pop_values = np.empty((0, 2)), np.empty(0)
-    model = build_access_model(access_set, pop_xy, pop_values, cfg)
+    pop_d_forest = (
+        distance_to_forest(pop_xy, forest_boundary, cfg["walk_reach_km"] * 1000.0)
+        if cfg.get("population_split") == "two_stage" else None
+    )
+    model = build_access_model(access_set, pop_xy, pop_values, cfg, pop_d_forest)
     print(
         f"  punkty: {model.counts['points_by_type_source']}; drogi: {model.counts['roads_by_kind']}; "
         f"kafle z fallbackiem: {model.counts['fallback_tile_count']}",
@@ -451,7 +455,8 @@ def _build_access_model(*, profile, tiles, cache_dir, context_stands, forest_bou
         "used": True, **model.counts,
         "failed_tiles": {k: len(v) for k, v in failed.items()},
         "cache_hits": sources["cache_hits"], "tile_count": sources["tile_count"],
-        "params": {k: cfg[k] for k in ("types", "network_half_km", "surface_multiplier", "saturation_s", "population_split", "external_option_c")},
+        "params": {k: cfg[k] for k in ("types", "network_half_km", "surface_multiplier", "saturation_s", "population_split", "external_option_c",
+                                          "walk_share_max", "walk_reach_km")},
     }
     return model, manifest
 

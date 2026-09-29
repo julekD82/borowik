@@ -27,6 +27,21 @@ Droga lesna dziedziczy po sieci jak dotad (A_k zamiast A_norm_k, waga korytarza
 `types.forest_road.weight` jak dotad). `A_norm` na tej sciezce to tylko wielkosc
 POGLADOWA 0-1 dla mapy (A/(A+attractiveness_display_a_half)), nie wchodzi do P.
 
+Wariant `population_split: two_stage` (decyzja wlasciciela 2026-09-29, po
+diagnozie huff_all: pieszy i autem konkurowaly w jednym mianowniku, wiec setki
+punktow samochodowych zawsze wygrywaly z jednym wejsciem pieszym):
+
+  Etap 1, sposob dotarcia oczka GUS j (d_las_j = odleglosc centroidu od lasu):
+      p_walk_j = p_walk_max * max(0, 1 - d_las_j / walk_reach)      (pieszo)
+      reszta (1 - p_walk_j) jedzie autem; jesli w zasiegu pieszym nie ma
+      osiedla, udzial pieszo przechodzi do "autem"
+  Etap 2, podzial W OBREBIE sposobu:
+      pieszo: miedzy osiedla przy lesie w zasiegu ~1,5 km proporcjonalnie do
+              w_t g_walk(d), BEZ opcji zewnetrznej,
+      autem:  miedzy parkingi, wjazdy, szlabany i fallback jak w huff_all
+              (w_t g_car(d) / (suma + c)).
+  A_k w osobach, P = 1 - exp(-sum_k A_k kern(d_k/R_t) / S), waga tylko w podziale.
+
 Wszystkie parametry w profilu (`pressure.access_points`), NIESKALIBROWANE.
 """
 from dataclasses import dataclass, field
@@ -133,7 +148,7 @@ def _compute_a_huff(points, pop_tree, pop_values, cfg, a):
         a[idx] = np.bincount(m.col, weights=pop_values[m.row] * kernel(m.data, radius), minlength=len(idx))
 
 
-def _compute_a_huff_all(points, pop_tree, pop_values, cfg, a):
+def _compute_a_huff_all(points, pop_tree, pop_values, cfg, a, skip_types=()):
     """population_split: huff_all -- ludnosc oczka dzielona miedzy punkty
     WSZYSTKICH typow w ich zasiegu (g_t: dojazd ~20 km dla parkingow/wjazdow/
     szlabanow/fallbacku, dojscie ~1,5 km dla osiedli) z opcja zewnetrzna
@@ -141,7 +156,7 @@ def _compute_a_huff_all(points, pop_tree, pop_values, cfg, a):
     "nie jade do tego lasu")."""
     rows, cols, wts = [], [], []
     for ptype, tcfg in cfg["types"].items():
-        if ptype == "forest_road":
+        if ptype == "forest_road" or ptype in skip_types:
             continue
         idx = np.where(points["type"].values == ptype)[0]
         if not len(idx):
@@ -160,22 +175,66 @@ def _compute_a_huff_all(points, pop_tree, pop_values, cfg, a):
     a += np.bincount(col, weights=pop_values[row] * u, minlength=len(points))
 
 
+def _compute_a_two_stage(points, pop_tree, pop_values, cfg, a, pop_d_forest):
+    """population_split: two_stage -- patrz opis modulu. `pop_d_forest`:
+    odleglosc centroidu kazdego oczka od lasu w metrach (inf = daleko)."""
+    if pop_d_forest is None:
+        raise ValueError("population_split: two_stage wymaga pop_d_forest (odleglosc oczek GUS od lasu)")
+    n = len(pop_values)
+    reach = cfg["walk_reach_km"] * 1000.0
+    p_walk = cfg["walk_share_max"] * np.maximum(0.0, 1.0 - np.asarray(pop_d_forest, dtype=float) / reach)
+    walk_denom = np.zeros(n)
+    walk = None
+    st_idx = np.where(points["type"].values == "settlement")[0]
+    scfg = cfg["types"].get("settlement")
+    if scfg is not None and len(st_idx):
+        radius = scfg["attractiveness_range_km"] * 1000.0
+        m = pop_tree.sparse_distance_matrix(cKDTree(_xy(points.geometry.iloc[st_idx])), radius, output_type="coo_matrix")
+        w = scfg["weight"] * kernel(m.data, radius)
+        walk_denom = np.bincount(m.row, weights=w, minlength=n)
+        walk = (m.row, st_idx[m.col], w)
+    # pieszo tylko tam, gdzie jest dokad isc; reszta autem
+    walk_pop = pop_values * p_walk * (walk_denom > 0)
+    car_pop = pop_values - walk_pop
+    if walk is not None:
+        row, col, w = walk
+        a += np.bincount(col, weights=walk_pop[row] * w / walk_denom[row], minlength=len(points))
+    _compute_a_huff_all(points, pop_tree, car_pop, cfg, a, skip_types=("settlement",))
+
+
+def distance_to_forest(pop_xy: np.ndarray, forest_boundary, max_m: float) -> np.ndarray:
+    """Odleglosc [m] centroidow oczek od lasu (0 wewnatrz); inf dalej niz max_m."""
+    out = np.full(len(pop_xy), np.inf)
+    if forest_boundary is None or forest_boundary.is_empty or not len(pop_xy):
+        return out
+    pts = shapely.points(pop_xy[:, 0], pop_xy[:, 1])
+    zone = forest_boundary.buffer(max_m)
+    shapely.prepare(zone)
+    near = shapely.intersects(pts, zone)
+    if near.any():
+        out[near] = shapely.distance(pts[near], forest_boundary)
+    return out
+
+
+PERSON_SPLITS = ("two_stage", "huff_all")
+
+
 def pressure_strength(a: np.ndarray, a_norm: np.ndarray, cfg: dict) -> np.ndarray:
-    """Wielkosc wchodzaca do sumy presji: A (osoby) dla huff_all, A_norm inaczej."""
-    return a if cfg.get("population_split", "huff") == "huff_all" else a_norm
+    """Wielkosc wchodzaca do sumy presji: A (osoby) dla huff_all/two_stage, A_norm inaczej."""
+    return a if cfg.get("population_split", "huff") in PERSON_SPLITS else a_norm
 
 
 def pressure_weight(cfg: dict, ptype: str) -> float:
     """Waga typu w sumie presji: w huff_all wagi dzialaja TYLKO w podziale
     (tu 1,0); korytarz drog lesnych zachowuje swoja wage (nie bierze udzialu
     w podziale)."""
-    if cfg.get("population_split", "huff") == "huff_all" and ptype != "forest_road":
+    if cfg.get("population_split", "huff") in PERSON_SPLITS and ptype != "forest_road":
         return 1.0
     return float(cfg["types"][ptype]["weight"])
 
 
 def compute_attractiveness(points: gpd.GeoDataFrame, pop_xy: np.ndarray, pop_values: np.ndarray,
-                            cfg: dict) -> tuple[np.ndarray, np.ndarray]:
+                            cfg: dict, pop_d_forest=None) -> tuple[np.ndarray, np.ndarray]:
     """(A, A_norm) dla kazdego punktu. `population_split` (profil): "huff"
     (domyslny) dzieli ludnosc oczka miedzy punkty w zasiegu, "none" liczy
     kazdy punkt osobno (model z pierwszej wersji Fazy 3). A_norm = A/(A+a_half),
@@ -186,18 +245,20 @@ def compute_attractiveness(points: gpd.GeoDataFrame, pop_xy: np.ndarray, pop_val
         return a, a_norm
     pop_tree = cKDTree(pop_xy)
     split = cfg.get("population_split", "huff")
-    if split == "huff_all":
+    if split == "two_stage":
+        _compute_a_two_stage(points, pop_tree, pop_values, cfg, a, pop_d_forest)
+    elif split == "huff_all":
         _compute_a_huff_all(points, pop_tree, pop_values, cfg, a)
     elif split == "huff":
         _compute_a_huff(points, pop_tree, pop_values, cfg, a)
     elif split == "none":
         _compute_a_none(points, pop_tree, pop_values, cfg, a)
     else:
-        raise ValueError(f"population_split: {split!r} (dozwolone: huff_all, huff, none)")
+        raise ValueError(f"population_split: {split!r} (dozwolone: two_stage, huff_all, huff, none)")
     for ptype, tcfg in cfg["types"].items():
         idx = np.where(points["type"].values == ptype)[0]
         if len(idx):
-            half = cfg["attractiveness_display_a_half"] if split == "huff_all" else tcfg["a_half"]
+            half = cfg["attractiveness_display_a_half"] if split in PERSON_SPLITS else tcfg["a_half"]
             a_norm[idx] = a[idx] / (a[idx] + half)
     return a, a_norm
 
@@ -293,9 +354,10 @@ def propagate_corridor(points: gpd.GeoDataFrame, a_norm: np.ndarray, roads: gpd.
     return per_road, arr[:, 1:3], arr[:, 0], arr[:, 3].astype(int)
 
 
-def build_access_model(access: AccessSet, pop_xy: np.ndarray, pop_values: np.ndarray, cfg: dict) -> AccessModel:
+def build_access_model(access: AccessSet, pop_xy: np.ndarray, pop_values: np.ndarray, cfg: dict,
+                        pop_d_forest=None) -> AccessModel:
     points = access.points.copy()
-    a, a_norm = compute_attractiveness(points, pop_xy, pop_values, cfg)
+    a, a_norm = compute_attractiveness(points, pop_xy, pop_values, cfg, pop_d_forest)
     points["A"] = a
     points["A_norm"] = a_norm
     strength = pressure_strength(a, a_norm, cfg)
@@ -303,7 +365,7 @@ def build_access_model(access: AccessSet, pop_xy: np.ndarray, pop_values: np.nda
     roads = access.roads.copy()
     per_road, cxy, ca, croad = propagate_corridor(points, strength, roads, cfg)
     roads["A_seg"] = per_road
-    if cfg.get("population_split", "huff") == "huff_all":
+    if cfg.get("population_split", "huff") in PERSON_SPLITS:
         half = cfg["attractiveness_display_a_half"]
         roads["attractiveness"] = per_road / (per_road + half)     # tylko do mapy
     else:

@@ -315,7 +315,7 @@ def _access_model_near_stand_a():
     roads = gpd.GeoDataFrame({"kind": [], "surface_class": [], "source": [], "fire_no": [], "highway": []},
                              geometry=[], crs="EPSG:2180")
     return build_access_model(AccessSet(points=points, roads=roads), np.array([[380150.0, 486150.0]]),
-                              np.array([50000.0]), cfg)
+                              np.array([50000.0]), cfg, pop_d_forest=np.array([0.0]))
 
 
 def _enrich(profile, access_model):
