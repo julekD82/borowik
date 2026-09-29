@@ -280,10 +280,19 @@ pressure:
     # kazdego oczka GUS dzielona miedzy punkty w zasiegu dojazdu proporcjonalnie do
     # w_t * g(d), suma udzialow oczka = jego ludnosc; none -- kazdy punkt zbiera
     # ludnosc niezaleznie (pierwsza wersja Fazy 3). Osiedla przy lesie (pieszo) bez dzielenia.
-    population_split: huff
+    # huff_all (domyslny, decyzja wlasciciela 2026-09-29): jednolity podzial ludnosci
+    # miedzy WSZYSTKIE typy punktow (rowniez osiedla), z opcja zewnetrzna c;
+    # A_k w osobach, bez A/(A+a_half); waga typu tylko w podziale. huff i none zostaja do porownan.
+    population_split: huff_all
+    # Opcja zewnetrzna c ("nie jade do tego lasu") w mianowniku udzialu u_jk. TYMCZASOWE:
+    # oczko z jednym parkingiem (w=1) w odleglosci 15 km oddaje mu 19,9% ludnosci
+    # (g(15 km) = 0,191; 0,191 / (0,191 + 0,77)); dalej mniej. NIESKALIBROWANE.
+    external_option_c: 0.77
+    # Tylko do mapy (klasy niska/srednia/wysoka): A/(A + ta wartosc), osoby. Nie wchodzi do P.
+    attractiveness_display_a_half: 500.0
     # S per wariant (te same mediany P co gravity w przebiegu Kieleczki, 0,373).
     # TYMCZASOWE, NIESKALIBROWANE (jak d_half w 1.5). none: 2026-09-29 offline.
-    saturation_s: {huff: 0.1385, none: 7.0}
+    saturation_s: {huff_all: 2489.0, huff: 0.1385, none: 7.0}
     # 3.1 -- dane punktow dostepu
     parking_osm_max_dist_to_forest_m: 200.0
     parking_dedupe_m: 100.0            # pierwszenstwo BDL

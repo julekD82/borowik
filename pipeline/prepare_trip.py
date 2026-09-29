@@ -451,7 +451,7 @@ def _build_access_model(*, profile, tiles, cache_dir, context_stands, forest_bou
         "used": True, **model.counts,
         "failed_tiles": {k: len(v) for k, v in failed.items()},
         "cache_hits": sources["cache_hits"], "tile_count": sources["tile_count"],
-        "params": {k: cfg[k] for k in ("types", "network_half_km", "surface_multiplier", "saturation_s", "population_split")},
+        "params": {k: cfg[k] for k in ("types", "network_half_km", "surface_multiplier", "saturation_s", "population_split", "external_option_c")},
     }
     return model, manifest
 

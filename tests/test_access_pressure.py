@@ -13,7 +13,10 @@ from pipeline.access_pressure import (
 )
 from pipeline.habitat import load_profile
 
-CFG = load_profile("profiles/boletus_edulis.yaml")["pressure"]["access_points"]
+PROFILE_CFG = load_profile("profiles/boletus_edulis.yaml")["pressure"]["access_points"]
+# testy sprzed huff_all opisuja model z A_norm (normalizacja bezwzgledna) -- wariant "huff";
+# huff_all ma osobne testy nizej
+CFG = {**PROFILE_CFG, "population_split": "huff"}
 CRS = "EPSG:2180"
 CFG_NONE = {**CFG, "population_split": "none"}   # pierwsza wersja: kazdy punkt zbiera ludnosc osobno
 
@@ -277,3 +280,93 @@ def test_unknown_population_split_is_rejected_and_saturation_dict_is_resolved():
     assert saturation_for({"saturation_s": {"huff": 3.0, "none": 7.0}, "population_split": "huff"}) == 3.0
     assert saturation_for({"saturation_s": {"huff": 3.0, "none": 7.0}, "population_split": "none"}) == 7.0
     assert saturation_for({"saturation_s": 0.05}) == 0.05
+
+
+# --- population_split: huff_all ------------------------------------------------
+
+CFG_ALL = {**PROFILE_CFG, "population_split": "huff_all"}
+
+
+def test_profile_default_is_huff_all_with_external_option_documented():
+    assert PROFILE_CFG["population_split"] == "huff_all"
+    assert PROFILE_CFG["external_option_c"] > 0
+    assert set(PROFILE_CFG["saturation_s"]) == {"huff_all", "huff", "none"}
+
+
+def test_external_option_c_gives_about_20_percent_from_one_parking_at_15km():
+    # oczko z jednym parkingiem w 15 km oddaje mu ~20% (nie wiecej), dalej mniej
+    pop = np.array([[0.0, 0.0]])
+    share = {}
+    for d in (15000.0, 17500.0, 19900.0):
+        a, _ = compute_attractiveness(_pts([(d, 0, "parking")]), pop, np.array([10000.0]), CFG_ALL)
+        share[d] = a[0] / 10000.0
+    assert 0.19 < share[15000.0] <= 0.20
+    assert share[15000.0] > share[17500.0] > share[19900.0] > 0.0
+
+
+def test_huff_all_shares_sum_below_cell_population_and_c_takes_the_rest():
+    points = _pts([(1000, 0, "parking"), (-1000, 0, "parking")])
+    a, _ = compute_attractiveness(points, np.array([[0.0, 0.0]]), np.array([10000.0]), CFG_ALL)
+    g = float(kernel(1000.0, 20000.0))
+    expected_each = 10000.0 * g / (2 * g + CFG_ALL["external_option_c"])
+    assert a[0] == pytest.approx(expected_each) and a[1] == pytest.approx(expected_each)
+    assert a.sum() < 10000.0                        # reszta: "nie jade do tego lasu"
+
+
+def test_huff_all_settlements_compete_in_the_same_split():
+    # oczko z osiedlem (pieszo, w=0,6, g=1 na miejscu) i parkingiem 1 km dalej
+    points = _pts([(0, 0, "settlement"), (1000, 0, "parking")])
+    a, _ = compute_attractiveness(points, np.array([[0.0, 0.0]]), np.array([1000.0]), CFG_ALL)
+    ws = CFG_ALL["types"]["settlement"]["weight"] * 1.0
+    wp = CFG_ALL["types"]["parking"]["weight"] * float(kernel(1000.0, 20000.0))
+    denom = ws + wp + CFG_ALL["external_option_c"]
+    assert a[0] == pytest.approx(1000.0 * ws / denom)
+    assert a[1] == pytest.approx(1000.0 * wp / denom)
+    # w wariancie "huff" osiedle nie konkuruje z parkingiem (dostaje cala ludnosc oczka)
+    a_huff, _ = compute_attractiveness(points, np.array([[0.0, 0.0]]), np.array([1000.0]), CFG)
+    assert a_huff[0] == pytest.approx(1000.0)
+
+
+def test_huff_all_settlement_ignores_cells_beyond_walking_range():
+    points = _pts([(0, 0, "settlement")])
+    a, _ = compute_attractiveness(points, np.array([[5000.0, 0.0]]), np.array([9999.0]), CFG_ALL)
+    assert a[0] == 0.0
+
+
+def test_huff_all_pressure_uses_persons_and_weight_only_in_the_split():
+    # P = 1 - exp(-sum_k A_k kern(d)/S) -- A_k w osobach, bez wagi typu w sumie
+    model = build_access_model(AccessSet(points=_pts([(0, 0, "parking")]), roads=_empty_roads()),
+                               np.array([[0.0, 0.0]]), np.array([50000.0]), CFG_ALL)
+    a_k = float(model.points["A"].iloc[0])
+    assert model.points["A_eff"].iloc[0] == pytest.approx(a_k)
+    out = compute_access_pressure(_stand(1000, 0), model)
+    expected_raw = a_k * float(kernel(1000.0, CFG_ALL["types"]["parking"]["range_m"]))
+    assert out["access_raw"].iloc[0] == pytest.approx(expected_raw)
+    s = CFG_ALL["saturation_s"]["huff_all"]
+    assert out["P"].iloc[0] == pytest.approx(1 - math.exp(-expected_raw / s))
+
+
+def test_huff_all_display_attractiveness_is_separate_from_pressure():
+    model = build_access_model(AccessSet(points=_pts([(0, 0, "parking")]), roads=_empty_roads()),
+                               np.array([[0.0, 0.0]]), np.array([50000.0]), CFG_ALL)
+    a_k = float(model.points["A"].iloc[0])
+    half = CFG_ALL["attractiveness_display_a_half"]
+    assert model.points["A_norm"].iloc[0] == pytest.approx(a_k / (a_k + half))
+
+
+def test_huff_all_corridor_inherits_persons_by_network_and_keeps_halving():
+    coords = [(x, 0) for x in np.arange(0, 6001, 100.0)]
+    roads = _roads([(LineString(coords), "closed", "hard")])
+    model = build_access_model(AccessSet(points=_pts([(0, 0, "parking")]), roads=roads),
+                               np.array([[0.0, 0.0]]), np.array([60000.0]), CFG_ALL)
+    a_k = float(model.points["A"].iloc[0])
+    near = model.corridor_a[np.argmin(np.abs(model.corridor_xy[:, 0] - 50))]
+    at3 = model.corridor_a[np.argmin(np.abs(model.corridor_xy[:, 0] - 3050))]
+    assert near == pytest.approx(a_k * 0.5 ** (50 / 3000), rel=1e-3)      # osoby, nie 0-1
+    assert at3 / near == pytest.approx(0.5, rel=0.02)
+    assert 0.0 < model.roads["attractiveness"].iloc[0] < 1.0              # pogladowa 0-1 do mapy
+    # korytarz zachowuje swoja wage; punkty samochodowe w sumie maja wage 1,0
+    from pipeline.access_pressure import pressure_weight
+    assert pressure_weight(CFG_ALL, "forest_road") == CFG_ALL["types"]["forest_road"]["weight"]
+    assert pressure_weight(CFG_ALL, "entrance") == 1.0
+    assert pressure_weight(CFG, "entrance") == CFG["types"]["entrance"]["weight"]
