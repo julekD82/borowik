@@ -55,14 +55,21 @@ def test_score_age_masks_young_stands():
     assert score_age(5, PROFILE) is None
 
 
+def _curve_profile():
+    import copy
+    p = copy.deepcopy(PROFILE)
+    p["habitat"] = {"age_mode": "curve"}
+    return p
+
+
 def test_score_age_interpolates_first_segment():
-    # 12-20: 0.3 -> 0.6
-    assert score_age(15, PROFILE) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
+    # tryb curve (dawna krzywa, nadal dostepna): 12-20: 0.3 -> 0.6
+    assert score_age(15, _curve_profile()) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
 
 
 def test_score_age_plateau_and_old_growth():
-    assert score_age(60, PROFILE) == pytest.approx(1.0)
-    assert score_age(150, PROFILE) == pytest.approx(0.9)
+    assert score_age(60, _curve_profile()) == pytest.approx(1.0)
+    assert score_age(150, _curve_profile()) == pytest.approx(0.9)
 
 
 def test_compute_habitat_combines_weighted_geometric_mean():
@@ -190,9 +197,19 @@ def _neutral_profile():
     return p
 
 
-def test_default_profile_age_mode_is_curve_and_unchanged():
-    assert PROFILE["habitat"]["age_mode"] == "curve"
-    assert score_age(15, PROFILE) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
+def test_default_profile_age_mode_is_neutral():
+    # Decyzja wlasciciela po walidacji Fazy 2: neutral jest domyslny.
+    assert PROFILE["habitat"]["age_mode"] == "neutral"
+    assert score_age(15, PROFILE) == 1.0
+    assert score_age(150, PROFILE) == 1.0
+    assert score_age(5, PROFILE) is None  # maska < 12 lat bez zmian
+
+
+def test_curve_mode_remains_available_and_unchanged():
+    p = _curve_profile()
+    assert score_age(15, p) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
+    assert score_age(30, p) == pytest.approx(0.6 + (30 - 20) / (35 - 20) * (1.0 - 0.6))
+    assert score_age(150, p) == pytest.approx(0.9)
 
 
 def test_neutral_age_mode_gives_one_for_mask_passing_ages_and_keeps_the_mask():
@@ -214,8 +231,8 @@ def test_neutral_age_mode_makes_h_independent_of_age():
     assert compute_habitat({**row, "spec_age": 5}, p) is None
 
 
-def test_missing_habitat_section_defaults_to_curve():
+def test_missing_habitat_section_defaults_to_neutral():
     import copy
     p = copy.deepcopy(PROFILE)
     p.pop("habitat")
-    assert score_age(15, p) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
+    assert score_age(15, p) == 1.0
