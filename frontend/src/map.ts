@@ -9,6 +9,8 @@ import {
   surfaceLabel,
   roadKindLabel,
   attractivenessClass,
+  rankColorStops,
+  RANK_ZERO_COLOR,
 } from "./model";
 
 // Faza 3.5: warstwy mapy (grupa przelaczana w legendzie -> id warstw MapLibre).
@@ -39,6 +41,7 @@ export class ForestMap {
   // other. See selectGroup/highlightGroup/focusStands.
   private groupSelected: string[] = [];
   private groupHover: string[] = [];
+  private rankStops: [number, string][] = rankColorStops([]);
   private accessPoints: AccessCollection | null = null;
   private forestRoads: AccessCollection | null = null;
   private layerVisible: Record<AccessLayerId, boolean> = {
@@ -363,20 +366,8 @@ export class ForestMap {
       type: "fill",
       source: "stands",
       paint: {
-        "fill-color": [
-          "interpolate",
-          ["linear"],
-          ["get", "rank"],
-          0,
-          "#d5d5b8",
-          35,
-          "#98af74",
-          65,
-          "#3b7553",
-          100,
-          "#184b3a",
-        ],
-        "fill-opacity": 0.6,
+        "fill-color": this.rankFillColor(),
+        "fill-opacity": 0.72,
       },
     });
     this.map.addLayer({
@@ -395,8 +386,21 @@ export class ForestMap {
     });
     this.addAccessLayers();
   }
+  // Kolor wydzielenia wg R: odrzucone przez maske (R = 0) jasnoszare, reszta wg
+  // percentyli R z tej analizy (patrz model.rankColorStops).
+  private rankFillColor(): maplibregl.ExpressionSpecification {
+    return [
+      "case",
+      ["<=", ["coalesce", ["get", "rank"], 0], 0],
+      RANK_ZERO_COLOR,
+      ["interpolate", ["linear"], ["get", "rank"], ...this.rankStops.flat()],
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
   setData(entries: StandView[]) {
     this.entries = entries;
+    this.rankStops = rankColorStops(entries.map((e) => e.score.R));
+    if (this.map.getLayer("stand-fill"))
+      this.map.setPaintProperty("stand-fill", "fill-color", this.rankFillColor());
     this.geometry = {
       type: "FeatureCollection",
       features: entries.map((e) => ({

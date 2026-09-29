@@ -279,6 +279,41 @@ export type SpeciesShare = {
   name: string;
   share: string;
 };
+// Kolorowanie wydzielen wg rankingu R: 6 kolorow od jasnego zolto-zielonego do
+// ciemnego granatu, przypietych do PERCENTYLI R w tej analizie (a nie do stalej
+// skali 0-100, na ktorej prawie wszystkie wydzielenia wpadaly w ten sam zielony).
+export const RANK_COLORS = [
+  "#efe9b5",
+  "#c5df8f",
+  "#7fc47a",
+  "#2f9a72",
+  "#1c6a80",
+  "#24356b",
+];
+export const RANK_QUANTILES = [0.02, 0.25, 0.5, 0.75, 0.9, 0.98];
+export const RANK_ZERO_COLOR = "#d5d5b8"; // wydzielenia odrzucone przez maske (R = 0)
+export function rankColorStops(values: (number | null | undefined)[]): [number, string][] {
+  const sorted = values
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
+  const fallback = (): [number, string][] =>
+    RANK_COLORS.map((c, i) => [(100 * i) / (RANK_COLORS.length - 1), c]);
+  if (sorted.length < 2) return fallback();
+  const at = (q: number) => {
+    const pos = q * (sorted.length - 1);
+    const lo = Math.floor(pos);
+    const hi = Math.ceil(pos);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+  };
+  const stops: [number, string][] = [];
+  RANK_QUANTILES.forEach((q, i) => {
+    let v = at(q);
+    // MapLibre wymaga scisle rosnacych progow
+    if (stops.length && v <= stops[stops.length - 1][0]) v = stops[stops.length - 1][0] + 1e-6;
+    stops.push([v, RANK_COLORS[i]]);
+  });
+  return stops.length === RANK_COLORS.length && sorted[sorted.length - 1] > sorted[0] ? stops : fallback();
+}
 export type AccessCard = {
   d_parking_m: number | null;
   d_entrance_m: number | null;

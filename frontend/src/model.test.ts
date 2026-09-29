@@ -669,3 +669,31 @@ describe("attractivenessClass", () => {
     expect(attractivenessClass(undefined)).toBeNull();
   });
 });
+
+describe("rankColorStops", () => {
+  it("pins the 6 colours to percentiles of R in this analysis, strictly increasing", async () => {
+    const { rankColorStops, RANK_COLORS } = await import("./model");
+    // dane skupione w 35-65, jak w prawdziwej analizie: stare stale progi 0/35/65/100 dawaly jeden zielony
+    const values = Array.from({ length: 200 }, (_, i) => 35 + (30 * i) / 199);
+    const stops = rankColorStops(values);
+    expect(stops.map((s) => s[1])).toEqual(RANK_COLORS);
+    for (let i = 1; i < stops.length; i++) expect(stops[i][0]).toBeGreaterThan(stops[i - 1][0]);
+    expect(stops[0][0]).toBeGreaterThanOrEqual(35);
+    expect(stops[5][0]).toBeLessThanOrEqual(65);
+    expect(stops[2][0]).toBeCloseTo(50, 0); // mediana
+  });
+  it("ignores zero (masked) and null values", async () => {
+    const { rankColorStops } = await import("./model");
+    const withJunk = [0, 0, null, undefined, NaN, ...Array.from({ length: 50 }, (_, i) => 40 + i)];
+    const clean = Array.from({ length: 50 }, (_, i) => 40 + i);
+    expect(rankColorStops(withJunk)).toEqual(rankColorStops(clean));
+  });
+  it("falls back to a fixed 0-100 scale for empty or constant data and never repeats a stop", async () => {
+    const { rankColorStops } = await import("./model");
+    for (const values of [[], [0, 0], [50], [50, 50, 50]]) {
+      const stops = rankColorStops(values);
+      expect(stops).toHaveLength(6);
+      for (let i = 1; i < stops.length; i++) expect(stops[i][0]).toBeGreaterThan(stops[i - 1][0]);
+    }
+  });
+});
