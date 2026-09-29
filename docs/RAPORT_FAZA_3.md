@@ -16,7 +16,7 @@ usuwano ani nie czyszczono; do `cache/` doszedł tylko nowy podkatalog `cache/ac
 |---|---|---|
 | 3.1 Dane punktów dostępu | DONE, z odstępstwem | Parkingi, wjazdy, szlabany, fallback, osiedla, sieć dróg leśnych, nawierzchnia z OSM, publiczna/zamknięta. **BDOT10k `OT_SKDR_L` (materialNawierzchni) i relacje OSM `route=bicycle`: BLOCKED** — patrz niżej |
 | 3.2 Atrakcyjność punktu | DONE | `A_k`, `A_norm_k` (normalizacja bezwzględna), korytarz po sieci drogowej |
-| 3.2b Podział ludności (Huff) | DONE | `pressure.access_points.population_split: huff` (domyślny) / `none`; patrz „Ciąg dalszy” |
+| 3.2b Podział ludności (Huff) | DONE, wynik wątpliwy | `population_split: huff_all` (domyślny), `huff`, `none`; `huff_all` wyzerowuje wpływ osiedli — patrz „Ciąg dalszy 2” |
 | 3.3 Zasięg oddziaływania | DONE | jądro `max(0, 1−(d/R)²)²`, parametry startowe właściciela w profilu; odległość w linii prostej (wariant po sieci duktów: opcjonalny, nie zrobiony) |
 | 3.4 Łączenie w P | DONE | suma po punktach, korytarz jako jeden składnik, `P = 1 − exp(−raw/S)`, `S` dobrane offline (huff 0,1385; none 7,0); wkład każdego typu i punkt o największym wkładzie w diagnostyce |
 | 3.5 Mapa i karta wydzielenia | DONE | eksporty `access_points_{day}.geojson` i `forest_roads_{day}.geojson`, warstwy w legendzie, popup, karta, synchronizator i migawki |
@@ -344,3 +344,146 @@ prawie nie zmienia P (Spearman ≥ 0,9998 przy skrajnych założeniach).
 ## Testy (po tym kroku)
 
 Backend `pytest`: 699 zaliczonych; nowe testy `population_split` w `tests/test_access_pressure.py`.
+
+---
+
+# Ciąg dalszy 2 (2026-09-29): rebase na master, `huff_all`
+
+## Rebase
+
+Warunek spełniony: `master` (`3987901`) zawiera scalone `ulepszenia-faza2` i `ulepszenia-wiek`
+(sprawdzone `git merge-base --is-ancestor`). Rebase `ulepszenia-faza3` na `master`: jeden
+konflikt tekstowy (`.gitignore` — zostawiono oba wpisy: `/dane_terenowe/` z mastera i
+`.claude/worktrees/`), konfliktów w eksporcie, manifeście, launcherze i diagnostyce nie było.
+Po rebase pełne testy: backend 728 zaliczonych (wcześniej 699 + testy Fazy 2), frontend
+`tsc` bez błędów i 84 testy `vitest`. Zmiany z pkt 1 zrobiono dopiero po rebase.
+
+## `junction` bez zmian
+
+Podtyp `junction` zostaje do czasu Twojej kontroli ręcznej (`kontrola_reczna.csv`).
+
+## `population_split: huff_all` (domyślny)
+
+Zaimplementowane dokładnie według decyzji: udział oczka GUS *j* w punkcie *k*
+`u_jk = w_t(k)·g_t(d_jk) / (Σ_k' w_t(k')·g_t(d_jk') + c)` dla wszystkich typów punktów łącznie z
+osiedlami (`g_t`: osiedla ~1,5 km pieszo, parkingi/wjazdy/szlabany/fallback ~20 km autem);
+`A_k = Σ_j Pop_j·u_jk` w osobach, bez `A/(A+a_half)`; `P = 1 − exp(−Σ_k A_k·k(d_k)/S)`, waga typu
+tylko w podziale (w sumie 1,0). Droga leśna dziedziczy po sieci jak dotąd, z `A_k` w osobach
+zamiast `A_norm`; **korytarz zachowuje swoją wagę 0,4** (nie bierze udziału w podziale — jeśli
+miała być usunięta, to jedna linijka). `A_norm` i klasy niska/średnia/wysoka na mapie liczone
+z osobnej wielkości poglądowej `A/(A+500)` (`attractiveness_display_a_half`), nie wchodzą do P.
+`huff` i `none` zostają w kodzie (`population_split`).
+
+**c = 0,77 (TYMCZASOWE, nieskalibrowane):** oczko z jednym parkingiem (w = 1,0) w odległości
+15 km oddaje mu 19,9% ludności (`g(15 km) = 0,191`, `0,191/(0,191 + 0,77)`), dalej mniej (17,5 km:
+~7%, 19,9 km: ~0). Test jednostkowy to sprawdza. **S = 2489** (profil, `saturation_s.huff_all`),
+dobrane do mediany P = 0,373 jak gravity.
+
+### Wyniki (Kieleczka, maska 14 399)
+
+| Miara | gravity | huff | huff_all |
+|---|---|---|---|
+| mediana P | 0,373 | 0,373 | 0,373 |
+| udział lasu z P > 0,5 | 32,3% | 33,8% | **30,5%** |
+| Spearman P vs gravity | | 0,785 | 0,751 |
+| Spearman R vs gravity | | 0,951 | 0,960 |
+| top-20 wspólnych z gravity | | 5 | 5 |
+| rejony (5) zachowane vs gravity | | 3 | 4 |
+
+huff_all vs huff: Spearman P 0,884, Spearman R 0,974, **top-20 wspólnych 19/20**, rejony 4/5.
+
+Udział typów w łącznej presji surowej w masce:
+
+| Typ / podtyp | huff | huff_all |
+|---|---|---|
+| wjazd, razem | 27,8% | **61,0%** |
+| — crossing_public / crossing_track / junction | 5,2 / 12,9 / 9,6% | 11,4 / 28,5 / 21,1% |
+| szlaban | 2,7% | 6,1% |
+| parking, razem (OSM / BDL) | 22,9% (12,9 / 10,0) | 31,1% (17,7 / 13,4) |
+| osiedle przy lesie | 45,3% | **0,0%** |
+| korytarz dróg leśnych | 1,3% | 1,7% |
+
+Największy składnik presji wydzielenia: parking 71%, wjazd 22%, korytarz 4,5%, osiedle 0,2%.
+
+Profil P przy Lublińcu (≤ 8 km od centrum, wg odległości od najbliższego dużego osiedla):
+
+| Pas | wydz. | gravity | huff | huff_all |
+|---|---|---|---|---|
+| 0–0,5 km | 14 | 0,63 | 0,97 | **0,45** |
+| 0,5–1 km | 67 | 0,66 | 0,92 | 0,54 |
+| 1–2 km | 384 | 0,52 | 0,72 | 0,47 |
+| 2–3 km | 460 | 0,40 | 0,37 | 0,35 |
+| 3–5 km | 1021 | 0,38 | 0,32 | 0,37 |
+| > 5 km | 118 | 0,44 | 0,42 | 0,46 |
+
+### Wniosek: wynik `huff_all` **nie robi tego, do czego służył**
+
+W `huff_all` osiedla praktycznie znikają z presji (0,0%), a profil przy Lublińcu jest płaski
+(0,35–0,54; przy samym osiedlu niższy niż w gravity). Pas przy mieście **nie zachowuje presji**,
+wracamy do obrazu z `none` (wjazdy 61%), z jednym istotnym wyjątkiem: podział ludności zmniejszył
+wpływ liczby wjazdów (Spearman R vs huff 0,974).
+
+**Przyczyna (policzona na danych):** wzór jest normalizowany sumą po *wszystkich* punktach w
+zasięgu, a w gęstym lesie Kieleczki oczko ma w zasięgu 20 km mediana **291 punktów**, mediana
+mianownika `Σ w·g` = **48** (10. percentyl 0,2, 90. percentyl 236). Osiedle ma wagę 0,6 i `g = 1`
+na miejscu, więc dostaje ~0,6/48 ≈ 1% ludności własnego oczka: mediana `A` osiedla to **0,75 osoby**
+(p90 3,7, maks. 30), a parking 611 osób (p90 6067), wjazd 260 (p90 1361). Ludzie „rozpływają się”
+po setkach punktów samochodowych, zanim dojdą do osiedla przy lesie. `c = 0,77` jest istotne
+tylko na peryferiach: 20% ludności siedzi w oczkach z mianownikiem < c, a przeciętnie ~22%
+ludności „nie jedzie do lasu”; w gęstych okolicach c praktycznie nic nie robi (zmiana c o ±30%:
+top-20 bez zmian, 20/20).
+
+Nie zmieniałem formuły ani parametrów. Warianty do decyzji (żaden nie wdrożony):
+1. **Dwa etapy:** najpierw wybór pieszo/autem (ustalony udział pieszych dla oczek przy lesie),
+   potem podział „autem” między parkingi i wjazdy.
+2. **Ograniczyć konkurencję do K najbliższych punktów** samochodowych (albo do punktów z
+   `g` powyżej progu), żeby liczba wjazdów nie rozcieńczała ludności.
+3. **Skalować wagę osiedla** przez liczbę konkurentów lub podnieść ją, tak by lokalna ludność
+   faktycznie trafiała do osiedla.
+4. Wrócić do `huff` (osiedla poza podziałem), gdzie pas przy Lublińcu działa (0,97 → 0,32), ale
+   `a_half` typów samochodowych trzeba wtedy dobrać osobno.
+
+### Stabilność ±30% (huff_all)
+
+Baza: `huff_all`, `S = 2489`. Top-20 (≥ 0,5 ha), rejony jak wcześniej. Parametry profilu nie
+zmienione.
+
+| Parametr | −30%: top-20 / rejony | +30%: top-20 / rejony |
+|---|---|---|
+| S | 18 / 4 | 19 / 5 |
+| zasięg wjazdów (wjazd i szlaban) | 17 / 4 | **14** / 4 |
+| waga wjazdów (wjazd i szlaban) | 19 / 5 | 19 / 5 |
+| zasięg parkingów | 19 / 4 | 17 / 5 |
+| waga parkingów | 19 / 5 | 19 / 5 |
+| zasięg zbierania ludności | 19 / 5 | 19 / 5 |
+| c (opcja zewnętrzna) | 20 / 5 | 20 / 5 |
+
+Top-20 zostaje w 14–20 z 20, rejony w 4–5 z 5. Najbardziej wrażliwy jest zasięg wjazdów (+30%: 14/20);
+wagi (działają tylko w podziale) i c prawie nic nie zmieniają — spójne z diagnozą, że w gęstej sieci
+punktów podział rozcieńcza wszystko podobnie, a o wyniku decyduje geometria zasięgów.
+
+Dane: `docs/porownania/faza3/raport_huff_all.json`, `roznice_P_huff_all.csv`; skrypt
+`scripts/faza3_huffall_raport.py`.
+
+## Przebieg na żywo `huff_all` (2026-09-29)
+
+`python -m pipeline.prepare_trip --lat 50.527 --lon 18.605 --radius-km 20 --bdl-packages-dir BDL
+--population-grid-path <siatka GUS>` na kodzie po rebase: bez błędu, 14 399 wydzieleń w masce,
+5 rejonów. Manifest: `pressure_model_used: access_points`, `population_split: huff_all`,
+`external_option_c: 0,77`, `saturation_s.huff_all: 2489`; mediana P w masce 0,3732 (jak gravity),
+`forest_roads` 6,2 MB (uproszczenie 4 m). Migawka „Kieleczka — faza 3 (huff_all)” zapisana w
+`frontend/public/data/trips/` (poza repozytorium; obok wcześniejszej „Kieleczka — faza 3”).
+
+Sprawdzone w przeglądarce (dev server, migawka): warstwy przełączane w legendzie; karta
+wydzielenia „Dostęp: najbliższy parking 1180 m · wjazd lub szlaban 1370 m · utwardzony dukt
+1160 m” z elementem o największym wpływie (parking BDL „Łaziska 192n”); **popupy odcinków dróg
+kliknięte ręcznie**: „droga publiczna, nawierzchnia twarda, źródło OpenStreetMap, atrakcyjność
+nie dotyczy” oraz „zamknięta droga leśna, nawierzchnia nieznana, źródło OpenStreetMap,
+atrakcyjność niska”.
+
+## Testy (po rebase i `huff_all`)
+
+Backend `pytest`: 736 zaliczonych; frontend `tsc` bez błędów, `vitest` 84 zaliczone.
+Nowe testy `huff_all` w `tests/test_access_pressure.py`: opcja zewnętrzna (19,9% przy 15 km),
+suma udziałów oczka < ludność, osiedla w tym samym podziale, A w osobach i waga tylko w podziale,
+poglądowa atrakcyjność 0–1 osobno od P, korytarz w osobach z połową co 3 km.
