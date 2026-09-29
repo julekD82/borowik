@@ -93,6 +93,11 @@ def score_age(age: int | None, profile: dict) -> float | None:
     cfg = profile["age_breakpoints"]
     if age is None or age < cfg["mask_below"]:
         return None
+    # Faza 2 (eksploracyjnie): habitat.age_mode "neutral" wylacza krzywa wieku
+    # (S_age = 1 dla kazdego wydzielenia przechodzacego maske wieku); domyslnie
+    # "curve" = obecne zachowanie. Maska wieku (< mask_below) dziala w obu trybach.
+    if profile.get("habitat", {}).get("age_mode", "curve") == "neutral":
+        return 1.0
     for seg in cfg["segments"]:
         if seg["from"] <= age < seg["to"]:
             span = seg["to"] - seg["from"]
