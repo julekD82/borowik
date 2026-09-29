@@ -147,14 +147,19 @@ def _nan_to_none(value):
 
 def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame, clim_points,
                                today: date, profile: dict, rain_scale: float = 1.0,
-                               point_weights: dict | None = None) -> dict:
+                               point_weights: dict | None = None,
+                               point_clim_cells: dict | None = None) -> dict:
     """`point_weights` (Faza 4.4): {(lat, lon): {"area_ha": powierzchnia lasu (wydzielenia w
     masce) najblizsza temu punktowi, "stands": ich liczba}} -- do agregacji F po wydzieleniach /
     wazonej powierzchnia oraz do udzialu powierzchni z przymrozkiem i silnym opadem. Bez wag
     udzialy sa liczone po punktach siatki.
 
     Wartosc F dnia zalezy od profilu `conditions.aggregation` (domyslnie `median_of_features` =
-    dotychczasowa: mediana cech po punktach, potem jeden F); pozostale metody: AGGREGATIONS."""
+    dotychczasowa: mediana cech po punktach, potem jeden F); pozostale metody: AGGREGATIONS.
+
+    `point_clim_cells` (poprawka 4): {(lat, lon) punktu pogody: (lat, lon) komorki klimatologii} --
+    percentyl kazdego punktu jest liczony wzgledem historii JEGO komorki (tak jak w run_poc), a nie
+    wzgledem puli wszystkich komorek. Bez niego (testy, stare wywolania) obowiazuje pula."""
     cfg = profile["conditions"]
     aggregation = cfg.get("aggregation", "median_of_features")
     if aggregation not in AGGREGATIONS:
@@ -185,13 +190,22 @@ def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame
         # Faza 4.4: F liczone osobno dla kazdego punktu siatki (kazdy punkt: wlasny percentyl
         # wzgledem tej samej puli klimatologii co wyzej) -- do porownania metod agregacji,
         # udzialu przymrozku/silnego opadu i, gdy wybrano, do samej wartosci panelu.
-        pct_pts = np.array([percentile_rank(float(c), cwb_hist) for c in feats["cwb26"]])
+        keys = list(zip(feats["lat"], feats["lon"]))
+        if point_clim_cells:
+            cell_hist = {}
+            def _hist(key, _cache=cell_hist, _doy=target_doy):
+                cell = point_clim_cells[key]
+                if cell not in _cache:
+                    _cache[cell] = climatology_window_values(clim_df, *cell, _doy, "cwb26")
+                return _cache[cell]
+            pct_pts = np.array([percentile_rank(float(c), _hist(key)) for c, key in zip(feats["cwb26"], keys)])
+        else:
+            pct_pts = np.array([percentile_rank(float(c), cwb_hist) for c in feats["cwb26"]])
         f_pts = np.array([
             compute_fruiting(score_moisture(pp, 0.5, profile),
                              score_temperature(tm20, tm5, p5, profile), score_frost(tm3, profile),
                              g_season=g_season)
             for pp, tm20, tm5, p5, tm3 in zip(pct_pts, feats["tmean20"], feats["tmean5"], feats["p5"], feats["tmin3"])])
-        keys = list(zip(feats["lat"], feats["lon"]))
         pw = point_weights or {}
         area_w = np.array([pw.get(key, {}).get("area_ha", 0.0) for key in keys]) if pw else np.ones(len(keys))
         stand_w = np.array([pw.get(key, {}).get("stands", 0) for key in keys]) if pw else np.ones(len(keys))

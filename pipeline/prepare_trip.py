@@ -37,7 +37,9 @@ from pipeline.habitat import load_profile
 from pipeline.local_config import resolve_bdl_packages_dir
 from pipeline.mvp import enrich_with_mvp_layers
 from pipeline.neighbors import find_neighbor_labels
-from pipeline.orchestrate import run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M, DEFAULT_PAST_DAYS
+from pipeline.orchestrate import (
+    run_poc, WEATHER_GRID_SPACING_M, CLIMATOLOGY_GRID_SPACING_M, DEFAULT_PAST_DAYS, _nearest_climatology_cell,
+)
 from pipeline.radar import make_radar_weather_fetcher, stand_radar_precip_daily
 from pipeline.osm import fetch_osm_features, _default_overpass_call
 from pipeline.population_grid import impute_osm_population, load_population_points
@@ -122,6 +124,43 @@ def conditions_point_weights(scored: gpd.GeoDataFrame) -> dict:
         ["weather_point_lat", "weather_point_lon"])["_ha"].agg(["sum", "count"])
     return {(lat, lon): {"area_ha": float(r["sum"]), "stands": int(r["count"])}
             for (lat, lon), r in grouped.iterrows()}
+
+
+def truncate_trailing_days(df: pd.DataFrame, n_drop: int) -> pd.DataFrame:
+    """Odrzuca `n_drop` ostatnich dat (dni prognozy dalej niz dzien wyjazdu) z serii dziennej --
+    okno F konczy sie na dniu wyjazdu, a te same dane sluza tez osi czasu warunkow (dluzszej)."""
+    if n_drop <= 0:
+        return df
+    dates = sorted(df["date"].unique())
+    return df[df["date"] <= dates[-1 - n_drop]]
+
+
+def stand_precip_to_points(stand_precip_daily: pd.DataFrame, scored: gpd.GeoDataFrame) -> pd.DataFrame:
+    """Poprawka 4: opad wydzielen (radar scalony z modelem, radar.mode: stand) zagregowany do punktow
+    pogody -- srednia wazona powierzchnia wydzielen w masce, dla ktorych dany punkt jest najblizszy.
+    Kolumny: lat, lon, date, precipitation_mm, radar_frac. Ta sama seria, z ktorej liczone jest F
+    wydzielen, wiec panel warunkow liczy opad tak jak mapa."""
+    masked = scored[scored["mask"]]
+    weights = pd.DataFrame({
+        "stand_id": masked["stand_id"].to_numpy(), "lat": masked["weather_point_lat"].to_numpy(),
+        "lon": masked["weather_point_lon"].to_numpy(), "w": masked.geometry.area.to_numpy(),
+    })
+    j = stand_precip_daily.merge(weights, on="stand_id")
+    j["wp"] = j["w"] * j["precipitation_mm"]
+    j["wf"] = j["w"] * j["radar_frac"]
+    g = j.groupby(["lat", "lon", "date"], as_index=False)[["wp", "wf", "w"]].sum()
+    return pd.DataFrame({"lat": g["lat"], "lon": g["lon"], "date": g["date"],
+                         "precipitation_mm": g["wp"] / g["w"], "radar_frac": g["wf"] / g["w"]})
+
+
+def apply_point_precip(daily: pd.DataFrame, point_precip: pd.DataFrame) -> pd.DataFrame:
+    """Podmienia opad w dziennej serii punktow (lat, lon, date) na opad z `point_precip`, gdzie jest;
+    poza tym zostaje model. Dodaje kolumne radar_frac (0 tam, gdzie nie podmieniono)."""
+    pp = point_precip.rename(columns={"precipitation_mm": "_p", "radar_frac": "_rf"})
+    out = daily.drop(columns=["radar_frac"], errors="ignore").merge(pp, on=["lat", "lon", "date"], how="left")
+    out["precipitation_mm"] = out["_p"].fillna(out["precipitation_mm"])
+    out["radar_frac"] = out["_rf"].fillna(0.0)
+    return out.drop(columns=["_p", "_rf"])
 
 
 def radar_mode(profile: dict, use_radar: bool) -> str:
@@ -619,13 +658,18 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # `stand_precip_daily` so it can override p5/cwb26/rain_radar_coverage
     # per stand while temperature/ET0/climatology stay on the block grid.
     stand_precip_daily = None
+    stand_precip_full = None
     radar_stand_spatial_coverage_mean = None
     mode = radar_mode(profile, use_radar)
     if mode == "stand":
         forecast_days_for_radar = max(1, ((target_date or date.today()) - date.today()).days + 1)
+        # Poprawka 4: jedna seria wydzielen na dluzszy horyzont (os czasu warunkow, 7 dni) -- dla F
+        # wydzielen obcieta do dnia wyjazdu (truncate_trailing_days nizej).
+        panel_horizon_days = profile["conditions"]["horizon_days"]
+        fetch_forecast_days = max(forecast_days_for_radar, panel_horizon_days)
         stands["stand_id"] = stands["adr_for"] + "@" + stands["a_year"].astype(str)
         print("Radar per wydzielenie (radar.mode: stand): probkowanie 1 km na wielokat...", flush=True)
-        base_weather_daily = raw_weather_fetcher(grid_points, DEFAULT_PAST_DAYS, forecast_days=forecast_days_for_radar)
+        base_weather_daily = raw_weather_fetcher(grid_points, DEFAULT_PAST_DAYS, forecast_days=fetch_forecast_days)
         nearest_point = nearest_weather_point_per_stand(stands, grid_points)
         stand_precip_daily = stand_radar_precip_daily(
             stands, nearest_point, base_weather_daily,
@@ -633,6 +677,9 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             cache_dir=pathlib.Path(cache_dir) / "radar_grs",
         )
         coverage = stand_precip_daily.attrs.get("spatial_coverage", {})
+        stand_precip_full = stand_precip_daily
+        stand_precip_daily = truncate_trailing_days(stand_precip_full, fetch_forecast_days - forecast_days_for_radar)
+        stand_precip_daily.attrs["spatial_coverage"] = coverage
         if coverage:
             radar_stand_spatial_coverage_mean = float(sum(coverage.values()) / len(coverage))
             incomplete = sum(1 for v in coverage.values() if v < 0.99)
@@ -675,6 +722,10 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     try:
         conditions_daily = weather_fetcher(conditions_points, 92,
                                            forecast_days=profile["conditions"]["horizon_days"])
+        if stand_precip_full is not None:
+            # Poprawka 4: opad panelu = opad wydzielen z mapy (radar scalony z modelem dla dni
+            # przeszlych, model dla prognozy), zagregowany do punktow pogody.
+            conditions_daily = apply_point_precip(conditions_daily, stand_precip_to_points(stand_precip_full, scored))
         # Plan 1.8c: the rain-episode detection threshold follows the
         # ACHIEVED radar coverage, not just whether radar was requested.
         real_radar_coverage = rain_episode_radar_coverage(
@@ -683,10 +734,13 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
             profile["conditions"]["radar_rain_scale"]
             if real_radar_coverage >= profile["radar"]["min_coverage_for_quality"] else 1.0
         )
-        conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
+        all_clim_points = make_grid(bbox, spacing_m=climatology_grid_spacing_m)
+        conditions_clim = climatology_fetcher(all_clim_points, 1991, 2020)  # cached from run_poc's own fetch
+        point_clim_cells = _nearest_climatology_cell(conditions_points, all_clim_points, "EPSG:2180")
         timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
                                              conditions_clim_points, date.today(), profile, rain_scale=rain_scale,
-                                             point_weights=conditions_point_weights(scored))
+                                             point_weights=conditions_point_weights(scored),
+                                             point_clim_cells=point_clim_cells)
     except (ValueError, requests.RequestException, OpenMeteoRequestsError) as exc:
         print(f"UWAGA: warunki na kolejne dni pominiete ({exc}).", flush=True)
     else:
