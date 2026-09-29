@@ -133,7 +133,8 @@ def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list
 
 def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
-                           tie_break_index: dict, extra_features_index: dict | None = None) -> dict:
+                           tie_break_index: dict, extra_features_index: dict | None = None,
+                           access: dict | None = None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -157,6 +158,9 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
     return {
         "stand_id": stand_id,
         "day": day,
+        # Plan Faza 3.5: odleglosci do punktow dostepu i element o najwiekszym
+        # wkladzie w presje (None poza modelem pressure.model: access_points).
+        "access": access,
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -210,11 +214,34 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             row["stand_id"], row["adr_for"], row.get("stand_stru"), row.get("prot_categ"),
             day, package_details_index, neighbors_by_stand, dictionaries, tie_break_index,
             extra_features_index=extra_features_index,
+            access=build_access_card(row),
         )
         for _, row in stands.iterrows()
     ]
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path
+
+
+def _text_or_none(value) -> str | None:
+    """Pusty tekst, None i NaN (pandas zamienia None w kolumnie tekstowej na
+    NaN, a NaN jest "prawdziwe") -> None; inaczej tekst."""
+    return value if isinstance(value, str) and value else None
+
+
+def build_access_card(row) -> dict | None:
+    """Plan Faza 3.5: dane karty z modelu punktow dostepu -- None, gdy P
+    pochodzi z modelu gravity (albo wiersz nie ma kolumn punktow dostepu)."""
+    if row.get("pressure_model") != "access_points":
+        return None
+    return {
+        "d_parking_m": _json_safe(row.get("d_parking_m")),
+        "d_entrance_m": _json_safe(row.get("d_entrance_m")),
+        "d_hard_forest_road_m": _json_safe(row.get("d_hard_forest_road_m")),
+        "top_point_id": _text_or_none(row.get("top_point_id")),
+        "top_point_type": _text_or_none(row.get("top_point_type")),
+        "top_point_source": _text_or_none(row.get("top_point_source")),
+        "top_point_name": _text_or_none(row.get("top_point_name")),
+    }
 
 
 def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
@@ -275,8 +302,21 @@ DIAGNOSTICS_FIELDS = [
 ]
 
 
+# Plan Faza 3.4: wklad kazdego typu punktu w presje surowa i element o
+# najwiekszym wkladzie. Opcjonalne (brak w wierszach sprzed Fazy 3).
+OPTIONAL_DIAGNOSTICS_FIELDS = [
+    "pressure_model", "P_gravity", "access_raw",
+    "pcontrib_parking", "pcontrib_entrance", "pcontrib_gate", "pcontrib_road_fallback",
+    "pcontrib_settlement", "pcontrib_forest_road",
+    "top_point_id", "top_point_type", "d_parking_m", "d_entrance_m", "d_hard_forest_road_m",
+]
+
+
 def build_diagnostics_record(row, day: str) -> dict:
     record = {field: _json_safe(row[field]) for field in DIAGNOSTICS_FIELDS}
+    for field in OPTIONAL_DIAGNOSTICS_FIELDS:
+        if field in row.index:
+            record[field] = _json_safe(row[field])
     record["day"] = day
     record["stand_id"] = row["stand_id"]
     record["mask"] = bool(row["mask"])

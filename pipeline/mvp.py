@@ -7,6 +7,7 @@ from pipeline.explain import compute_log_contributions, generate_explanation, g_
 from pipeline.gdos import mark_gdos_blocked, gdos_status as _gdos_status
 from pipeline.tiles import point_in_any_bbox
 from pipeline.habitat import host_affinity
+from pipeline.access_pressure import AccessModel, compute_access_pressure
 from pipeline.pressure import compute_d_park, compute_demand, compute_pressure
 from pipeline.population_grid import impute_osm_population
 from pipeline.routing import build_road_graph, nearest_entrance_distance
@@ -27,7 +28,14 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                               top_n_for_routing: int = 0,
                               population_points_gdf: gpd.GeoDataFrame | None = None,
                               gdos_failed_tiles: list | None = None,
-                              osm_failed_tiles: list | None = None) -> gpd.GeoDataFrame:
+                              osm_failed_tiles: list | None = None,
+                              access_model: AccessModel | None = None) -> gpd.GeoDataFrame:
+    """`access_model` (plan Faza 3): gdy podany i profil ma `pressure.model:
+    access_points`, P pochodzi z punktow dostepu (pipeline.access_pressure);
+    w przeciwnym razie (albo `model: gravity`) z dotychczasowego modelu
+    grawitacyjnego. Kolumna `pressure_model` mowi, ktory model zadecydowal --
+    brak danych punktow dostepu NIE jest cicho traktowany jako "brak presji".
+    `P_gravity` jest liczone zawsze (do porownan i diagnostyki)."""
     stands = stands.copy()
     alpha = profile["pressure"]["alpha_default"] if alpha is None else alpha
 
@@ -75,16 +83,28 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
     demands = [compute_demand(c, places, profile["pressure"]["demand_decay_km"]) for c in centroids]
     demand_max = max([d for d in demands if d is not None], default=0.0)
 
-    pressures = [
+    gravity_pressures = [
         compute_pressure(dp, dm, demand_max, profile) for dp, dm in zip(d_parks, demands)
     ]
+    use_access = profile["pressure"].get("model", "gravity") == "access_points" and access_model is not None
+    stands["P_gravity"] = gravity_pressures
+    if use_access:
+        centroid_xy = np.array([(c.x, c.y) for c in centroids], dtype=float).reshape(-1, 2)
+        access_out = compute_access_pressure(centroid_xy, access_model)
+        pressures = access_out["P"].tolist()
+        for col in access_out.columns:
+            if col != "P":
+                stands[col] = access_out[col].values
+    else:
+        pressures = gravity_pressures
+    stands["pressure_model"] = "access_points" if use_access else "gravity"
 
     stands["d_park_m"] = d_parks
     stands["demand"] = demands
     stands["demand_norm"] = [0.0 if demand_max == 0 else d / demand_max for d in demands]
     stands["P"] = pressures
     stands["pressure_factor"] = [1.0 - alpha * p for p in pressures]
-    stands["distance_method"] = "euclidean"
+    stands["distance_method"] = "access_points" if use_access else "euclidean"
     stands["entrance_status"] = "not_evaluated"
 
     stands["R_final"] = [
@@ -92,7 +112,7 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
         for mask, h, f_loc, p in zip(stands["mask_full"], stands["H"], stands["F_loc"], stands["P"])
     ]
 
-    if top_n_for_routing > 0 and roads_routing_gdf is not None and entrances_gdf is not None and len(entrances_gdf):
+    if (not use_access) and top_n_for_routing > 0 and roads_routing_gdf is not None and entrances_gdf is not None and len(entrances_gdf):
         graph = build_road_graph(roads_routing_gdf)
         top_idx = stands.sort_values("R_final", ascending=False).head(top_n_for_routing).index
         for idx in top_idx:

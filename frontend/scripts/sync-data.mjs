@@ -157,9 +157,41 @@ export async function syncData(source, target) {
       throw new Error(`Niepoprawny format run_manifest_${day}.json.`);
   }
 
+  // Faza 3.5: access_points_{day}.geojson / forest_roads_{day}.geojson are
+  // optional map layers (no access data => no toggles), same "validate,
+  // sync under a day-less name, drop the stale copy if absent" pattern.
+  const optionalLayers = {};
+  for (const [prefix, targetName] of [
+    ["access_points", "access_points.json"],
+    ["forest_roads", "forest_roads.json"],
+  ]) {
+    let raw = null;
+    try {
+      raw = await readFile(path.join(source, `${prefix}_${day}.geojson`), "utf8");
+    } catch {
+      raw = null;
+    }
+    if (raw !== null) {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error(`Plik ${prefix}_${day}.geojson jest uszkodzony.`);
+      }
+      if (parsed?.type !== "FeatureCollection" || !Array.isArray(parsed.features))
+        throw new Error(`Niepoprawny format ${prefix}_${day}.geojson.`);
+    }
+    optionalLayers[targetName] = raw;
+  }
+
   await mkdir(target, { recursive: true });
   const targets = ["scores.json", "stands.geojson"];
   const allContents = [...contents];
+  for (const [name, raw] of Object.entries(optionalLayers)) {
+    if (raw === null) continue;
+    targets.push(name);
+    allContents.push(raw);
+  }
   if (regions !== null) {
     targets.push("regions.json");
     allContents.push(regionsRaw);
@@ -196,6 +228,8 @@ export async function syncData(source, target) {
     await rm(path.join(target, "conditions.json"), { force: true });
   if (manifest === null)
     await rm(path.join(target, "manifest.json"), { force: true });
+  for (const [name, raw] of Object.entries(optionalLayers))
+    if (raw === null) await rm(path.join(target, name), { force: true });
   return {
     day,
     stands: scores.length,
@@ -203,6 +237,8 @@ export async function syncData(source, target) {
     details: details?.length ?? 0,
     conditions: conditions === null ? 0 : 1,
     manifest: manifest === null ? 0 : 1,
+    accessPoints: optionalLayers["access_points.json"] === null ? 0 : 1,
+    forestRoads: optionalLayers["forest_roads.json"] === null ? 0 : 1,
   };
 }
 

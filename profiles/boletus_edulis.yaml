@@ -245,6 +245,87 @@ pressure:
   # a working, non-arbitrary constant for tonight, not a validated number.
   d_half: 90000.0
 
+  # Plan wdrozenia Faza 3: model presji. "access_points" (nowy): presja trafia
+  # do wydzielenia wylacznie przez PUNKTY DOSTEPU (parkingi, wjazdy/szlabany,
+  # osiedla przy lesie, droga leśna jako korytarz rowerowy); ludnosc tylko
+  # wzmacnia punkty (A_k). "gravity": dotychczasowy model grawitacyjny od
+  # centroidu wydzielenia (k, park_decay_m, demand_decay_km, d_half powyzej) --
+  # zostaje do porownan i jako wybor awaryjny. Gdy przebieg nie ma danych
+  # punktow dostepu (np. test/syntetyczne wejscie), pipeline.mvp uzywa gravity
+  # i zapisuje to w manifescie (`pressure_model_used`).
+  model: access_points
+  # WSZYSTKIE parametry ponizej to hipoteza wlasciciela (plan 3.3), NIESKALIBROWANE.
+  access_points:
+    # Waga typu w_t, zasieg oddzialywania range_m (k(d)=max(0,1-(d/R)^2)^2,
+    # bez twardej granicy) i zasieg zbierania ludnosci do atrakcyjnosci
+    # (attractiveness_range_km, g(d) tym samym jadrem). a_half: A_norm=A/(A+a_half).
+    types:
+      parking:       {weight: 1.0, range_m: 3000.0, attractiveness_range_km: 20.0, a_half: 20000.0}
+      entrance:      {weight: 0.6, range_m: 2500.0, attractiveness_range_km: 20.0, a_half: 20000.0}
+      gate:          {weight: 0.6, range_m: 2500.0, attractiveness_range_km: 20.0, a_half: 20000.0}
+      road_fallback: {weight: 0.4, range_m: 1500.0, attractiveness_range_km: 20.0, a_half: 20000.0}
+      # osiedle: pieszo -- tylko ludnosc samego osiedla i oczek w ~1,5 km
+      settlement:    {weight: 0.6, range_m: 1500.0, attractiveness_range_km: 1.5, a_half: 1500.0}
+      # droga lesna = korytarz rowerowy; range_m = zasieg POPRZECZNY od drogi
+      # (0,3 km, nie 1,0 -- plan 3.3); attractiveness_range_km = zasieg
+      # dojazdu rowerem do punktu, od ktorego droga dziedziczy atrakcyjnosc.
+      forest_road:   {weight: 0.4, range_m: 300.0, attractiveness_range_km: 8.0, a_half: 20000.0}
+    # Odleglosc po sieci drogowej, przy ktorej dziedziczona atrakcyjnosc spada o polowe.
+    network_half_km: 3.0
+    # Mnoznik nawierzchni odcinka drogi lesnej (plan 3.2).
+    surface_multiplier: {hard: 1.0, gravel: 0.8, compacted: 0.8, unknown: 0.5, dirt: 0.3}
+    # Nasycenie: P = 1 - exp(-raw / S). S dobrane tak, by mediana P w
+    # przebiegu Kieleczki byla zblizona do modelu gravity (TYMCZASOWO, jak d_half w 1.5).
+    # Podzial ludnosci miedzy punkty dostepu (plan 3.2b): huff (domyslny) -- ludnosc
+    # kazdego oczka GUS dzielona miedzy punkty w zasiegu dojazdu proporcjonalnie do
+    # w_t * g(d), suma udzialow oczka = jego ludnosc; none -- kazdy punkt zbiera
+    # ludnosc niezaleznie (pierwsza wersja Fazy 3). Osiedla przy lesie (pieszo) bez dzielenia.
+    # huff_all (domyslny, decyzja wlasciciela 2026-09-29): jednolity podzial ludnosci
+    # miedzy WSZYSTKIE typy punktow (rowniez osiedla), z opcja zewnetrzna c;
+    # A_k w osobach, bez A/(A+a_half); waga typu tylko w podziale. huff i none zostaja do porownan.
+    # two_stage (domyslny, decyzja wlasciciela 2026-09-29): etap 1 -- sposob dotarcia oczka
+    # (pieszo: p_walk_max * max(0, 1 - d_las/walk_reach), reszta autem), etap 2 -- podzial
+    # w obrebie sposobu (pieszo miedzy osiedla bez opcji zewnetrznej, autem jak huff_all z c).
+    # huff_all, huff i none zostaja do porownan. Parametry tymczasowe, NIESKALIBROWANE.
+    population_split: two_stage
+    walk_share_max: 0.5      # p_walk_max: udzial idacych pieszo dla oczka przy samym lesie
+    walk_reach_km: 1.5       # odleglosc oczka od lasu, przy ktorej p_walk spada do 0
+    # Opcja zewnetrzna c ("nie jade do tego lasu") w mianowniku udzialu u_jk. TYMCZASOWE:
+    # oczko z jednym parkingiem (w=1) w odleglosci 15 km oddaje mu 19,9% ludnosci
+    # (g(15 km) = 0,191; 0,191 / (0,191 + 0,77)); dalej mniej. NIESKALIBROWANE.
+    external_option_c: 0.77
+    # Tylko do mapy (klasy niska/srednia/wysoka): A/(A + ta wartosc), osoby. Nie wchodzi do P.
+    attractiveness_display_a_half: 500.0
+    # S per wariant (te same mediany P co gravity w przebiegu Kieleczki, 0,373).
+    # TYMCZASOWE, NIESKALIBROWANE (jak d_half w 1.5). none: 2026-09-29 offline.
+    saturation_s: {two_stage: 1997.0, huff_all: 2489.0, huff: 0.1385, none: 7.0}
+    # 3.1 -- dane punktow dostepu
+    parking_osm_max_dist_to_forest_m: 200.0
+    parking_dedupe_m: 100.0            # pierwszenstwo BDL
+    entrance_dedupe_m: 150.0           # wjazdy i szlabany razem, szlaban ma pierwszenstwo
+    entrance_continuation_m: 60.0      # droga publiczna przecina las: dukt/droga lesna musi zaczynac sie w tej odleglosci
+    entrance_track_to_public_m: 300.0  # dukt przecina las: droga publiczna musi byc w tej odleglosci
+    gate_max_dist_to_public_road_m: 300.0
+    fallback_road_sample_m: 500.0      # fallback bez wjazdow: co ile metrow punkt na drodze asfaltowej
+    fallback_road_max_dist_to_forest_m: 200.0
+    fallback_min_forest_km2: 1.0       # kafel z mniejsza iloscia lasu nie dostaje fallbacku
+    settlement_max_dist_to_forest_m: 200.0
+    forest_buffer_m: 50.0              # drogi lesne biore z tego obrysu lasu
+    corridor_sample_m: 100.0           # gestosc probkowania drogi lesnej przy liczeniu presji
+    fire_surface_match_m: 20.0         # dojazd pozarowy BDL dostaje nawierzchnie od najblizszej drogi OSM z opisem w tej odleglosci
+    snap_max_m: 150.0                  # przypiecie punktu dostepu do sieci drog lesnych
+    # tagi OSM (osobny cache od glownego OSM: cache/access_tiles/osm)
+    osm:
+      highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "track", "service"]
+      public_highway_types: ["trunk", "primary", "secondary", "tertiary", "unclassified", "residential"]
+      paved_by_default_highway_types: ["trunk", "primary", "secondary", "tertiary", "residential"]
+      closed_access_values: ["no", "private", "forestry", "agricultural", "delivery", "customers"]
+      barrier_types: ["gate", "lift_gate"]
+      hard_surfaces: ["asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett", "cobblestone", "bricks", "metal"]
+      gravel_surfaces: ["gravel", "fine_gravel", "pebblestone", "crushed_stone", "chipseal"]
+      compacted_surfaces: ["compacted"]
+      dirt_surfaces: ["dirt", "ground", "earth", "mud", "grass", "sand", "grass_paver"]
+
 radar:
   # Plan 2026-09-26 A1 (docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
   # IMGW-PIB RainGRS replaces Open-Meteo precipitation for local days in the

@@ -1,0 +1,480 @@
+{
+  "stand_count": 19716,
+  "mask_passing": 14399,
+  "gravity_median_P_mask": 0.37321919002285153,
+  "params": {
+    "external_option_c": 0.77,
+    "walk_share_max": 0.5,
+    "walk_reach_km": 1.5
+  },
+  "oczka_GUS": {
+    "razem": 10237,
+    "do_1_5km_od_lasu": 2354,
+    "w_lesie_lub_przy_lesie_0m": 1043
+  },
+  "S_fit_two_stage": 1997.1169244559933,
+  "S_profile_two_stage": {
+    "two_stage": 1.0,
+    "huff_all": 2489.0,
+    "huff": 0.1385,
+    "none": 7.0
+  },
+  "porownanie": {
+    "two_stage": {
+      "S_fit": 1997.1169244559933,
+      "median_P_mask": 0.37321919002285153,
+      "share_forest_area_P_gt_0_5": 0.3010734120110668,
+      "spearman_P_vs_gravity_mask": 0.7601026168755414,
+      "spearman_R_vs_gravity_mask": 0.9593929251103432,
+      "top20_overlap_vs_gravity": 6,
+      "regions_kept_vs_gravity": 4,
+      "lubliniec_belt": [
+        {
+          "od_osiedla_m": "0-500",
+          "wydzielen": 14,
+          "P": 0.6044781842585719,
+          "P_gravity": 0.6313108465696452
+        },
+        {
+          "od_osiedla_m": "500-1000",
+          "wydzielen": 67,
+          "P": 0.6139393961380233,
+          "P_gravity": 0.6624131243480867
+        },
+        {
+          "od_osiedla_m": "1000-2000",
+          "wydzielen": 384,
+          "P": 0.4915966865313452,
+          "P_gravity": 0.5221121685449507
+        },
+        {
+          "od_osiedla_m": "2000-3000",
+          "wydzielen": 460,
+          "P": 0.35058358251511934,
+          "P_gravity": 0.39474284322297754
+        },
+        {
+          "od_osiedla_m": "3000-5000",
+          "wydzielen": 1021,
+          "P": 0.36503174563754837,
+          "P_gravity": 0.37923287356188823
+        },
+        {
+          "od_osiedla_m": "5000-inf",
+          "wydzielen": 118,
+          "P": 0.45426611456175,
+          "P_gravity": 0.4360468954757182
+        }
+      ]
+    },
+    "huff_all": {
+      "S_fit": 2488.7100791758185,
+      "median_P_mask": 0.37321919002285153,
+      "share_forest_area_P_gt_0_5": 0.30464324762647554,
+      "spearman_P_vs_gravity_mask": 0.7513785553738306,
+      "spearman_R_vs_gravity_mask": 0.9595308606516038,
+      "top20_overlap_vs_gravity": 5,
+      "regions_kept_vs_gravity": 4,
+      "lubliniec_belt": [
+        {
+          "od_osiedla_m": "0-500",
+          "wydzielen": 14,
+          "P": 0.44577004549441634,
+          "P_gravity": 0.6313108465696452
+        },
+        {
+          "od_osiedla_m": "500-1000",
+          "wydzielen": 67,
+          "P": 0.541449867259271,
+          "P_gravity": 0.6624131243480867
+        },
+        {
+          "od_osiedla_m": "1000-2000",
+          "wydzielen": 384,
+          "P": 0.466456740637027,
+          "P_gravity": 0.5221121685449507
+        },
+        {
+          "od_osiedla_m": "2000-3000",
+          "wydzielen": 460,
+          "P": 0.34602565194960727,
+          "P_gravity": 0.39474284322297754
+        },
+        {
+          "od_osiedla_m": "3000-5000",
+          "wydzielen": 1021,
+          "P": 0.37051727410801455,
+          "P_gravity": 0.37923287356188823
+        },
+        {
+          "od_osiedla_m": "5000-inf",
+          "wydzielen": 118,
+          "P": 0.46191519348951576,
+          "P_gravity": 0.4360468954757182
+        }
+      ]
+    },
+    "huff": {
+      "S_fit": 0.13849792213070578,
+      "median_P_mask": 0.37321919002285153,
+      "share_forest_area_P_gt_0_5": 0.33812569475575394,
+      "spearman_P_vs_gravity_mask": 0.7848432184256895,
+      "spearman_R_vs_gravity_mask": 0.9508541454152516,
+      "top20_overlap_vs_gravity": 5,
+      "regions_kept_vs_gravity": 3,
+      "lubliniec_belt": [
+        {
+          "od_osiedla_m": "0-500",
+          "wydzielen": 14,
+          "P": 0.9701574254200199,
+          "P_gravity": 0.6313108465696452
+        },
+        {
+          "od_osiedla_m": "500-1000",
+          "wydzielen": 67,
+          "P": 0.9230802491002552,
+          "P_gravity": 0.6624131243480867
+        },
+        {
+          "od_osiedla_m": "1000-2000",
+          "wydzielen": 384,
+          "P": 0.7181782547484675,
+          "P_gravity": 0.5221121685449507
+        },
+        {
+          "od_osiedla_m": "2000-3000",
+          "wydzielen": 460,
+          "P": 0.36566940187979113,
+          "P_gravity": 0.39474284322297754
+        },
+        {
+          "od_osiedla_m": "3000-5000",
+          "wydzielen": 1021,
+          "P": 0.31712507686733404,
+          "P_gravity": 0.37923287356188823
+        },
+        {
+          "od_osiedla_m": "5000-inf",
+          "wydzielen": 118,
+          "P": 0.41473128708992046,
+          "P_gravity": 0.4360468954757182
+        }
+      ]
+    },
+    "gravity_belt_P": [
+      {
+        "od_osiedla_m": "0-500",
+        "wydzielen": 14,
+        "P": 0.6313108465696452,
+        "P_gravity": 0.6313108465696452
+      },
+      {
+        "od_osiedla_m": "500-1000",
+        "wydzielen": 67,
+        "P": 0.6624131243480867,
+        "P_gravity": 0.6624131243480867
+      },
+      {
+        "od_osiedla_m": "1000-2000",
+        "wydzielen": 384,
+        "P": 0.5221121685449507,
+        "P_gravity": 0.5221121685449507
+      },
+      {
+        "od_osiedla_m": "2000-3000",
+        "wydzielen": 460,
+        "P": 0.39474284322297754,
+        "P_gravity": 0.39474284322297754
+      },
+      {
+        "od_osiedla_m": "3000-5000",
+        "wydzielen": 1021,
+        "P": 0.37923287356188823,
+        "P_gravity": 0.37923287356188823
+      },
+      {
+        "od_osiedla_m": "5000-inf",
+        "wydzielen": 118,
+        "P": 0.4360468954757182,
+        "P_gravity": 0.4360468954757182
+      }
+    ],
+    "two_stage_vs_huff_all": {
+      "spearman_P_mask": 0.9969397122431954,
+      "spearman_R_mask": 0.9995330883287962,
+      "top20_overlap": 18,
+      "regions_kept": 5
+    },
+    "two_stage_vs_huff": {
+      "spearman_P_mask": 0.9057634013307568,
+      "spearman_R_mask": 0.9776577303912052,
+      "top20_overlap": 19,
+      "regions_kept": 4
+    }
+  },
+  "kryterium_sensownosci": {
+    "P_przy_osiedlu_0_1km": 0.6123041249489822,
+    "P_2_3km": 0.35058358251511934,
+    "P_3_5km": 0.36503174563754837,
+    "P_powyzej_5km": 0.45426611456175,
+    "a_wyraznie_wyzsze_przy_osiedlu": true,
+    "b_brak_ponownego_wzrostu": false,
+    "spelnione": false,
+    "progi": {
+      "margines_a": 0.1,
+      "tolerancja_b": 0.05
+    }
+  },
+  "udzialy_two_stage": {
+    "udzial_w_presji_surowej_typ": {
+      "parking": 0.3049144647031144,
+      "entrance": 0.5897801127014669,
+      "gate": 0.0594199630286073,
+      "road_fallback": 0.0,
+      "settlement": 0.02915127886975316,
+      "forest_road": 0.016734180697058152
+    },
+    "udzial_podtypow": {
+      "entrance/crossing_public/osm": 0.10937613646509456,
+      "entrance/crossing_track/osm": 0.27811081240739766,
+      "entrance/junction/osm": 0.2022931638289747,
+      "gate/barrier/osm": 0.0594199630286073,
+      "parking/amenity_parking/osm": 0.17908610758345514,
+      "parking/miejsce_postoju/bdl": 0.12582835711965928
+    },
+    "najczesciej_glowny_wklad_typ": {
+      "parking": 0.6743523855823321,
+      "entrance": 0.2196680325022571,
+      "forest_road": 0.04618376276130287,
+      "settlement": 0.04389193694006528,
+      "gate": 0.015348288075560802,
+      "": 0.000555594138481839
+    }
+  },
+  "udzialy_huff_all": {
+    "udzial_w_presji_surowej_typ": {
+      "parking": 0.3113284287071,
+      "entrance": 0.610332736222205,
+      "gate": 0.060750664818251296,
+      "road_fallback": 0.0,
+      "settlement": 0.0002703061760423266,
+      "forest_road": 0.0173178640764013
+    },
+    "udzial_podtypow": {
+      "entrance/crossing_public/osm": 0.11446543608054557,
+      "entrance/crossing_track/osm": 0.28488436286058777,
+      "entrance/junction/osm": 0.21098293728107165,
+      "gate/barrier/osm": 0.060750664818251296,
+      "parking/amenity_parking/osm": 0.17743386801239353,
+      "parking/miejsce_postoju/bdl": 0.13389456069470643
+    },
+    "najczesciej_glowny_wklad_typ": {
+      "parking": 0.7127578304048893,
+      "entrance": 0.22404333634280157,
+      "forest_road": 0.04507257448433919,
+      "gate": 0.015834432946732414,
+      "settlement": 0.0017362316827557469,
+      "": 0.000555594138481839
+    }
+  },
+  "A_osoby": {
+    "parking": {
+      "count": 378.0,
+      "10%": 135.65145313521674,
+      "50%": 533.812050682401,
+      "90%": 5907.178789277415,
+      "max": 18451.050181592655
+    },
+    "entrance": {
+      "count": 1693.0,
+      "10%": 83.67036345119412,
+      "50%": 228.6408939307193,
+      "90%": 1303.846018876233,
+      "max": 9469.42078552679
+    },
+    "gate": {
+      "count": 153.0,
+      "10%": 85.26886284106831,
+      "50%": 228.16907712224415,
+      "90%": 2869.9428063399046,
+      "max": 10235.00488607871
+    },
+    "settlement": {
+      "count": 921.0,
+      "10%": 9.799069988239328,
+      "50%": 49.512243825417386,
+      "90%": 266.8881123821125,
+      "max": 3646.8808595947235
+    }
+  },
+  "regions_lista": {
+    "gravity": [
+      [
+        470824,
+        303819
+      ],
+      [
+        456598,
+        303213
+      ],
+      [
+        461457,
+        301266
+      ],
+      [
+        467185,
+        305676
+      ],
+      [
+        462963,
+        297985
+      ]
+    ],
+    "two_stage": [
+      [
+        462110,
+        299168
+      ],
+      [
+        470824,
+        303819
+      ],
+      [
+        456598,
+        303213
+      ],
+      [
+        467185,
+        305676
+      ],
+      [
+        460779,
+        295487
+      ]
+    ],
+    "huff_all": [
+      [
+        462110,
+        299168
+      ],
+      [
+        470824,
+        303819
+      ],
+      [
+        456598,
+        303213
+      ],
+      [
+        467185,
+        305676
+      ],
+      [
+        460779,
+        295487
+      ]
+    ],
+    "huff": [
+      [
+        462103,
+        299175
+      ],
+      [
+        470824,
+        303819
+      ],
+      [
+        457833,
+        302066
+      ],
+      [
+        467185,
+        305676
+      ],
+      [
+        460805,
+        295508
+      ]
+    ]
+  },
+  "stabilnosc_two_stage": {
+    "baza_S": 1997.1169244559933,
+    "min_top20_wymagane": 14,
+    "wiersze": [
+      {
+        "parametr": "p_walk_max",
+        "top20_zostaje": 19,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.3942511525173896,
+        "spearman_R_vs_baza": 0.999869093404009,
+        "kryterium_spelnione": false,
+        "zmiana": "-30%"
+      },
+      {
+        "parametr": "p_walk_max",
+        "top20_zostaje": 19,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.3501837693077624,
+        "spearman_R_vs_baza": 0.9998474336915822,
+        "kryterium_spelnione": false,
+        "zmiana": "+30%"
+      },
+      {
+        "parametr": "c (opcja zewnetrzna)",
+        "top20_zostaje": 20,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.3735245782485078,
+        "spearman_R_vs_baza": 0.9999996128460266,
+        "kryterium_spelnione": false,
+        "zmiana": "-30%"
+      },
+      {
+        "parametr": "c (opcja zewnetrzna)",
+        "top20_zostaje": 20,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.3728693425777547,
+        "spearman_R_vs_baza": 0.9999996529698998,
+        "kryterium_spelnione": false,
+        "zmiana": "+30%"
+      },
+      {
+        "parametr": "zasieg wjazdow (wjazd+szlaban)",
+        "top20_zostaje": 16,
+        "rejony_zostaje": 4,
+        "mediana_P_maska": 0.2510558899070695,
+        "spearman_R_vs_baza": 0.9954543705971514,
+        "kryterium_spelnione": false,
+        "zmiana": "-30%"
+      },
+      {
+        "parametr": "zasieg wjazdow (wjazd+szlaban)",
+        "top20_zostaje": 16,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.5114244007131246,
+        "spearman_R_vs_baza": 0.9961228752376994,
+        "kryterium_spelnione": true,
+        "zmiana": "+30%"
+      },
+      {
+        "parametr": "zasieg parkingow",
+        "top20_zostaje": 18,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.3331914632414533,
+        "spearman_R_vs_baza": 0.9988388073375918,
+        "kryterium_spelnione": false,
+        "zmiana": "-30%"
+      },
+      {
+        "parametr": "zasieg parkingow",
+        "top20_zostaje": 18,
+        "rejony_zostaje": 5,
+        "mediana_P_maska": 0.4315828766988885,
+        "spearman_R_vs_baza": 0.9983550161394418,
+        "kryterium_spelnione": false,
+        "zmiana": "+30%"
+      }
+    ],
+    "min_top20": 16
+  },
+  "czas_s": 118.9
+}

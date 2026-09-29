@@ -598,3 +598,74 @@ describe("zakazNote", () => {
     expect(zakazNote("cos_innego")).toBe("");
   });
 });
+
+// Faza 3.5: warstwy punktow dostepu i karta wydzielenia.
+import {
+  ACCESS_LAYERS,
+  accessCardSummary,
+  distanceMethod as distanceMethodF3,
+  parseAccessCollection,
+  pointTypeLabel,
+  roadKindLabel,
+  surfaceLabel,
+  topPointSummary,
+} from "./model";
+
+describe("access layers (Faza 3.5)", () => {
+  it("offers a legend toggle for parkings, entrances, roads, fire roads, settlements and P", () => {
+    const ids = ACCESS_LAYERS.map((l) => l.id);
+    expect(ids).toEqual(["parkings", "entrances", "roads", "fire", "settlements", "pressure"]);
+    // gesta warstwa pozarowa, osiedla i P domyslnie wylaczone
+    const off = ACCESS_LAYERS.filter((l) => !l.defaultOn).map((l) => l.id);
+    expect(off).toEqual(["fire", "settlements", "pressure"]);
+  });
+  it("parses an access collection, treats absence as null and rejects garbage", () => {
+    expect(parseAccessCollection(undefined, "x.json")).toBeNull();
+    const fc = { type: "FeatureCollection", features: [] };
+    expect(parseAccessCollection(fc, "x.json")).toEqual(fc);
+    expect(() => parseAccessCollection({ type: "Feature" }, "x.json")).toThrow(/x\.json/);
+    expect(() => parseAccessCollection("nope", "x.json")).toThrow();
+  });
+  it("summarises the card as nearest parking / entrance / paved forest road", () => {
+    const text = accessCardSummary({
+      d_parking_m: 854,
+      d_entrance_m: 402,
+      d_hard_forest_road_m: null,
+      top_point_id: "pk-bdl-1",
+      top_point_type: "parking",
+      top_point_source: "bdl",
+      top_point_name: "Leśna",
+    });
+    expect(text).toContain("najbliższy parking 850 m");
+    expect(text).toContain("wjazd lub szlaban 400 m");
+    expect(text).toContain("utwardzony dukt brak w pobliżu");
+    expect(accessCardSummary(null)).toBe("");
+  });
+  it("names the top contributing point, or says no point reaches the stand", () => {
+    const base = {
+      d_parking_m: 1, d_entrance_m: 1, d_hard_forest_road_m: 1,
+      top_point_id: "pk-1", top_point_type: "parking", top_point_source: "bdl", top_point_name: "Leśna",
+    };
+    expect(topPointSummary(base)).toContain("parking „Leśna” (BDL)");
+    expect(topPointSummary({ ...base, top_point_id: null })).toContain("P = 0");
+  });
+  it("labels types, surfaces, road kinds and the new distance method in Polish", () => {
+    expect(pointTypeLabel("gate")).toBe("Szlaban");
+    expect(surfaceLabel("hard")).toBe("twarda");
+    expect(surfaceLabel("zzz")).toBe("nieznana");
+    expect(roadKindLabel("closed")).toBe("zamknięta droga leśna");
+    expect(roadKindLabel("public")).toBe("droga publiczna");
+    expect(distanceMethodF3("access_points")).toContain("punktów dostępu");
+  });
+});
+
+describe("attractivenessClass", () => {
+  it("classifies from the exported number and tolerates absence", async () => {
+    const { attractivenessClass } = await import("./model");
+    expect(attractivenessClass(0.05)).toBe("niska");
+    expect(attractivenessClass(0.2)).toBe("średnia");
+    expect(attractivenessClass(0.5)).toBe("wysoka");
+    expect(attractivenessClass(null)).toBeNull();
+    expect(attractivenessClass(undefined)).toBeNull();
+  });
+});
