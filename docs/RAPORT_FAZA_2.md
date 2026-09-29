@@ -134,6 +134,42 @@ Nieznanych kodów jest 17,0% pozytywów (poniżej progu 20%, więc analiza głó
 
 Przebieg Kieleczki (manifesty w `docs/porownania/{nowy,faza1_5,faza1_6}/`): `unknown_site_count` = 0 i `unknown_species_count` = 0 (19 716 wydzieleń); problem kodów nieznanych dotyczy więc obszarów górskich/podgórskich z 2.4, nie Kieleczki.
 
+## 2.4 — analiza EKSPLORACYJNA: wiek i tryb `habitat.age_mode`
+
+**Eksploracyjna, po zobaczeniu wyników 2.4; nie wpływa na decyzje wg reguł 2.0.** Kod: `notebooks/15_eksploracja_wiek.py`, wyniki: `notebooks/output/walidacja/eksploracja_wiek.json` (poza repo). Te same zamrożone rekordy i atrybuty WFS co w poprzedniej analizie eksploracyjnej (od 2021 r.: 210 pozytywów, tło (a) 1024, tło (b) 329).
+
+### (a) Rozkład wieku wydzieleń (po przeliczeniu na 2026, średnia ważona powierzchnią bufora)
+
+| Klasa wieku | Pozytywy | Tło (a) inne grzyby | Tło (b) rośliny/zwierzęta |
+|---|---|---|---|
+| < 12 | 2 (1,0%) | 17 (1,7%) | 6 (1,8%) |
+| 12–20 | 5 (2,4%) | 26 (2,5%) | 11 (3,3%) |
+| 20–40 | 28 (13,3%) | 73 (7,1%) | 22 (6,7%) |
+| 40–60 | 47 (22,4%) | 129 (12,6%) | 45 (13,7%) |
+| 60–80 | 44 (21,0%) | 230 (22,5%) | 86 (26,1%) |
+| 80–100 | 39 (18,6%) | 223 (21,8%) | 66 (20,1%) |
+| 100–120 | 24 (11,4%) | 164 (16,0%) | 47 (14,3%) |
+| > 120 | 21 (10,0%) | 162 (15,8%) | 46 (14,0%) |
+| **mediana (Q1–Q3)** | **69,0 (46,9–91,3)** | **82,3 (61,0–107,0)** | **78,0 (59,2–104,3)** |
+
+Podział na gatunek panujący (największe wydzielenie w buforze), tylko klasy z ≥ 20 rekordami: **sosna** pozytywy 40–60: 29, 60–80: 26, 80–100: 27 (mediana wieku 65,7; Q1–Q3 45,5–87,7; n = 118); tło (a) 20–40: 42, 40–60: 74, 60–80: 130, 80–100: 106, 100–120: 73, > 120: 50 (mediana 75,0); tło (b) 40–60: 21, 60–80: 40, 80–100: 33, 100–120: 20 (mediana 72,6). **Świerk**: w żadnej klasie nie ma ≥ 20 rekordów (pozytywy n = 17; tło (a) n = 54, mediana 70,8; tło (b) n = 45, mediana 72,0), więc rozkładu klasowego nie podaję. Odczyt opisowy: pozytywy są przesunięte ku młodszym klasom (20–60 lat: 36% wobec 20% w obu tłach) i rzadziej występują w drzewostanach > 100 lat (21% wobec 32% / 28%); podobnie wśród samych sosen (mediana 65,7 wobec 75,0 / 72,6). Nie oznacza to, że młodsze drzewostany są „lepsze”: możliwe jest skrzywienie dostępnością (młodsze drzewostany blisko dróg i osad, gdzie ludzie chodzą).
+
+### (b) Przełącznik `habitat.age_mode` (`curve` domyślny, `neutral`)
+
+Dodano do profilu (`habitat.age_mode: curve`, kod w `pipeline/habitat.py::score_age`): `neutral` daje S_age = 1 dla każdego wydzielenia przechodzącego maskę wieku (< 12 lat nadal odpada; również bez kary 0,9 dla > 120 lat). **Domyślny tryb nie został zmieniony.** 4 nowe testy w `tests/test_habitat.py`.
+
+- **AUC(H) na zamrożonych danych:** `neutral`: 0,574 (CI 0,528–0,611) vs tło (a), 0,615 (0,556–0,668) vs tło (b); `curve` (2.4): 0,571 i 0,610. Różnica pomijalna (o 0,003–0,005 na korzyść `neutral`, dużo poniżej szerokości CI).
+- **Przebieg Kieleczki offline** (`docs/porownania/faza1_6`; R = 100·H·F_loc·(1 − αP), H bez S_age; bez zmiany F_loc, P i maski). Kontrola: odtworzone R w trybie `curve` równa się R z eksportu (maks. różnica 0,0) i odtworzone rejony mają te same rozmiary co zapisane (23/21/15/13/38):
+
+| Miara | Wynik `neutral` względem `curve` |
+|---|---|
+| Spearman R (14 399 wydzieleń w masce) | 0,952 |
+| wspólne w top-20 (wszystkie wydzielenia / tylko ≥ 0,5 ha) | 10 / 11 z 20 |
+| rejony | 5 vs 5; wspólnych wydzieleń 78 ze 110 w rejonach `curve`; jeden rejon `curve` (21 wydzieleń) nie ma odpowiednika (0 wspólnych), pozostałe: 23/23, 15/15, 13/13 i 27/38 wspólnych |
+| mediana H | 0,860 w obu trybach (mediana wydzieleń ma S_age = 1 już w `curve`) |
+
+`neutral` zmienia więc ranking umiarkowanie (połowa top-20), głównie przez usunięcie kar za drzewostany młodsze niż 35 lat i starsze niż 120 lat. Wynik dotyczy jednego przebiegu (Kieleczka) i jest zależny od kształtu krzywej; nie jest oceną skuteczności żadnego trybu.
+
 ## Czego te testy nie pokazują
 
 - GBIF zawiera tylko znaleziska. Nie wiadomo, gdzie i kiedy szukano bez skutku, ani ile czasu na to poświęcono, więc **nie da się rzetelnie zmierzyć, czy aplikacja wskazuje miejsca z większą liczbą borowików**.
