@@ -199,6 +199,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # Faza 4.3: skladniki pogody do prezentacji (panel/karta) -- NIE wchodza do F/R.
     p26_mm_values, cwb26_mm_values, cwb26_typical_values = [], [], []
     tmean20_values, tmin3_values, tmin3_date_values = [], [], []
+    tmean5_values, p5_values = [], []
     weather_lat_values, weather_lon_values = [], []
     climatology_lat_values, climatology_lon_values = [], []
     # Cheap diagnostics for the three paths that otherwise degrade silently to
@@ -338,6 +339,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         valid_hist = cwb26_hist[~pd.isna(cwb26_hist)]
         cwb26_typical_values.append(float(pd.Series(valid_hist).median()) if len(valid_hist) else None)
         tmean20_values.append(float(wrow["tmean20"]))
+        tmean5_values.append(float(wrow["tmean5"]))
+        p5_values.append(float(p5_value))
         tmin3_values.append(float(wrow["tmin3"]))
         tmin3_date_values.append(wrow["tmin3_date"])
         pct_cwb26_values.append(pct_cwb26)
@@ -398,6 +401,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["cwb26_mm"] = cwb26_mm_values
     stands["cwb26_typical_mm"] = cwb26_typical_values
     stands["tmean20_c"] = tmean20_values
+    stands["tmean5_c"] = tmean5_values
+    stands["p5_mm"] = p5_values
     stands["tmin3_c"] = tmin3_values
     stands["tmin3_date"] = tmin3_date_values
     stands["forecast_window_share"] = forecast_window_share(forecast_days - 1)

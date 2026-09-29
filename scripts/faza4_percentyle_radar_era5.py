@@ -161,6 +161,7 @@ def part_b():
         df = pd.read_parquet(f)
         df["date"] = pd.to_datetime(df["date"], utc=True).dt.tz_convert("Europe/Warsaw").dt.tz_localize(None).dt.normalize()
         ser = df.set_index("date")["precipitation_mm"]
+        ser = ser[~ser.index.duplicated(keep="first")]
         ob = store.daily(lat, lon, date.fromisoformat(s), date.fromisoformat(e), variables=["rr"])["rr"]
         j = pd.concat([ser.rename("era5"), ob.rename("eobs")], axis=1).dropna()
         if len(j) < 300:
