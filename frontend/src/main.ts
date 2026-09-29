@@ -10,6 +10,7 @@ import {
   weatherComponents,
   pressureTop,
   standName,
+  parseStandId,
   regionName,
   keyFacts,
   areaLabel,
@@ -477,6 +478,14 @@ function metaLine(parts: (string | null)[]) {
 function actions(o: { saveAttr: string; id: string; saved: boolean; saveLabel: string; navPoint: [number, number]; navLabel: string }) {
   return `<div class="card-actions"><button class="save-button ${o.saved ? "is-saved" : ""}" ${o.saveAttr}="${escape(o.id)}">${icon(o.saved ? "check" : "bookmark")}${o.saved ? "Zapisano" : o.saveLabel}</button><a class="navigation-link" href="${navigationUrl(o.navPoint)}" target="_blank" rel="noopener noreferrer" aria-label="${escape(o.navLabel)}">${icon("location")}Nawiguj</a><button class="show-on-map" data-show-map="1">${icon("map")}Na mapie</button></div>`;
 }
+// Adres lesny po polsku: nadlesnictwo (kod), lesnictwo, oddzial, pododdzial.
+function addressLine(standId: string) {
+  const parsed = parseStandId(standId);
+  if (!parsed) return "";
+  const detail = detailFor(standId);
+  const name = standName(standId, detail).split(" · ")[1] ?? "";
+  return `<p class="muted">${escape(name)} (kod ${escape(parsed.district)}) · leśnictwo nr ${escape(parsed.forestry)} · oddział ${escape(parsed.section)} · pododdział ${escape(parsed.subsection)}</p>`;
+}
 function standRow(entry: StandView, index: number) {
   const score = entry.score;
   const detail = detailFor(score.stand_id);
@@ -487,7 +496,7 @@ function standRow(entry: StandView, index: number) {
   if (isSelected) {
     const isSaved = getSaved().some((s) => s.key === savedKey(score.stand_id, entry.point));
     const rank = `Miejsce ${index + 1} w rankingu${pressure ? "" : " bez presji"}: wynik ${entry.r.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}.`;
-    body = `<div class="card-body">${barsSection(score)}${factChips(keyFacts(detail?.access, score.area_ha, score.d_park_m))}${actions({ saveAttr: "data-save", id: score.stand_id, saved: isSaved, saveLabel: "Zapisz miejsce", navPoint: entry.point, navLabel: `Nawiguj do punktu orientacyjnego wydzielenia ${name}` })}<details class="card-details"><summary>Szczegóły</summary><div class="details-inner"><div class="details-block"><h4>Identyfikator</h4><p class="stand-id">${escape(score.stand_id)}</p></div>${scoreDetails(score, { rankLine: rank, point: entry.point })}</div></details><div class="freshness">Analiza: ${formatDate(score.day)}</div></div>`;
+    body = `<div class="card-body">${barsSection(score)}${factChips(keyFacts(detail?.access, score.area_ha, score.d_park_m))}${actions({ saveAttr: "data-save", id: score.stand_id, saved: isSaved, saveLabel: "Zapisz miejsce", navPoint: entry.point, navLabel: `Nawiguj do punktu orientacyjnego wydzielenia ${name}` })}<details class="card-details"><summary>Szczegóły</summary><div class="details-inner"><div class="details-block"><h4>Identyfikator</h4><p class="stand-id">${escape(score.stand_id)}</p>${addressLine(score.stand_id)}</div>${scoreDetails(score, { rankLine: rank, point: entry.point })}</div></details><div class="freshness">Analiza: ${formatDate(score.day)}</div></div>`;
   }
   return rowHtml({
     attr: "data-card",
