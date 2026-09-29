@@ -66,6 +66,11 @@ def build_score_record(row, day: str) -> dict:
     r_bez = row["R_bez_presji"] if "R_bez_presji" in row.index else compute_ranking(
         bool(row["mask_full"]), _json_safe(row["H"]), _json_safe(row["F_loc"]), p=0.0, alpha=0.0)
     record["R_bez_presji"] = _json_safe(float(r_bez))
+    # Faza UI (tryb mapy "Wilgotnosc"): skladowa M (0-1) i percentyl bilansu wodnego z 26 dni,
+    # dla WSZYSTKICH wydzielen (rowniez poza maska -- wilgotnosc od maski nie zalezy). Tylko
+    # prezentacja; null dla ramki bez tych kolumn.
+    record["M"] = _json_safe(row["M"]) if "M" in row.index else None
+    record["pct_CWB26"] = _json_safe(row["pct_CWB26"]) if "pct_CWB26" in row.index else None
     # Plan 2.1 step A4 (spec §5.2): from the EPSG:2180 geometry itself (same
     # source pipeline.regions.py already uses for its own area_ha), not
     # BDL's own sub_area attribute -- unused elsewhere, possibly stale.

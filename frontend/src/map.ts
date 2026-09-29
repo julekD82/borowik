@@ -1,6 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { FeatureCollection, Polygon, MultiPolygon } from "geojson";
-import type { StandView, StandFeature, AccessCollection, AccessLayerId } from "./model";
+import type { StandView, StandFeature, AccessCollection, AccessLayerId, MapColorMode } from "./model";
 import {
   vertices,
   SURFACE_COLORS,
@@ -11,6 +11,8 @@ import {
   attractivenessClass,
   rankColorStops,
   RANK_ZERO_COLOR,
+  MOISTURE_STOPS,
+  MOISTURE_NO_DATA_COLOR,
 } from "./model";
 
 // Faza 3.5: warstwy mapy (grupa przelaczana w legendzie -> id warstw MapLibre).
@@ -42,6 +44,11 @@ export class ForestMap {
   private groupSelected: string[] = [];
   private groupHover: string[] = [];
   private rankStops: [number, string][] = rankColorStops([]);
+  // Tryby kolorowania: wynik / wynik bez presji (percentyle R z tej analizy) albo wilgotnosc M
+  // (skala bezwzgledna 0-1, wszystkie wydzielenia). `allStands` = geometria wszystkich wydzielen
+  // (rowniez poza maska) z M; bez niej zrodlo mapy to tylko `entries`, jak dotad.
+  private colorMode: MapColorMode = "score";
+  private allStands: { feature: StandFeature; moisture: number | null }[] = [];
   private accessPoints: AccessCollection | null = null;
   private forestRoads: AccessCollection | null = null;
   private layerVisible: Record<AccessLayerId, boolean> = {
@@ -90,6 +97,7 @@ export class ForestMap {
       this.addLayers();
       // Tryb rejonow: podswietlenie i pinezka ustawione przed zaladowaniem stylu (mapa ukryta
       // na zakladce telefonu laduje sie pozniej) -- odtworz filtr zamiast go zgubic.
+      this.applyColorMode();
       if (this.groupSelected.length) this.applyGroupFilter();
       else this.select(this.selected);
     });
@@ -399,23 +407,70 @@ export class ForestMap {
       ["interpolate", ["linear"], ["get", "rank"], ...this.rankStops.flat()],
     ] as unknown as maplibregl.ExpressionSpecification;
   }
+  setAllStands(items: { feature: StandFeature; moisture: number | null }[]) {
+    this.allStands = items;
+  }
+  setColorMode(mode: MapColorMode) {
+    this.colorMode = mode;
+    this.applyColorMode();
+  }
+  // Wilgotnosc M: skala BEZWZGLEDNA (te same progi 0-1 w kazdej analizie), brak M = szary.
+  private moistureFillColor(): maplibregl.ExpressionSpecification {
+    return [
+      "case",
+      ["==", ["typeof", ["get", "moisture"]], "number"],
+      ["interpolate", ["linear"], ["get", "moisture"], ...MOISTURE_STOPS.flat()],
+      MOISTURE_NO_DATA_COLOR,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+  private applyColorMode() {
+    if (!this.map.getLayer("stand-fill")) return;
+    const moisture = this.colorMode === "moisture";
+    this.map.setPaintProperty(
+      "stand-fill",
+      "fill-color",
+      moisture ? this.moistureFillColor() : this.rankFillColor(),
+    );
+    // Wilgotnosc pokazuje wszystkie wydzielenia; te poza maska modelu slabiej. Tryby wyniku
+    // pokazuja tylko wydzielenia z ocena (jak dotad).
+    this.map.setPaintProperty(
+      "stand-fill",
+      "fill-opacity",
+      moisture ? ["case", ["==", ["get", "mask"], 1], 0.8, 0.32] : 0.72,
+    );
+    const filter = moisture ? null : (["==", ["get", "mask"], 1] as maplibregl.FilterSpecification);
+    for (const id of ["stand-fill", "stand-line", "stand-pressure"])
+      if (this.map.getLayer(id)) this.map.setFilter(id, filter);
+  }
   // `refit = false`: przelaczenie presji tylko przekolorowuje i przeszereguje wydzielenia,
   // bez przesuwania widoku mapy.
   setData(entries: StandView[], refit = true) {
     this.entries = entries;
     this.rankStops = rankColorStops(entries.map((e) => e.r));
-    if (this.map.getLayer("stand-fill"))
-      this.map.setPaintProperty("stand-fill", "fill-color", this.rankFillColor());
+    const ranked = new Map(entries.map((e) => [e.score.stand_id, e]));
+    const source = this.allStands.length
+      ? this.allStands
+      : entries.map((e) => ({ feature: e.feature, moisture: null as number | null }));
     this.geometry = {
       type: "FeatureCollection",
-      features: entries.map((e) => ({
-        ...e.feature,
-        properties: { ...e.feature.properties, rank: e.r, pressure: e.score.P },
-      })),
+      features: source.map(({ feature, moisture }) => {
+        const entry = ranked.get(feature.properties.stand_id);
+        return {
+          ...feature,
+          properties: {
+            ...feature.properties,
+            rank: entry?.r ?? 0,
+            pressure: entry?.score.P ?? null,
+            mask: entry ? 1 : 0,
+            moisture,
+          },
+        };
+      }),
     };
     (
       this.map.getSource("stands") as maplibregl.GeoJSONSource | undefined
     )?.setData(this.geometry);
+    this.applyColorMode();
     if (refit)
       this.fit(
         entries.map((e) => e.feature),

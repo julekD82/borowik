@@ -48,6 +48,10 @@ export type Score = {
   // Faza UI.1: wynik bez presji grzybiarzy, 100 * H * F_loc (alpha = 0) -- brak w
   // eksportach sprzed tej zmiany (przelacznik presji jest wtedy nieaktywny).
   R_bez_presji?: number | null;
+  // Tryb mapy "Wilgotnosc": skladowa M (0-1) i percentyl bilansu wodnego z 26 dni, dla
+  // wszystkich wydzielen (rowniez poza maska); brak w migawkach sprzed tej zmiany.
+  M?: number | null;
+  pct_CWB26?: number | null;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -626,6 +630,8 @@ export function parseData(
         (s.G_season === undefined || numeric(s.G_season)) &&
         (s.tie_break === undefined || numeric(s.tie_break)) &&
         (s.R_bez_presji === undefined || numeric(s.R_bez_presji)) &&
+        (s.M === undefined || numeric(s.M)) &&
+        (s.pct_CWB26 === undefined || numeric(s.pct_CWB26)) &&
         (s.rain_radar_coverage === undefined || numeric(s.rain_radar_coverage)) &&
         (s.zakaz_status === undefined || typeof s.zakaz_status === "string") &&
         (s.gdos_status === undefined || typeof s.gdos_status === "string") &&
@@ -1341,3 +1347,86 @@ export function conditionBars(
     };
   });
 }
+
+// ---- Tryby kolorowania mapy: Wynik / Wynik bez presji / Wilgotnosc (czyste funkcje, testowane) ----
+
+export type MapColorMode = "score" | "score_no_pressure" | "moisture";
+export type MapControls = { pressure: boolean; colorMode: MapColorMode };
+export const MAP_COLOR_KEY = "borowik.map-color.v1";
+
+/** Tryb Wilgotnosc wymaga M w scores.json (starsze migawki go nie maja). */
+export function moistureAvailable(scores: Score[]): boolean {
+  return scores.some((s) => finite(s.M));
+}
+export const colorModeForPressure = (pressure: boolean): MapColorMode =>
+  pressure ? "score" : "score_no_pressure";
+
+/**
+ * Wybor jednego z trzech przyciskow mapy. "Wynik" i "Wynik bez presji" ustawiaja tez przelacznik
+ * presji (jedna prawda, bez sprzecznych kontrolek); "Wilgotnosc" zmienia tylko kolory mapy --
+ * lista i rejony zostaja w ostatnim trybie wynik/wynik bez presji. Zwraca null, gdy wybor jest
+ * niedostepny (brak R_bez_presji albo M w migawce).
+ */
+export function chooseColorMode(
+  state: MapControls,
+  mode: MapColorMode,
+  available: { pressure: boolean; moisture: boolean },
+): MapControls | null {
+  if (mode === "moisture") return available.moisture ? { pressure: state.pressure, colorMode: mode } : null;
+  if (mode === "score_no_pressure" && !available.pressure) return null;
+  return { pressure: mode === "score", colorMode: mode };
+}
+/** Przelacznik presji zawsze wraca mapie kolor zgodny z rankingiem (wynik / wynik bez presji). */
+export function togglePressureControls(
+  on: boolean,
+  available: { pressure: boolean },
+): MapControls {
+  const pressure = on || !available.pressure;
+  return { pressure, colorMode: colorModeForPressure(pressure) };
+}
+/** Stan poczatkowy: presja z przelacznika, a zapamietany tryb Wilgotnosc tylko gdy dostepny. */
+export function resolveColorMode(
+  stored: string | null,
+  pressure: boolean,
+  isMoistureAvailable: boolean,
+): MapColorMode {
+  return stored === "moisture" && isMoistureAvailable ? "moisture" : colorModeForPressure(pressure);
+}
+
+// Skala BEZWZGLEDNA 0-1 (nie percentyle w obrebie mapy): ta sama wilgotnosc ma ten sam kolor
+// w kazdej analizie. Od piaskowego (sucho) przez jasnozielony do niebieskozielonego (wilgotno).
+export const MOISTURE_STOPS: [number, string][] = [
+  [0, "#e8d5a0"],
+  [0.25, "#c8dd92"],
+  [0.5, "#7cc8a0"],
+  [0.75, "#2fa6a6"],
+  [1, "#1f7fa6"],
+];
+export const MOISTURE_NO_DATA_COLOR = "#cfd2c6";
+export const MOISTURE_NOTE =
+  "Bilans opad − parowanie z 26 dni względem typowego dla tej pory roku. To nie pomiar wilgotności gleby.";
+const hexToRgb = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(1, 3), 16),
+  parseInt(hex.slice(3, 5), 16),
+  parseInt(hex.slice(5, 7), 16),
+];
+/** Kolor skali bezwzglednej dla M (interpolacja liniowa; spoza 0-1 przycinane, brak = szary). */
+export function moistureColor(value: number | null | undefined): string {
+  if (!finite(value)) return MOISTURE_NO_DATA_COLOR;
+  const v = Math.max(0, Math.min(1, value));
+  for (let i = 1; i < MOISTURE_STOPS.length; i++) {
+    const [hi, hiColor] = MOISTURE_STOPS[i];
+    const [lo, loColor] = MOISTURE_STOPS[i - 1];
+    if (v <= hi) {
+      const t = (v - lo) / (hi - lo);
+      const a = hexToRgb(loColor);
+      const b = hexToRgb(hiColor);
+      const c = a.map((x, k) => Math.round(x + (b[k] - x) * t));
+      return `#${c.map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+    }
+  }
+  return MOISTURE_STOPS[MOISTURE_STOPS.length - 1][1];
+}
+export const MOISTURE_LEGEND_TICKS = [0, 0.25, 0.5, 0.75, 1];
+/** Etykiety progow legendy (0,0 · 0,25 …). */
+export const moistureTickLabel = (v: number) => v.toLocaleString("pl-PL", { minimumFractionDigits: v === 0 || v === 1 ? 0 : 2 });

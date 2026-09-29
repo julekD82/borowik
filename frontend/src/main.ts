@@ -5,6 +5,15 @@ import {
   joinRegions,
   rankEntries,
   pressureSwitchAvailable,
+  chooseColorMode,
+  togglePressureControls,
+  resolveColorMode,
+  moistureAvailable,
+  MAP_COLOR_KEY,
+  MOISTURE_STOPS,
+  MOISTURE_LEGEND_TICKS,
+  MOISTURE_NOTE,
+  moistureTickLabel,
   scoreBars,
   habitatComponents,
   weatherComponents,
@@ -48,7 +57,14 @@ import {
   wfsOnlyBanner,
   dayLabel,
 } from "./model";
-import type { AccessCard, AccessCollection, AccessLayerId, Bar, ComponentRow } from "./model";
+import type {
+  AccessCard,
+  AccessCollection,
+  AccessLayerId,
+  Bar,
+  ComponentRow,
+  MapColorMode,
+} from "./model";
 import type {
   StandView,
   Score,
@@ -146,6 +162,10 @@ let startPoint: [number, number] | null = null;
 let pressureAlpha: number | null = null;
 let pressure = true;
 let pressureAvailable = false;
+// Tryby kolorowania mapy: "Wynik" / "Wynik bez presji" idą za przełącznikiem presji, "Wilgotność"
+// (skladowa M, skala bezwzgledna) zmienia tylko kolory mapy.
+let colorMode: MapColorMode = "score";
+let moistureOk = false;
 let selected = "";
 const PAGE_SIZE = 30;
 let page = 0;
@@ -200,6 +220,20 @@ function getPressurePreference(): boolean {
 function setPressurePreference(on: boolean) {
   try {
     localStorage.setItem(PRESSURE_KEY, on ? "on" : "off");
+  } catch {
+    // Best-effort only.
+  }
+}
+function getColorModePreference(): string | null {
+  try {
+    return localStorage.getItem(MAP_COLOR_KEY);
+  } catch {
+    return null;
+  }
+}
+function setColorModePreference(mode: MapColorMode) {
+  try {
+    localStorage.setItem(MAP_COLOR_KEY, mode);
   } catch {
     // Best-effort only.
   }
@@ -266,7 +300,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section id="workspace" class="workspace" data-pane="list" aria-label="Wydzielenia poszukiwań">
       <div class="mobile-tabs" role="tablist" aria-label="Widok"><button role="tab" data-pane="list" class="mobile-tab active">${icon("list")}Lista</button><button role="tab" data-pane="map" class="mobile-tab">${icon("map")}Mapa</button></div>
       <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="pressure-switch" class="pressure-switch"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Model ekspercki, nieskalibrowany. Ranking porównuje miejsca w tej analizie, nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
-      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
+      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><div id="color-modes" class="color-modes"></div><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
     </section>
     <footer class="footer"><span>Borowik <span class="footer-dot">·</span> Dobry spacer zaczyna się od dobrego planu.</span><button id="about">O danych i ograniczeniach ${icon("info")}</button></footer>
   </main>
@@ -604,7 +638,48 @@ function renderRegionsPanel() {
   updateLegend();
 }
 function updateLegend() {
+  if (colorMode === "moisture") {
+    const gradient = MOISTURE_STOPS.map(([v, c]) => `${c} ${Math.round(v * 100)}%`).join(", ");
+    $("#legend-content").innerHTML = `<span class="moisture-legend"><span class="moisture-bar" style="background:linear-gradient(90deg, ${gradient})"></span><span class="moisture-ticks">${MOISTURE_LEGEND_TICKS.map((v) => `<i>${moistureTickLabel(v)}</i>`).join("")}</span></span><span class="moisture-note">Wilgotność M: sucho → wilgotno (skala bezwzględna 0–1). ${escape(MOISTURE_NOTE)} Wydzielenia poza maską modelu — jaśniej.</span>`;
+    return;
+  }
   $("#legend-content").innerHTML = `<span class="gradient-legend"></span> Niższy → wyższy ranking${pressure ? "" : " bez presji grzybiarzy"} (skala wg rozkładu ocen w tej analizie)`;
+}
+// Trzy przyciski kolorowania mapy obok legendy (a: wynik, b: wynik bez presji, c: wilgotność).
+function renderColorModes() {
+  const modes: { id: MapColorMode; label: string; ok: boolean; why: string }[] = [
+    { id: "score", label: "Wynik", ok: true, why: "" },
+    {
+      id: "score_no_pressure",
+      label: "Wynik bez presji",
+      ok: pressureAvailable,
+      why: "Wynik bez presji: niedostępny w tej migawce (starszy eksport).",
+    },
+    {
+      id: "moisture",
+      label: "Wilgotność",
+      ok: moistureOk,
+      why: "Wilgotność: niedostępna w tej migawce (starszy eksport bez składowej M).",
+    },
+  ];
+  const hints = modes.filter((m) => !m.ok).map((m) => m.why);
+  $("#color-modes").innerHTML = `<div class="color-mode-group" role="group" aria-label="Kolor mapy">${modes
+    .map(
+      (m) =>
+        `<button class="color-mode${colorMode === m.id ? " active" : ""}" data-color-mode="${m.id}" aria-pressed="${colorMode === m.id}" ${m.ok ? "" : "disabled"} ${m.ok ? "" : `title="${escape(m.why)}"`}>${m.label}</button>`,
+    )
+    .join("")}</div>${hints.length ? `<p class="color-mode-hint">${escape(hints.join(" "))}</p>` : ""}`;
+}
+// Jedno miejsce zmiany kolorowania mapy i presji, zeby przelacznik i przyciski nie byly sprzeczne.
+function setColorControls(next: { pressure: boolean; colorMode: MapColorMode }) {
+  const pressureChanged = next.pressure !== pressure;
+  colorMode = next.colorMode;
+  setColorModePreference(colorMode);
+  if (pressureChanged) applyPressure(next.pressure, { remember: true });
+  map?.setColorMode(colorMode);
+  renderColorModes();
+  renderPressureSwitch();
+  updateLegend();
 }
 function visibleEntries(): StandView[] {
   // Plan 2.1 step A4: sub-0.5ha stands are hidden as standalone targets in
@@ -827,6 +902,16 @@ document.addEventListener("click", (event) => {
     setPane(button.dataset.pane);
     return;
   }
+  if (button.dataset.colorMode) {
+    const next = chooseColorMode(
+      { pressure, colorMode },
+      button.dataset.colorMode as MapColorMode,
+      { pressure: pressureAvailable, moisture: moistureOk },
+    );
+    if (next) setColorControls(next);
+    else notify("Ten tryb kolorowania jest niedostępny w tej migawce.");
+    return;
+  }
   if (button.dataset.showMap) {
     setPane("map");
     return;
@@ -910,7 +995,9 @@ document.addEventListener("click", (event) => {
 document.addEventListener("change", (event) => {
   const select = event.target as HTMLElement;
   if (select.id === "pressure-toggle") {
-    applyPressure((select as HTMLInputElement).checked, { remember: true });
+    setColorControls(
+      togglePressureControls((select as HTMLInputElement).checked, { pressure: pressureAvailable }),
+    );
     return;
   }
   if (select.id !== "trips-select") return;
@@ -973,6 +1060,8 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
     // nieaktywny, a ranking dziala jak dotad.
     pressureAvailable = pressureSwitchAvailable(allScores, regionsWithoutPressure);
     pressure = pressureAvailable ? getPressurePreference() : true;
+    moistureOk = moistureAvailable(allScores);
+    colorMode = resolveColorMode(getColorModePreference(), pressure, moistureOk);
     entries = pressure ? baseEntries : rankEntries(baseEntries, false);
     regionViews = joinRegions(
       pressure ? regionsWithPressure : (regionsWithoutPressure ?? []),
@@ -1006,6 +1095,11 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
         map = new ForestMap(
           $("#map"),
           (id) => {
+            // Tryb Wilgotnosc pokazuje tez wydzielenia poza maska modelu -- nie maja oceny ani karty.
+            if (!entries.some((e) => e.score.stand_id === id)) {
+              notify("To wydzielenie jest poza maską modelu — nie ma oceny ani karty.");
+              return;
+            }
             // Faza UI.4: dotkniecie wydzielenia na mapie (telefon) pokazuje jego karte na liscie.
             if (isNarrow()) setPane("list");
             if (viewMode === "stands" || regionFilterId) {
@@ -1036,7 +1130,18 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
         );
       }
     }
+    // Geometria WSZYSTKICH wydzielen z M (tryb Wilgotnosc pokazuje tez te poza maska).
+    const moistureById = new Map(allScores.map((sc) => [sc.stand_id, finite(sc.M) ? sc.M : null]));
+    map?.setAllStands(
+      data.stands.features.map((feature) => ({
+        feature,
+        moisture: moistureById.get(feature.properties.stand_id) ?? null,
+      })),
+    );
     map?.setData(entries);
+    map?.setColorMode(colorMode);
+    renderColorModes();
+    updateLegend();
     map?.setAccessData(data.accessPoints, data.forestRoads);
     for (const l of ACCESS_LAYERS) map?.setLayerVisible(l.id, layerState[l.id]);
     renderLayerControls(data.accessPoints, data.forestRoads);
@@ -1063,7 +1168,12 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
     entries = [];
     baseEntries = [];
     regionViews = [];
+    moistureOk = false;
+    pressureAvailable = false;
+    colorMode = "score";
+    map?.setAllStands([]);
     map?.setData([]);
+    renderColorModes();
     map?.setAccessData(null, null);
     $("#layer-controls").hidden = true;
     map?.select("");

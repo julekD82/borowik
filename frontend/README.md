@@ -99,3 +99,8 @@ Szczegóły i lista kontrolna „stare pole → nowe miejsce”: `../docs/RAPORT
 - **Nazwy**: „Oddz. 96a · Nadl. Zawadzkie” (adres leśny + słownik nadleśnictw RDLP Katowice w `model.ts`, inne z `details.forest_district` lub kod), „Rejon 1 · Łaziska” (najbliższa miejscowość OSM z `regions*.json → near_place`, bez odmiany).
 - **Pasek pogody**: jedno zdanie + 7 słupków F (wysokość = F, „?” od 4. dnia, „~” od 8.), reszta w zwiniętych „Szczegółach pogody”.
 - **Telefon (≤ 760 px)**: zakładki „Lista / Mapa”, dotknięcie wydzielenia na mapie pokazuje jego kartę na liście, przycisk „Na mapie” w karcie wraca do mapy. Do sprawdzania układu w Chrome na komputerze użyj ramki iframe o szerokości 390 px (okno przeglądarki nie zawsze da się zwęzić).
+
+### Tryby kolorowania mapy
+
+Trzy przyciski w legendzie: „Wynik”, „Wynik bez presji” (zsynchronizowane z przełącznikiem presji) i „Wilgotność” (kolor według składowej M z `scores.json`, skala bezwzględna 0–1, wszystkie wydzielenia, poza maską jaśniej; zmienia tylko kolory mapy). Wybór w `localStorage` (`borowik.map-color.v1`). Migawka bez `M` — przycisk Wilgotność nieaktywny z komunikatem. Opis i testy: `../docs/RAPORT_UI.md`, dodatek.
+

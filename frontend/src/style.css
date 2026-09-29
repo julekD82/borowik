@@ -1600,3 +1600,24 @@ dialog li {
   .layer-toggles { flex-wrap: nowrap; overflow-x: auto; gap: 12px; padding-bottom: 4px; scrollbar-width: none; }
   .layer-toggle { white-space: nowrap; min-height: 32px; }
 }
+
+/* ===== Tryby kolorowania mapy (Wynik / Wynik bez presji / Wilgotnosc) ===== */
+.color-modes { margin-bottom: 8px; }
+.color-mode-group { display: inline-flex; gap: 3px; padding: 3px; background: var(--soft); border-radius: 9px; max-width: 100%; }
+.color-mode { padding: 6px 11px; min-height: 32px; font-size: 11px; font-weight: 650; color: var(--muted); border-radius: 7px; white-space: nowrap; }
+.color-mode.active { background: var(--green); color: #fff; }
+.color-mode:disabled { color: #b7bdae; cursor: not-allowed; }
+.color-mode-hint { margin: 6px 0 0; font-size: 10px; line-height: 1.4; color: #8a6a3a; }
+#legend-content:has(.moisture-legend) { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+.moisture-legend { display: inline-flex; flex-direction: column; gap: 3px; width: 150px; flex-shrink: 0; }
+.moisture-bar { display: block; height: 10px; border-radius: 3px; }
+.moisture-ticks { display: flex; justify-content: space-between; font-size: 9px; color: #5f6f55; font-style: normal; }
+.moisture-ticks i { font-style: normal; }
+.moisture-note { flex: 1; min-width: 200px; max-width: 420px; font-size: 10px; line-height: 1.45; color: #4d5f44; }
+@media (max-width: 760px) {
+  .color-mode-group { display: flex; width: 100%; }
+  .color-mode { flex: 1; min-height: 44px; font-size: 12px; padding: 6px 4px; white-space: normal; line-height: 1.15; }
+  .moisture-note { min-width: 0; font-size: 11px; }
+  .moisture-legend { width: 100%; }
+  .map-legend { bottom: 34px; max-height: 58%; overflow-y: auto; }
+}

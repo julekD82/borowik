@@ -1,7 +1,17 @@
 // Faza UI: przelacznik presji, paski wyniku, nazwy i fakty karty.
 import { describe, expect, it } from "vitest";
 import {
+  MOISTURE_LEGEND_TICKS,
+  MOISTURE_NOTE,
+  MOISTURE_NO_DATA_COLOR,
+  MOISTURE_STOPS,
   areaLabel,
+  chooseColorMode,
+  moistureAvailable,
+  moistureColor,
+  moistureTickLabel,
+  resolveColorMode,
+  togglePressureControls,
   conditionBars,
   effectiveR,
   habitatComponents,
@@ -272,5 +282,91 @@ describe("Faza UI.3: słupki 7 dni", () => {
     expect(bars[0].label).toBe("dziś");
     expect(bars[1].title).toContain("prognoza niepewna");
     expect(bars[2].title).toContain("orientacyjnie");
+  });
+});
+
+describe("tryby kolorowania mapy", () => {
+  const both = { pressure: true, moisture: true };
+  it("„Wynik” i „Wynik bez presji” ustawiają przełącznik presji (bez sprzecznych kontrolek)", () => {
+    expect(chooseColorMode({ pressure: true, colorMode: "score" }, "score_no_pressure", both)).toEqual({
+      pressure: false,
+      colorMode: "score_no_pressure",
+    });
+    expect(chooseColorMode({ pressure: false, colorMode: "score_no_pressure" }, "score", both)).toEqual({
+      pressure: true,
+      colorMode: "score",
+    });
+  });
+  it("przełącznik presji ustawia tryb mapy wynik / wynik bez presji", () => {
+    expect(togglePressureControls(false, { pressure: true })).toEqual({ pressure: false, colorMode: "score_no_pressure" });
+    expect(togglePressureControls(true, { pressure: true })).toEqual({ pressure: true, colorMode: "score" });
+    // wyłączenie presji w migawce bez danych bez presji nie ma skutku
+    expect(togglePressureControls(false, { pressure: false })).toEqual({ pressure: true, colorMode: "score" });
+  });
+  it("przełącznik presji wyprowadza mapę z trybu Wilgotność do trybu zgodnego z rankingiem", () => {
+    const fromMoisture = togglePressureControls(false, { pressure: true });
+    expect(fromMoisture.colorMode).toBe("score_no_pressure");
+  });
+  it("Wilgotność zmienia tylko kolory: presja (lista i rejony) zostaje w ostatnim trybie a/b", () => {
+    expect(chooseColorMode({ pressure: true, colorMode: "score" }, "moisture", both)).toEqual({
+      pressure: true,
+      colorMode: "moisture",
+    });
+    expect(chooseColorMode({ pressure: false, colorMode: "score_no_pressure" }, "moisture", both)).toEqual({
+      pressure: false,
+      colorMode: "moisture",
+    });
+  });
+  it("niedostępne tryby są odrzucane: brak M → bez Wilgotności, brak R_bez_presji → bez trybu bez presji", () => {
+    const state = { pressure: true, colorMode: "score" as const };
+    expect(chooseColorMode(state, "moisture", { pressure: true, moisture: false })).toBeNull();
+    expect(chooseColorMode(state, "score_no_pressure", { pressure: false, moisture: true })).toBeNull();
+    expect(chooseColorMode(state, "score", { pressure: false, moisture: false })).toEqual(state);
+  });
+  it("stan początkowy: zapamiętana Wilgotność tylko przy dostępnym M, inaczej tryb z przełącznika presji", () => {
+    expect(resolveColorMode("moisture", true, true)).toBe("moisture");
+    expect(resolveColorMode("moisture", true, false)).toBe("score"); // stara migawka bez M
+    expect(resolveColorMode("moisture", false, false)).toBe("score_no_pressure");
+    expect(resolveColorMode("score_no_pressure", true, true)).toBe("score"); // a/b idą za przełącznikiem
+    expect(resolveColorMode(null, false, true)).toBe("score_no_pressure");
+    expect(resolveColorMode("bzdura", true, true)).toBe("score");
+  });
+  it("migawka bez M ma tryb Wilgotność niedostępny, z M (nawet tylko poza maską) dostępny", () => {
+    expect(moistureAvailable([score("A", 1, 2)])).toBe(false);
+    expect(moistureAvailable([score("A", 1, 2, { M: 0.4 })])).toBe(true);
+    expect(moistureAvailable([score("A", 1, 2, { M: null }), score("B", 1, 2, { mask: false, M: 0.1 })])).toBe(true);
+  });
+  it("M i pct_CWB26 są opcjonalne w scores.json, ale gdy są, muszą być liczbą lub null", () => {
+    const ok = [{ ...score("A", 1, 2), M: 0.7, pct_CWB26: 0.6 }];
+    expect(() => parseData(ok, stands(["A"]))).not.toThrow();
+    expect(() => parseData([{ ...score("A", 1, 2), M: null, pct_CWB26: null }], stands(["A"]))).not.toThrow();
+    expect(() => parseData([{ ...score("A", 1, 2), M: "0.7" as unknown as number }], stands(["A"]))).toThrow();
+  });
+  it("skala jest bezwzględna: kolor zależy tylko od M, nie od pozostałych wydzieleń", () => {
+    const first = moistureColor(0.5);
+    // ta sama wartość -> ten sam kolor niezależnie od „mapy” (brak jakiegokolwiek argumentu rozkładu)
+    expect(moistureColor(0.5)).toBe(first);
+    expect(moistureColor(0)).toBe(MOISTURE_STOPS[0][1]);
+    expect(moistureColor(1)).toBe(MOISTURE_STOPS[MOISTURE_STOPS.length - 1][1]);
+    expect(moistureColor(0.25)).toBe(MOISTURE_STOPS[1][1]);
+    expect(moistureColor(0.5)).toBe(MOISTURE_STOPS[2][1]);
+    // progi 0–1: poza zakresem przycięte, a nie przeskalowane
+    expect(moistureColor(-3)).toBe(moistureColor(0));
+    expect(moistureColor(7)).toBe(moistureColor(1));
+    // środek między progami jest średnią kolorów, a nie kwantylem
+    expect(moistureColor(0.125)).toBe("#d8d999");
+    expect(moistureColor(null)).toBe(MOISTURE_NO_DATA_COLOR);
+    expect(moistureColor(NaN)).toBe(MOISTURE_NO_DATA_COLOR);
+  });
+  it("progi skali są rosnące i pokrywają 0–1, a opis legendy mówi, że to nie wilgotność gleby", () => {
+    const stops = MOISTURE_STOPS.map(([v]) => v);
+    expect(stops[0]).toBe(0);
+    expect(stops[stops.length - 1]).toBe(1);
+    expect(stops).toEqual([...stops].sort((a, b) => a - b));
+    expect(MOISTURE_LEGEND_TICKS).toEqual(stops);
+    expect(MOISTURE_NOTE).toBe(
+      "Bilans opad − parowanie z 26 dni względem typowego dla tej pory roku. To nie pomiar wilgotności gleby.",
+    );
+    expect(MOISTURE_LEGEND_TICKS.map(moistureTickLabel)).toEqual(["0", "0,25", "0,50", "0,75", "1"]);
   });
 });

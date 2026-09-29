@@ -221,3 +221,24 @@ def test_forest_district_name_from_package_name():
     assert forest_district_name(None) is None
     assert forest_district_name(float("nan")) is None
     assert forest_district_name("cos innego") is None
+
+
+# --- tryb mapy "Wilgotnosc": M i pct_CWB26 w scores.json ---
+
+def test_score_record_exports_m_and_pct_cwb26_for_every_stand_including_masked_out():
+    out = _exportable(_enrich())
+    out["M"] = [0.9, float("nan"), 0.2]
+    out["pct_CWB26"] = [0.8, 0.5, float("nan")]
+    masked_out = build_score_record(out.iloc[2], day="2026-09-29")
+    assert masked_out["mask"] is False
+    assert masked_out["M"] == pytest.approx(0.2)
+    assert masked_out["pct_CWB26"] is None  # NaN -> null, nie "NaN" w JSON
+    assert build_score_record(out.iloc[1], day="2026-09-29")["M"] is None
+    json.dumps(masked_out, allow_nan=False)
+
+
+def test_score_record_m_is_null_when_frame_has_no_such_columns():
+    record = build_score_record(_exportable(_enrich()).iloc[0], day="2026-09-29")
+    assert record["M"] == pytest.approx(0.5)  # syntetyczna ramka ma M = 0.5
+    bare = _exportable(_enrich()).drop(columns=["M"]).iloc[0]
+    assert build_score_record(bare, day="2026-09-29")["M"] is None
