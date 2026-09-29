@@ -521,3 +521,32 @@ def test_build_manifest_flags_full_radar_fallback_when_coverage_is_zero(tmp_path
         gdos_failed_tile_count=0, osm_failed_tile_count=0, zakaz_checked_count=1, region_count=0,
     )
     assert manifest["sources"]["radar_full_fallback_to_open_meteo"] is True
+
+
+# --- Faza 4.1: weather.temp_grid_km ---
+
+def test_weather_grid_spacing_default_is_radius_scaled_current_behaviour():
+    from pipeline.prepare_trip import weather_grid_spacing_m
+    assert weather_grid_spacing_m({}, 25.0) == pytest.approx(5000.0)
+    assert weather_grid_spacing_m({"weather": {"temp_grid_km": None}}, 20.0) == pytest.approx(4000.0)
+
+
+def test_weather_grid_spacing_temp_grid_km_is_absolute_and_not_radius_scaled():
+    from pipeline.prepare_trip import weather_grid_spacing_m
+    prof = {"weather": {"temp_grid_km": 10}}
+    assert weather_grid_spacing_m(prof, 25.0) == pytest.approx(10000.0)
+    assert weather_grid_spacing_m(prof, 15.0) == pytest.approx(10000.0)
+
+
+def test_weather_grid_spacing_rejects_nonpositive_values():
+    from pipeline.prepare_trip import weather_grid_spacing_m
+    with pytest.raises(ValueError):
+        weather_grid_spacing_m({"weather": {"temp_grid_km": 0}}, 25.0)
+
+
+def test_coarser_grid_points_are_a_subset_of_the_default_grid_so_the_cache_is_reused():
+    from pipeline.weather import make_grid
+    bbox = (400000.0, 400000.0, 460000.0, 460000.0)
+    fine = set(make_grid(bbox, spacing_m=5000.0))
+    coarse = set(make_grid(bbox, spacing_m=10000.0))
+    assert coarse < fine

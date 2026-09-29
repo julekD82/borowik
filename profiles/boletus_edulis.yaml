@@ -326,6 +326,13 @@ pressure:
       compacted_surfaces: ["compacted"]
       dirt_surfaces: ["dirt", "ground", "earth", "mud", "grass", "sand", "grass_paver"]
 
+weather:
+  # Faza 4.1: odstep siatki pogodowej w km (temperatura, ET0, opad modelu).
+  # null = dotychczasowe zachowanie (5 km przy promieniu 25 km, skalowane z
+  # promieniem); 10 / 15 = odstep bezwzgledny, mniej wywolan Open-Meteo. Decyzja
+  # o domyslnej wartosci: docs/RAPORT_FAZA_4.md (regula z planu 4.1).
+  temp_grid_km: null
+
 radar:
   # Plan 2026-09-26 A1 (docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
   # IMGW-PIB RainGRS replaces Open-Meteo precipitation for local days in the

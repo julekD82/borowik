@@ -76,6 +76,23 @@ def _radius_scaled_spacing(base_spacing_m: float, radius_km: float) -> float:
     return base_spacing_m * radius_km / REFERENCE_RADIUS_KM
 
 
+def weather_grid_spacing_m(profile: dict, radius_km: float) -> float:
+    """Faza 4.1: odstep siatki pogodowej (temperatura, ET0, opad z modelu).
+    Profil `weather.temp_grid_km` = null/brak -> dotychczasowe zachowanie
+    (5 km przy promieniu referencyjnym, skalowane z promieniem). Liczba > 0 =
+    odstep w km, bezwzgledny (nie skalowany z promieniem); siatki 10 i 15 km
+    sa podzbiorami siatki 5 km (make_grid jest zakotwiczona w EPSG:2180), wiec
+    cache punktow pogody jest wspolny. Opad z radaru jest liczony osobno dla
+    kazdego wydzielenia i od tej siatki nie zalezy -- rzadsza siatka zubaza tylko
+    opad modelowy (uzupelnienia i prognoza)."""
+    temp_grid_km = (profile.get("weather") or {}).get("temp_grid_km")
+    if temp_grid_km is None:
+        return _radius_scaled_spacing(WEATHER_GRID_SPACING_M, radius_km)
+    if not temp_grid_km > 0:
+        raise ValueError(f"weather.temp_grid_km musi byc dodatnie, jest {temp_grid_km!r}")
+    return float(temp_grid_km) * 1000.0
+
+
 _WGS84_TO_2180 = Transformer.from_crs("EPSG:4326", "EPSG:2180", always_xy=True)
 
 
@@ -515,7 +532,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # with the search area -- a smaller radius gets a finer grid rather
     # than "wasting" the same point budget over less ground. See
     # _radius_scaled_spacing's own docstring.
-    grid_spacing_m = _radius_scaled_spacing(WEATHER_GRID_SPACING_M, radius_km)
+    grid_spacing_m = weather_grid_spacing_m(profile, radius_km)
     climatology_grid_spacing_m = _radius_scaled_spacing(CLIMATOLOGY_GRID_SPACING_M, radius_km)
     grid_points = make_grid(bbox, spacing_m=grid_spacing_m)
     point_count = len(grid_points)
