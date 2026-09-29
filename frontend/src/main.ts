@@ -1103,8 +1103,9 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
             }
             // Faza UI.4: dotkniecie wydzielenia na mapie (telefon) pokazuje jego karte na liscie.
             if (isNarrow()) setPane("list");
+            // Klikniecie na mapie nie zmienia przyblizenia (zoomuje tylko klikniecie na liscie).
             if (viewMode === "stands" || regionFilterId) {
-              selectStand(id);
+              selectStand(id, false);
               const card = Array.from(
                 document.querySelectorAll<HTMLElement>("[data-card]"),
               ).find((c) => c.dataset.card === id);
