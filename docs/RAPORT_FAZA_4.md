@@ -186,8 +186,9 @@ Karta wydzielenia (widok „Wydzielenia”/szczegóły) używa tej samej funkcji
 
 ## Testy
 
-- Backend: `python -m pytest` → **769 passed** (przed Fazą 4: 748). Nowe: `tests/test_faza4_r_niezmienione.py` (wartości F/F_loc/R przypięte do kodu sprzed
-  Fazy 4 i niezależność od `ui.*`), `tests/test_faza4_pogoda.py` (udział prognozy w oknie, składniki, karta pogody), rozszerzone `tests/test_prepare_trip.py`
-  (siatka temperatury, wagi punktów) i `tests/test_conditions_timeline.py` (agregacja, niepewność, JSON bez NaN).
-- Frontend: `npx vitest run` → **97 passed** (nowe: oznaczenia niepewności, składniki i przymrozek, udział prognozy ≥ 4 dni, lokalne zjawiska); `npx tsc --noEmit` czysto; `vite build` OK.
+- Backend: `python -m pytest` → **778 passed** (przed Fazą 4: 748). Nowe: `test_faza4_r_niezmienione.py` (F/F_loc/R przypięte do kodu sprzed Fazy 4), `test_faza4_pogoda.py`
+  (udział prognozy, składniki, karta pogody, agregacja opadu wydzieleń do punktów), `test_panel_spojnosc_z_mapa.py` (panel = mediana mapy ≤ 0,02, i że bez poprawki różnica > 0,02),
+  `test_local_config.py` (ścieżka paczek BDL), rozszerzone `test_prepare_trip.py` i `test_conditions_timeline.py`. Dodany `tests/conftest.py`: testy nie czytają lokalnego
+  `local_config.json` ani `BOROWIK_BDL_DIR` (bez tego testy wywołujące przebieg ładowały prawdziwe paczki BDL i wisiały — złapane przy pierwszym pełnym przebiegu po dodaniu konfiguracji).
+- Frontend: `npx vitest run` → **98 passed** (w tym baner WFS i składniki pogody); `npx tsc --noEmit` czysto; `vite build` OK.
 - Brak testu dla mapowania kwantylowego — nie wdrożone (reguła 4.2).
