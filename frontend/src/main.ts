@@ -22,11 +22,12 @@ import {
   dayLabel,
   accessCardSummary,
   topPointSummary,
+  regionAccessSummary,
   ACCESS_LAYERS,
   SURFACE_COLORS,
   SURFACE_LABELS,
 } from "./model";
-import type { AccessCollection, AccessLayerId } from "./model";
+import type { AccessCard, AccessCollection, AccessLayerId } from "./model";
 import type {
   StandView,
   Score,
@@ -257,6 +258,16 @@ function access(score?: Score) {
     return `<div class="access"><div>${icon("location")}<span>Dostęp: <strong>${escape(accessCardSummary(accessCard))}</strong></span></div><small>${distanceMethod(score?.distance_method)}</small><p>${escape(topPointSummary(accessCard))}</p></div>`;
   return `<div class="access"><div>${icon("location")}<span>Orientacyjne dojście <strong>${distanceLabel(score?.d_park_m)}</strong></span></div><small>${distanceMethod(score?.distance_method)}</small><p>${entranceLabel(score?.entrance_status)} · brak współrzędnych wejścia w danych.</p></div>`;
 }
+// Faza 3.5: karta rejonu pokazuje dostep dla WSZYSTKICH wydzielen rejonu (zakres i
+// mediana), a nie odleglosc jednego, najlepiej ocenionego wydzielenia.
+function regionAccess(view: RegionView, score?: Score) {
+  const cards = view.members
+    .map((m) => detailFor(m.score.stand_id)?.access)
+    .filter((c): c is AccessCard => !!c);
+  const summary = regionAccessSummary(cards);
+  if (!summary) return access(score);
+  return `<div class="access"><div>${icon("location")}<span>Dostęp w rejonie: <strong>${escape(summary.distances)}</strong></span></div><small>${distanceMethod(score?.distance_method)} · zakres po ${cards.length} wydzieleniach rejonu</small><p>${escape(summary.top)}</p></div>`;
+}
 // Plan 2.1 step B3 (spec §5.3 pkt 3): species composition, density, podszyt,
 // soil type -- from a BDL package, empty/null when the wydzielenie has no
 // package coverage. Presentation only, no effect on R/H/F -- see
@@ -304,7 +315,7 @@ function regionCard(view: RegionView, index: number) {
     (s) => s.key === savedKey(view.region.region_id, point),
   );
   const score = view.top.score;
-  return `<article class="region-card ${isSelected ? "selected" : ""}" data-region-card="${escape(view.region.region_id)}"><button class="card-select" data-region-select="${escape(view.region.region_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Rejon ${escape(view.region.region_id)}</strong><small> ${view.members.length} wydzieleń · ${coordinates(point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(score?.F)}</span>${confidence(score)}</div>${assessment(score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(score)}${isSelected ? `${access(score)}<div class="point-note">Punkt orientacyjny: środek najlepiej ocenionego wydzielenia w rejonie.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking rejonu: ${view.region.rank_score.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · mediana najlepszych wydzieleń, model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(score?.P) ? score!.P!.toFixed(2) : "brak danych"} (najlepiej ocenione wydzielenie). To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-region-save="${escape(view.region.region_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz rejon"}</button><a class="navigation-link" href="${navigationUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego rejonu ${escape(view.region.region_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-region-detail="${escape(view.region.region_id)}">Zobacz wydzielenia w rejonie (${view.members.length}) ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(view.region.day)}</div></div></article>`;
+  return `<article class="region-card ${isSelected ? "selected" : ""}" data-region-card="${escape(view.region.region_id)}"><button class="card-select" data-region-select="${escape(view.region.region_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Rejon ${escape(view.region.region_id)}</strong><small> ${view.members.length} wydzieleń · ${coordinates(point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(score?.F)}</span>${confidence(score)}</div>${assessment(score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(score)}${isSelected ? `${regionAccess(view, score)}<div class="point-note">Punkt orientacyjny: środek najlepiej ocenionego wydzielenia w rejonie.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking rejonu: ${view.region.rank_score.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · mediana najlepszych wydzieleń, model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(score?.P) ? score!.P!.toFixed(2) : "brak danych"} (najlepiej ocenione wydzielenie). To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-region-save="${escape(view.region.region_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz rejon"}</button><a class="navigation-link" href="${navigationUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego rejonu ${escape(view.region.region_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-region-detail="${escape(view.region.region_id)}">Zobacz wydzielenia w rejonie (${view.members.length}) ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(view.region.day)}</div></div></article>`;
 }
 function renderRegionsPanel() {
   $("#panel-heading").innerHTML =

@@ -404,6 +404,41 @@ export function accessCardSummary(card?: AccessCard | null): string {
       : "brak w pobliżu";
   return `najbliższy parking ${m(card.d_parking_m)} · wjazd lub szlaban ${m(card.d_entrance_m)} · utwardzony dukt ${m(card.d_hard_forest_road_m)}`;
 }
+// Karta REJONU: zamiast odleglosci jednego (najlepszego) wydzielenia -- zakres po
+// wszystkich wydzieleniach rejonu: od najblizszego do najdalszego i mediana.
+function distanceRange(values: (number | null | undefined)[]): string {
+  const nums = values
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+    .sort((a, b) => a - b);
+  if (!nums.length) return "brak w pobliżu";
+  const round = (v: number) => `${Math.round(v / 10) * 10} m`;
+  const median =
+    nums.length % 2 ? nums[(nums.length - 1) / 2] : (nums[nums.length / 2 - 1] + nums[nums.length / 2]) / 2;
+  return nums[0] === nums[nums.length - 1]
+    ? round(nums[0])
+    : `od ${round(nums[0])} do ${round(nums[nums.length - 1])} (mediana ${round(median)})`;
+}
+export function regionAccessSummary(
+  cards: AccessCard[],
+): { distances: string; top: string } | null {
+  if (!cards.length) return null;
+  const distances = `najbliższy parking ${distanceRange(cards.map((c) => c.d_parking_m))} · wjazd lub szlaban ${distanceRange(cards.map((c) => c.d_entrance_m))} · utwardzony dukt ${distanceRange(cards.map((c) => c.d_hard_forest_road_m))}`;
+  const counts = new Map<string, { n: number; card: AccessCard }>();
+  for (const c of cards)
+    if (c.top_point_id) {
+      const e = counts.get(c.top_point_id);
+      if (e) e.n += 1;
+      else counts.set(c.top_point_id, { n: 1, card: c });
+    }
+  if (!counts.size) return { distances, top: "Żaden punkt dostępu nie sięga wydzieleń tego rejonu (P = 0)." };
+  const best = [...counts.values()].sort((a, b) => b.n - a.n)[0];
+  const name = best.card.top_point_name ? ` „${best.card.top_point_name}”` : "";
+  const source = best.card.top_point_source ? ` (${sourceLabel(best.card.top_point_source)})` : "";
+  return {
+    distances,
+    top: `Najczęściej największy wpływ na presję: ${pointTypeLabel(best.card.top_point_type).toLocaleLowerCase("pl")}${name}${source} — w ${best.n} z ${cards.length} wydzieleń rejonu.`,
+  };
+}
 export function topPointSummary(card?: AccessCard | null): string {
   if (!card?.top_point_id) return "Żaden punkt dostępu nie sięga tego wydzielenia (P = 0).";
   const name = card.top_point_name ? ` „${card.top_point_name}”` : "";

@@ -697,3 +697,36 @@ describe("rankColorStops", () => {
     }
   });
 });
+
+describe("regionAccessSummary", () => {
+  const card = (parking: number | null, entrance: number | null, road: number | null, id: string | null = "pk-1") => ({
+    d_parking_m: parking,
+    d_entrance_m: entrance,
+    d_hard_forest_road_m: road,
+    top_point_id: id,
+    top_point_type: id ? "parking" : null,
+    top_point_source: id ? "bdl" : null,
+    top_point_name: id ? "Rytwiny 148h" : null,
+  });
+  it("shows min-max and median over ALL stands of the region, not one stand's distance", async () => {
+    const { regionAccessSummary } = await import("./model");
+    const s = regionAccessSummary([card(795, 400, 300), card(1485, 1000, 900), card(2095, 1890, 2250)])!;
+    expect(s.distances).toContain("najbliższy parking od 800 m do 2100 m (mediana 1490 m)");
+    expect(s.distances).toContain("wjazd lub szlaban od 400 m do 1890 m (mediana 1000 m)");
+    expect(s.distances).toContain("utwardzony dukt od 300 m do 2250 m (mediana 900 m)");
+    expect(s.top).toContain("w 3 z 3 wydzieleń");
+    expect(s.top).toContain("parking „Rytwiny 148h” (BDL)");
+  });
+  it("collapses equal values, skips nulls, and picks the most frequent top point", async () => {
+    const { regionAccessSummary } = await import("./model");
+    const s = regionAccessSummary([card(500, null, null, "a"), card(500, null, null, "b"), card(500, null, null, "b")])!;
+    expect(s.distances).toContain("najbliższy parking 500 m ·");
+    expect(s.distances).toContain("wjazd lub szlaban brak w pobliżu");
+    expect(s.top).toContain("w 2 z 3 wydzieleń");
+  });
+  it("returns null without cards and says P = 0 when no stand has a top point", async () => {
+    const { regionAccessSummary } = await import("./model");
+    expect(regionAccessSummary([])).toBeNull();
+    expect(regionAccessSummary([card(900, 900, 900, null)])!.top).toContain("P = 0");
+  });
+});
