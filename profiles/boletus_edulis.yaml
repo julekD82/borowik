@@ -296,6 +296,13 @@ pressure:
     external_option_c: 0.77
     # Tylko do mapy (klasy niska/srednia/wysoka): A/(A + ta wartosc), osoby. Nie wchodzi do P.
     attractiveness_display_a_half: 500.0
+    # Dolny prog presji od punktu danego typu, w osobach (tylko podzialy two_stage/huff_all):
+    # wydzielenie w zasiegu parkingu dostaje z jego strony co najmniej prog * k(d), nawet gdy
+    # w okolicy mieszka malo ludzi (P ok. 0,16 tuz obok parkingu uznane za zbyt male).
+    # Bierze sie z najblizszego parkingu (max, nie suma). 700 osob = P ok. 0,30 przy samym
+    # parkingu przy S = 1997 (1 - exp(-700/1997)). Decyzja wlasciciela 2026-09-30.
+    # TYMCZASOWE, NIESKALIBROWANE. Brak klucza / {} = bez progu (zachowanie sprzed zmiany).
+    pressure_floor_persons: {parking: 700.0}
     # S per wariant (te same mediany P co gravity w przebiegu Kieleczki, 0,373).
     # TYMCZASOWE, NIESKALIBROWANE (jak d_half w 1.5). none: 2026-09-29 offline.
     saturation_s: {two_stage: 1997.0, huff_all: 2489.0, huff: 0.1385, none: 7.0}

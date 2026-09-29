@@ -427,6 +427,14 @@ def compute_access_pressure(centroids_xy: np.ndarray, model: AccessModel) -> pd.
             strength = pts["A_eff"].values if "A_eff" in pts else pts["A_norm"].values
             vals = pressure_weight(cfg, ptype) * strength[sel][m.col] * kernel(m.data, tcfg["range_m"])
             contrib[ptype] = np.bincount(m.row, weights=vals, minlength=n)
+            # Dolny prog presji od punktu danego typu (osoby): wydzielenie w zasiegu punktu ma z jego
+            # strony co najmniej prog * k(d), nawet gdy w okolicy mieszka malo ludzi. Prog
+            # bierze sie z NAJBLIZSZEGO punktu (max, nie suma), wiec skupiska parkingow go nie mnoza.
+            floor = float((cfg.get("pressure_floor_persons") or {}).get(ptype, 0.0))
+            if floor > 0 and cfg.get("population_split", "huff") in PERSON_SPLITS and len(m.row):
+                floor_vals = np.zeros(n)
+                np.maximum.at(floor_vals, m.row, floor * kernel(m.data, tcfg["range_m"]))
+                contrib[ptype] = np.maximum(contrib[ptype], floor_vals)
             _consider(m.row, vals, pts["point_id"].values[sel][m.col], ptype)
     if n and len(model.corridor_a):
         fcfg = cfg["types"]["forest_road"]

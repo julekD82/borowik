@@ -458,3 +458,65 @@ def test_distance_to_forest_zero_inside_and_inf_beyond_max():
     d = distance_to_forest(np.array([[500.0, 500.0], [1500.0, 500.0], [9000.0, 9000.0]]), forest, 2000.0)
     assert d[0] == 0.0 and d[1] == pytest.approx(500.0) and np.isinf(d[2])
     assert np.isinf(distance_to_forest(np.array([[1.0, 1.0]]), None, 2000.0)[0])
+
+
+# --- dolny prog presji od parkingu (pressure_floor_persons) --------------------------
+
+CFG_FLOOR = {**PROFILE_CFG, "population_split": "two_stage", "pressure_floor_persons": {"parking": 700.0}}
+CFG_NO_FLOOR = {**CFG_FLOOR, "pressure_floor_persons": {}}
+
+
+def _p_at(stand_xy, parkings, cfg, pop=100.0):
+    """P wydzielenia w stand_xy; jedyne oczko ludnosci lezy 50 km stad (A z ludnosci ~ 0)."""
+    pop_xy, pop_values = np.array([[50000.0, 0.0]]), np.array([pop])
+    access = AccessSet(points=_pts([(x, y, "parking") for x, y in parkings]), roads=_empty_roads())
+    model = build_access_model(access, pop_xy, pop_values, cfg, pop_d_forest=np.array([float("inf")]))
+    return float(compute_access_pressure(np.array([stand_xy]), model)["P"].iloc[0])
+
+
+def test_profile_has_a_parking_pressure_floor_of_700_persons():
+    assert PROFILE_CFG["pressure_floor_persons"] == {"parking": 700.0}
+
+
+def test_stand_next_to_a_lonely_parking_gets_p_about_030():
+    with_floor = _p_at((220.0, 0.0), [(0.0, 0.0)], CFG_FLOOR)
+    without = _p_at((220.0, 0.0), [(0.0, 0.0)], CFG_NO_FLOOR)
+    assert without < 0.02
+    saturation = float(CFG_FLOOR["saturation_s"]["two_stage"])
+    expected = 1.0 - math.exp(-700.0 * float(kernel(220.0, 3000.0)) / saturation)
+    assert with_floor == pytest.approx(expected, rel=1e-6)
+    assert 0.25 < with_floor < 0.32
+
+
+def test_floor_falls_with_distance_and_vanishes_beyond_range():
+    near, mid, far = (_p_at((d, 0.0), [(0.0, 0.0)], CFG_FLOOR) for d in (220.0, 1500.0, 2990.0))
+    assert near > mid > far >= 0.0
+    assert _p_at((3500.0, 0.0), [(0.0, 0.0)], CFG_FLOOR) == 0.0
+
+
+def test_floor_takes_the_nearest_parking_and_does_not_add_up_in_clusters():
+    one = _p_at((0.0, 0.0), [(100.0, 0.0)], CFG_FLOOR)
+    many = _p_at((0.0, 0.0), [(100.0, 0.0), (0.0, 120.0), (-110.0, 0.0), (0.0, -130.0)], CFG_FLOOR)
+    assert many == pytest.approx(one, abs=0.02)   # nie 4 x prog
+
+
+def test_floor_never_lowers_a_stand_that_already_has_more_pressure():
+    busy_pop = 200000.0
+    with_floor = _p_at((220.0, 0.0), [(0.0, 0.0)], CFG_FLOOR, pop=busy_pop)
+    without = _p_at((220.0, 0.0), [(0.0, 0.0)], CFG_NO_FLOOR, pop=busy_pop)
+    assert with_floor >= without - 1e-12
+
+
+def test_missing_floor_key_and_non_person_splits_are_unchanged():
+    no_key = {k: v for k, v in CFG_FLOOR.items() if k != "pressure_floor_persons"}
+    assert _p_at((220.0, 0.0), [(0.0, 0.0)], no_key) == _p_at((220.0, 0.0), [(0.0, 0.0)], CFG_NO_FLOOR)
+    huff = {**CFG_FLOOR, "population_split": "huff"}
+    huff_none = {**huff, "pressure_floor_persons": {}}
+    assert _p_at((220.0, 0.0), [(0.0, 0.0)], huff) == _p_at((220.0, 0.0), [(0.0, 0.0)], huff_none)
+
+
+def test_floor_only_applies_to_listed_point_types():
+    pop_xy, pop_values = np.array([[50000.0, 0.0]]), np.array([100.0])
+    access = AccessSet(points=_pts([(0.0, 0.0, "entrance")]), roads=_empty_roads())
+    model = build_access_model(access, pop_xy, pop_values, CFG_FLOOR, pop_d_forest=np.array([float("inf")]))
+    assert float(compute_access_pressure(np.array([[220.0, 0.0]]), model)["P"].iloc[0]) < 0.02

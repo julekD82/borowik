@@ -1,5 +1,11 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-09-30 — aktualne (35): dolny próg presji od parkingu (zmiana modelu, decyzja właściciela)
+
+Powód: wydzielenie tuż obok parkingu w rzadko zaludnionej okolicy miało P ≈ 0,16 („Spokój 0,84”). Nowy klucz profilu `pressure.access_points.pressure_floor_persons: {parking: 700.0}` (`pipeline/access_pressure.py::compute_access_pressure`): wydzielenie w zasięgu parkingu ma z jego strony presję co najmniej 700·k(d) osób, **z najbliższego parkingu (max, nie suma)**, więc skupiska parkingów go nie mnożą; tylko podziały `two_stage`/`huff_all`; brak klucza / `{}` = zachowanie sprzed zmiany. 700 os. = P ≈ 0,30 przy samym parkingu (S = 1997). Wartość tymczasowa, nieskalibrowana. Pierwsza wersja (próg dodany do A każdego parkingu z osobna) sumowała się w skupiskach i przesuwała medianę P z 0,34 na 0,52 — odrzucona.
+
+Skutek na Kieleczce 20 km (30.09, ten sam kod poza progiem): H, F, F_loc, maska bez zmian; P w masce mediana 0,340 → 0,406; wydzielenia <300 m od parkingu z P<0,25 (30 szt.): P 0,22 → 0,36 („Spokój” 0,64); mediana R 40,8 → 40,4, maks. R 81,9 → 81,1; Spearman R 0,9988, czołowe 200: 171 wspólnych; rejony: inne składy, rank_score 79,6 / 74,4 / 71,0 / 69,1 / 67,5 (przedtem 78,8 / 71,7 / 70,8 / 69,4 / 68,5). Ranking zmienia się mało, bo α = 0,3 ogranicza karę do 30%. Kalibracja S (mediana P = 0,373 jak w gravity) nie była poprawiana. Testy: `tests/test_access_pressure.py` (+7). Aby zobaczyć zmianę w aplikacji, trzeba przeliczyć analizę (nowy przebieg `prepare_trip`).
+
 ## 2026-09-30 — aktualne (34): tryby kolorowania mapy (Wynik / Wynik bez presji / Wilgotność); gałąź `ulepszenia-ui`
 
 Dodatek do `docs/RAPORT_UI.md`. `scores.json` ma teraz `M` i `pct_CWB26` (wszystkie wydzielenia, także poza maską; tylko prezentacja, model bez zmian). Frontend: `MapColorMode`, `chooseColorMode` / `togglePressureControls` / `resolveColorMode` (`model.ts`), źródło mapy = wszystkie wydzielenia z `stands.geojson` (`ForestMap.setAllStands`, `setColorMode`), skala Wilgotności bezwzględna (`MOISTURE_STOPS`). Wilgotność zmienia tylko kolory; przełącznik presji wyprowadza mapę z trybu Wilgotność do a/b. Stare migawki bez `M` / `R_bez_presji` — odpowiednie przyciski nieaktywne. Testy: backend 796, frontend 133. `frontend/public/data` = eksport Kieleczki z 30.09 (kopia poprzedniego w `output/backup_public_data_29_09_ui/`).
