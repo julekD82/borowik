@@ -16,7 +16,7 @@ Stan: 29.09.2026, gałąź `ulepszenia-faza2`. Zrealizowane: 2.0 (reguły zatwie
 | `scripts/zapisz_prognoze.py` | DONE | 4 punkty w `dane_terenowe/punkty_prognozy.json`; harmonogram Windows do zainstalowania ręcznie wg `docs/ZAPIS_WYJSC.md` |
 | 2.7, 2.8 | nie ruszane (decyzja właściciela) | 2.7 wymaga ≥ 30 dni archiwum z 2.2 (archiwum zaczęło się 28.09) |
 
-Uwaga do 2.2: archiwum zapisuje prognozę przy każdym pobraniu z Open-Meteo (od dnia pobrania wzwyż, z `fetched_at` i `forecast_days`), jeden plik na dzień; punkty już zapisane danego dnia nie są nadpisywane. Punkt dopisany później tego samego dnia z cache dostaje znacznik czasu późniejszego przebiegu — dla 2.7 istotna jest data wydania (dzień), nie godzina. Archiwum leży poza `cache/weather_points`. Prognozy sprzed dziś (28.09) nie istnieją — licznik dni zaczyna się od dziś. Aby zbierać dane w dni bez analizy, potrzebny jest opcjonalny skrypt harmonogramu (`scripts/zapisz_prognoze.py`, nie zrobiony).
+Uwaga do 2.2: archiwum zapisuje prognozę przy każdym pobraniu z Open-Meteo (od dnia pobrania wzwyż, z `fetched_at` i `forecast_days`), jeden plik na dzień; punkty już zapisane danego dnia nie są nadpisywane. Punkt dopisany później tego samego dnia z cache dostaje znacznik czasu późniejszego przebiegu — dla 2.7 istotna jest data wydania (dzień), nie godzina. Archiwum leży poza `cache/weather_points`. Prognozy sprzed dziś (28.09) nie istnieją — licznik dni zaczyna się od dziś. W dni bez analizy prognozę zapisuje `scripts/zapisz_prognoze.py` (punkty w `dane_terenowe/punkty_prognozy.json`: Kieleczka, Lubliniec, Krupski Młyn, Będziemyśl; harmonogram Windows na 6:00 do zainstalowania ręcznie wg `docs/ZAPIS_WYJSC.md`, do tego czasu archiwum rośnie tylko przy analizach i ręcznych uruchomieniach skryptu).
 
 ## 2.3 Inwentaryzacja rekordów GBIF (bez testów skuteczności)
 
@@ -106,6 +106,9 @@ Zastrzeżenia: tło (a) jest zawyżone (ludzie chodzą do lasu, gdy spodziewają
 - Rekordy ≤ 100 m są silnie skupione w latach 2024–2025.
 - 2.4: tło (b) próbkowane z początku kolejności GBIF w komórkach rok × miesiąc i mniejsze niż planowano (329 zamiast limitu 1230 rekordów w lesie); H liczone z WFS, więc nie testuje pełnego składu z paczek.
 - 2.5: wyniki oparte na E-OBS 0,1° (ok. 10 km), grubszej niż opad z radaru używany w produkcji; brak wilgotności gleby.
+- 2.5 (a) **Mała moc testu dla M.** Dni kontrolne ±15 dni dzielą większość 26-dniowego okna (CWB26) z dniem znaleziska, więc M zmienia się między nimi niewiele i test ma z natury małą moc do wykrycia efektu wilgotności; „samo M ≈ 0,51” nie dowodzi braku znaczenia wilgotności.
+- 2.5 (b) **Remisy z nasycenia M.** Przy nasyceniu M (wysoki percentyl CWB26 w mokrym okresie) wiele dni ma tę samą wartość, a remisy liczą się jako 0,5, co ściąga średnią rangę ku 0,5 niezależnie od jakości modelu.
+- 2.5 (c) **G_season pochodzi z tych samych danych GBIF.** Krzywa sezonowości była dopasowana do rozkładu miesięcznego rekordów GBIF, więc wariant „sam kalendarz” (i F z G_season) ma przewagę i nie jest niezależnym testem; wariant główny bez G_season właśnie dlatego jest głównym.
 
 ## Następne kroki
 1. Sesja z właścicielem: co robić z wynikiem 2.5 („brak rozróżnienia”) i słabym AUC w 2.4. Reguły nie przewidują automatycznej zmiany modelu.
