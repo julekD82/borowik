@@ -806,6 +806,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         forest_roads_path, road_tolerance_m = write_forest_roads_geojson(
             access_model, out_dir / f"forest_roads_{day}.geojson")
         access_manifest["forest_roads_simplify_tolerance_m"] = road_tolerance_m
+        access_manifest["forest_roads_dissolved"] = bool(access_model.counts.get("forest_roads_dissolved", False))
         print(f"  warstwy dostepu: {access_points_path.name}, {forest_roads_path.name}", flush=True)
 
     # Plan 1.2: per-stand intermediate values (JSON, or parquet over ~20 MB).

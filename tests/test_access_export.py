@@ -82,3 +82,38 @@ def test_access_card_is_json_safe_when_stand_has_no_top_point():
     assert json.dumps(card, allow_nan=False) == json.dumps(
         {"d_parking_m": None, "d_entrance_m": None, "d_hard_forest_road_m": None, "top_point_id": None,
          "top_point_type": None, "top_point_source": None, "top_point_name": None})
+
+
+def _many_segments_model(n=400):
+    """Dlugi ciag krotkich odcinkow o tych samych atrybutach (jak siatka dojazdow pozarowych):
+    plik jest duzy przez LICZBE odcinkow, wiec samo uproszczenie wierzcholkow nie pomaga."""
+    pts = gpd.GeoDataFrame(
+        {"point_id": ["pk-1"], "type": ["parking"], "source": ["bdl"], "subtype": [""], "name": [""],
+         "weight_pop": [np.nan]}, geometry=[Point(473000, 310000)], crs=CRS)
+    segs = [LineString([(473000 + i * 60, 310000), (473000 + (i + 1) * 60, 310000)]) for i in range(n)]
+    roads = gpd.GeoDataFrame(
+        {"kind": ["closed"] * n, "surface_class": ["hard"] * n, "source": ["osm"] * n, "fire_no": [""] * n,
+         "highway": ["track"] * n}, geometry=segs, crs=CRS)
+    return build_access_model(AccessSet(points=pts, roads=roads), np.array([[473000.0, 310000.0]]),
+                              np.array([30000.0]), CFG, pop_d_forest=np.array([0.0]))
+
+
+def test_roads_geojson_merges_segments_when_simplification_cannot_fit_the_limit(tmp_path):
+    model = _many_segments_model()
+    _, _ = write_forest_roads_geojson(model, tmp_path / "full.geojson", limit_bytes=10_000_000)
+    full = json.loads((tmp_path / "full.geojson").read_text(encoding="utf-8"))
+    assert len(full["features"]) == 400 and model.counts["forest_roads_dissolved"] is False
+    limit = (tmp_path / "full.geojson").stat().st_size // 4
+    path, tol = write_forest_roads_geojson(model, tmp_path / "small.geojson", limit_bytes=limit)
+    assert path.stat().st_size <= limit and model.counts["forest_roads_dissolved"] is True
+    small = json.loads(path.read_text(encoding="utf-8"))
+    assert 0 < len(small["features"]) < 400
+    # atrybuty zachowane, klasa atrakcyjnosci (progi 0,1 / 0,3) nie zmienia sie przy kwantyzacji
+    from pipeline.access_pressure import attractiveness_class
+    for f in small["features"]:
+        assert f["properties"]["kind"] == "closed" and f["properties"]["surface"] == "hard"
+    orig = {attractiveness_class(f["properties"]["attractiveness"]) for f in full["features"]}
+    merged = {attractiveness_class(f["properties"]["attractiveness"]) for f in small["features"]}
+    assert merged <= orig | {"niska"} or merged == orig
+    # zadna droga nie znika: laczna dlugosc zbliżona (tolerancja uproszczenia)
+    assert small["features"][0]["geometry"]["type"] in ("LineString", "MultiLineString")

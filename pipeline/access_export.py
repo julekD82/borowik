@@ -12,6 +12,7 @@ import pathlib
 
 import geopandas as gpd
 import numpy as np
+import shapely
 
 from pipeline.access_pressure import AccessModel, attractiveness_class
 
@@ -54,30 +55,71 @@ def points_feature_collection(model: AccessModel) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
-def roads_feature_collection(model: AccessModel, tolerance_m: float) -> dict:
+def _geometry_json(geom) -> dict:
+    if geom.geom_type == "MultiLineString":
+        return {"type": "MultiLineString", "coordinates": [_round_coords(list(g.coords)) for g in geom.geoms]}
+    return {"type": geom.geom_type, "coordinates": _round_coords(list(geom.coords))}
+
+
+def _road_props(row, att) -> dict:
+    # Zwarte wlasciwosci (rozmiar pliku zalezy od liczby odcinkow, nie od
+    # wierzcholkow): klase atrakcyjnosci liczy przegladarka z liczby, puste
+    # pola sa pomijane, zrodlo dojazdu pozarowego wynika z kind == "fire".
+    props = {"kind": row["kind"], "surface": row["surface_class"]}
+    if row["kind"] != "fire":
+        props["source"] = row["source"]
+    if row["fire_no"]:
+        props["fire_no"] = row["fire_no"]
+    if att is not None:
+        props["attractiveness"] = att
+    return props
+
+
+ATTRACTIVENESS_STEP = 0.05   # dzieli progi klas (0,1 / 0,3), wiec kwantyzacja w dol nie zmienia klasy
+
+
+def roads_feature_collection(model: AccessModel, tolerance_m: float, dissolve: bool = False) -> dict:
+    """`dissolve=True`: odcinki o tych samych atrybutach (rodzaj, nawierzchnia,
+    zrodlo, numer dojazdu, atrakcyjnosc skwantowana w dol do 0,05) sa laczone w
+    jeden obiekt (line_merge) -- tak zmniejsza sie liczba obiektow, ktora
+    decyduje o rozmiarze pliku."""
     roads = model.roads
     if not len(roads):
         return {"type": "FeatureCollection", "features": []}
     simple = roads.geometry.simplify(tolerance_m, preserve_topology=False) if tolerance_m > 0 else roads.geometry
-    wgs = gpd.GeoSeries(simple, crs="EPSG:2180").to_crs("EPSG:4326")
-    features = []
-    for (_, row), geom in zip(roads.iterrows(), wgs):
+    if not dissolve:
+        wgs = gpd.GeoSeries(simple, crs="EPSG:2180").to_crs("EPSG:4326")
+        features = []
+        for (_, row), geom in zip(roads.iterrows(), wgs):
+            if geom is None or geom.is_empty:
+                continue
+            att = _num(row["attractiveness"])
+            features.append({"type": "Feature", "geometry": _geometry_json(geom),
+                             "properties": _road_props(row, None if att is None else round(att, 3))})
+        return {"type": "FeatureCollection", "features": features}
+
+    groups: dict = {}
+    for (_, row), geom in zip(roads.iterrows(), simple):
         if geom is None or geom.is_empty:
             continue
         att = _num(row["attractiveness"])
-        # Zwarte wlasciwosci (rozmiar pliku zalezy od liczby odcinkow, nie od
-        # wierzcholkow): klase atrakcyjnosci liczy przegladarka z liczby, puste
-        # pola sa pomijane, zrodlo dojazdu pozarowego wynika z kind == "fire".
-        props = {"kind": row["kind"], "surface": row["surface_class"]}
-        if row["kind"] != "fire":
-            props["source"] = row["source"]
-        if row["fire_no"]:
-            props["fire_no"] = row["fire_no"]
         if att is not None:
-            props["attractiveness"] = round(att, 3)
-        features.append({"type": "Feature", "geometry": {
-            "type": geom.geom_type, "coordinates": _round_coords(list(geom.coords)),
-        }, "properties": props})
+            att = round(math.floor(att / ATTRACTIVENESS_STEP + 1e-9) * ATTRACTIVENESS_STEP, 2)
+        key = (row["kind"], row["surface_class"], row["source"] if row["kind"] != "fire" else "",
+               row["fire_no"] or "", att)
+        groups.setdefault(key, {"row": row, "geoms": []})["geoms"].append(geom)
+    keys = list(groups)
+    merged = []
+    for key in keys:
+        union = shapely.union_all(groups[key]["geoms"])
+        merged.append(shapely.line_merge(union) if union.geom_type != "LineString" else union)
+    wgs = gpd.GeoSeries(merged, crs="EPSG:2180").to_crs("EPSG:4326")
+    features = []
+    for key, geom in zip(keys, wgs):
+        if geom is None or geom.is_empty:
+            continue
+        features.append({"type": "Feature", "geometry": _geometry_json(geom),
+                         "properties": _road_props(groups[key]["row"], key[4])})
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -98,13 +140,27 @@ def write_access_points_geojson(model: AccessModel, out_path, limit_bytes: int =
 
 def write_forest_roads_geojson(model: AccessModel, out_path, limit_bytes: int = DEFAULT_LIMIT_BYTES,
                                 start_tolerance_m: float = 2.0) -> tuple[pathlib.Path, float]:
-    """Zapisuje drogi, zwiekszajac tolerancje uproszczenia x2 az plik <= limit.
-    Zwraca (sciezka, uzyta_tolerancja_m)."""
+    """Zapisuje drogi tak, by plik mieszcil sie w limicie: najpierw coraz mocniejsze
+    uproszczenie geometrii (x2, do 4 razy), a gdy to nie wystarcza (rozmiar zalezy od
+    LICZBY odcinkow, np. przy promieniu 25 km) -- laczenie sasiednich odcinkow o
+    tych samych atrybutach (`dissolve`) przy rosnacej tolerancji. Zwraca
+    (sciezka, uzyta_tolerancja_m); to, czy odcinki zostaly polaczone, trafia do
+    `model.counts["forest_roads_dissolved"]` (i dalej do manifestu)."""
     out_path = pathlib.Path(out_path)
-    tolerance = start_tolerance_m
-    for _ in range(6):
-        size = _write(roads_feature_collection(model, tolerance), out_path)
-        if size <= limit_bytes:
+    attempts = []
+    tol = start_tolerance_m
+    for _ in range(3):
+        attempts.append((tol, False))
+        tol *= 2.0
+    tol = start_tolerance_m * 2.0
+    for _ in range(5):
+        attempts.append((tol, True))
+        tol *= 2.0
+    last = None
+    for tolerance, dissolve in attempts:
+        last = _write(roads_feature_collection(model, tolerance, dissolve), out_path)
+        if last <= limit_bytes:
+            model.counts["forest_roads_dissolved"] = dissolve
             return out_path, tolerance
-        tolerance *= 2.0
-    raise ValueError(f"{out_path.name}: nie miesci sie w limicie {limit_bytes} B nawet przy tolerancji {tolerance / 2} m")
+    raise ValueError(f"{out_path.name}: {last} B nie miesci sie w limicie {limit_bytes} B "
+                     f"nawet po polaczeniu odcinkow (tolerancja {attempts[-1][0]} m)")
