@@ -815,6 +815,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         day=day, out_path=out_dir / f"details_{day}.json",
         tie_break_index=tie_break_raw_index,
         extra_features_index=extra_features_index,
+        profile=profile,
     )
     print(f"  {len(regions)} region(s)")
     access_points_path = forest_roads_path = None
