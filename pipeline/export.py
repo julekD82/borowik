@@ -5,6 +5,7 @@ import pathlib
 import geopandas as gpd
 import pandas as pd
 
+from pipeline.scoring import compute_ranking
 from pipeline.searchability import searchability_hint
 from pipeline.tie_break import veg_cover_label
 
@@ -59,6 +60,17 @@ def build_score_record(row, day: str) -> dict:
     record["day"] = day
     record["R"] = _json_safe(float(row["R_final"]))
     record["mask"] = bool(row["mask_full"])
+    # Faza UI.1: wynik bez presji grzybiarzy, 100 * H * F_loc (ta sama maska).
+    # Kolumna pochodzi z pipeline.mvp; wiersz bez niej (starsza ramka) liczony tu
+    # tym samym compute_ranking z alpha = 0.
+    r_bez = row["R_bez_presji"] if "R_bez_presji" in row.index else compute_ranking(
+        bool(row["mask_full"]), _json_safe(row["H"]), _json_safe(row["F_loc"]), p=0.0, alpha=0.0)
+    record["R_bez_presji"] = _json_safe(float(r_bez))
+    # Faza UI (tryb mapy "Wilgotnosc"): skladowa M (0-1) i percentyl bilansu wodnego z 26 dni,
+    # dla WSZYSTKICH wydzielen (rowniez poza maska -- wilgotnosc od maski nie zalezy). Tylko
+    # prezentacja; null dla ramki bez tych kolumn.
+    record["M"] = _json_safe(row["M"]) if "M" in row.index else None
+    record["pct_CWB26"] = _json_safe(row["pct_CWB26"]) if "pct_CWB26" in row.index else None
     # Plan 2.1 step A4 (spec §5.2): from the EPSG:2180 geometry itself (same
     # source pipeline.regions.py already uses for its own area_ha), not
     # BDL's own sub_area attribute -- unused elsewhere, possibly stale.
@@ -134,7 +146,8 @@ def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list
 def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
                            tie_break_index: dict, extra_features_index: dict | None = None,
-                           access: dict | None = None, weather: dict | None = None) -> dict:
+                           access: dict | None = None, weather: dict | None = None,
+                           habitat: dict | None = None, forest_district: str | None = None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -163,6 +176,11 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         "access": access,
         # Faza 4.3/4.5: skladniki pogody i udzial prognozy w oknie (prezentacja).
         "weather": weather,
+        # Faza UI.2: skladniki siedliska (S_host, S_site, S_age) do rozwiniecia paska.
+        "habitat": habitat,
+        # Faza UI.3: nazwa nadlesnictwa z nazwy paczki BDL (bez polskich znakow) -- do nazwy
+        # wydzielenia "Oddz. 96a · Nadl. Koszecin".
+        "forest_district": forest_district,
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -219,11 +237,38 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             extra_features_index=extra_features_index,
             access=build_access_card(row),
             weather=build_weather_card(row, profile),
+            habitat=build_habitat_card(row, profile),
+            forest_district=forest_district_name(row.get("nazwa")),
         )
         for _, row in stands.iterrows()
     ]
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path
+
+
+def forest_district_name(package_name) -> str | None:
+    """"BDL_02_16_KOSZECIN_2026" -> "Koszecin" (bez polskich znakow -- tak nazywaja sie
+    paczki BDL); None dla braku/innego formatu. Tylko prezentacja."""
+    if not isinstance(package_name, str):
+        return None
+    parts = package_name.split("_")
+    if len(parts) < 5 or parts[0] != "BDL":
+        return None
+    return " ".join(w.capitalize() for w in parts[3:-1]) or None
+
+
+def build_habitat_card(row, profile: dict | None = None) -> dict | None:
+    """Faza UI.2: skladniki H tego wydzielenia (S_host, S_site, S_age) i tryb wieku
+    z profilu -- tylko prezentacja, wartosci wprost z modelu. None dla wiersza
+    bez tych kolumn."""
+    if "S_host" not in row.index:
+        return None
+    return {
+        "S_host": _json_safe(row.get("S_host")),
+        "S_site": _json_safe(row.get("S_site")),
+        "S_age": _json_safe(row.get("S_age")),
+        "age_mode": (profile or {}).get("habitat", {}).get("age_mode", "neutral"),
+    }
 
 
 def build_weather_card(row, profile: dict | None = None) -> dict | None:
@@ -282,10 +327,38 @@ def build_access_card(row) -> dict | None:
         "top_point_type": _text_or_none(row.get("top_point_type")),
         "top_point_source": _text_or_none(row.get("top_point_source")),
         "top_point_name": _text_or_none(row.get("top_point_name")),
+        # Faza UI.2: wklad kazdego typu w surowa presje (model punktow dostepu),
+        # z ktorego pasek "Spokoj" wybiera 2-3 najwazniejsze punkty.
+        "pressure_contrib": {
+            t: _json_safe(row.get(f"pcontrib_{t}"))
+            for t in ("parking", "entrance", "gate", "road_fallback", "settlement", "forest_road")
+            if f"pcontrib_{t}" in row.index
+        },
     }
 
 
-def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
+_NAMED_PLACE_CLASSES = ("city", "town", "village", "hamlet", "suburb", "locality", "isolated_dwelling")
+
+
+def nearest_place(point_2180, places: gpd.GeoDataFrame | None) -> dict | None:
+    """Faza UI.3: najblizsza nazwana miejscowosc OSM od punktu (EPSG:2180) -- do nazwy
+    rejonu "Rejon 1 · kolo Lazisk". None, gdy brak miejscowosci z nazwa. Tylko
+    prezentacja."""
+    if places is None or len(places) == 0 or "name" not in places.columns:
+        return None
+    named = places[places["name"].fillna("").astype(str).str.len() > 0]
+    if "place" in named.columns:
+        named = named[named["place"].isin(_NAMED_PLACE_CLASSES)]
+    if len(named) == 0:
+        return None
+    metric = named.to_crs("EPSG:2180") if named.crs is not None and str(named.crs) != "EPSG:2180" else named
+    distances = metric.geometry.distance(point_2180)
+    best = distances.idxmin()
+    return {"name": str(named.loc[best, "name"]), "distance_m": round(float(distances.loc[best]))}
+
+
+def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path,
+                       places: gpd.GeoDataFrame | None = None) -> pathlib.Path:
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Centroid computed in the regions' own (projected, metric) CRS and only
@@ -295,10 +368,14 @@ def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib
     # cannot place a region at all (final review finding).
     centroids_4326 = regions.geometry.centroid.to_crs("EPSG:4326")
     records = []
-    for (_, row), point in zip(regions.iterrows(), centroids_4326):
+    for (_, row), point, centroid_2180 in zip(regions.iterrows(), centroids_4326, regions.geometry.centroid):
         record = build_region_record(row, day)
         record["centroid_lat"] = point.y
         record["centroid_lon"] = point.x
+        # Faza UI.3: najblizsza miejscowosc (nazwa rejonu w interfejsie); brak klucza
+        # w plikach sprzed tej zmiany, null gdy nie ma miejscowosci z nazwa.
+        if places is not None:
+            record["near_place"] = nearest_place(centroid_2180, places)
         records.append(record)
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path

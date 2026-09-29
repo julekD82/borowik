@@ -94,7 +94,7 @@ def read_day(scores_path: Path) -> str:
     return data[0]["day"]
 
 
-TRIP_FILES = ["scores.json", "stands.geojson", "regions.json", "details.json", "conditions.json",
+TRIP_FILES = ["scores.json", "stands.geojson", "regions.json", "regions_bez_presji.json", "details.json", "conditions.json",
               "manifest.json", "access_points.json", "forest_roads.json"]
 
 

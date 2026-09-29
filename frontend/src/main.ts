@@ -3,6 +3,29 @@ import "./style.css";
 import {
   loadData,
   joinRegions,
+  rankEntries,
+  pressureSwitchAvailable,
+  chooseColorMode,
+  togglePressureControls,
+  resolveColorMode,
+  moistureAvailable,
+  MAP_COLOR_KEY,
+  MOISTURE_STOPS,
+  MOISTURE_LEGEND_TICKS,
+  MOISTURE_NOTE,
+  moistureTickLabel,
+  scoreBars,
+  habitatComponents,
+  weatherComponents,
+  pressureTop,
+  standName,
+  parseStandId,
+  regionName,
+  keyFacts,
+  areaLabel,
+  startDistanceLabel,
+  conditionBars,
+  formatValue,
   fruitingClass,
   habitatClass,
   confidenceLabel,
@@ -19,7 +42,6 @@ import {
   neighborsSummary,
   loadTrips,
   formatTripLabel,
-  dayLabel,
   accessCardSummary,
   topPointSummary,
   regionAccessSummary,
@@ -33,8 +55,16 @@ import {
   weatherCardLines,
   localPhenomenaNote,
   wfsOnlyBanner,
+  dayLabel,
 } from "./model";
-import type { AccessCard, AccessCollection, AccessLayerId } from "./model";
+import type {
+  AccessCard,
+  AccessCollection,
+  AccessLayerId,
+  Bar,
+  ComponentRow,
+  MapColorMode,
+} from "./model";
 import type {
   StandView,
   Score,
@@ -65,6 +95,7 @@ const icon = (name: string) => {
       '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>',
     close: '<path d="m6 6 12 12M6 18 18 6"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
+    list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.info}</svg>`;
 };
@@ -84,17 +115,18 @@ const formatDate = (day: string) =>
   });
 const coordinates = ([lon, lat]: [number, number]) =>
   `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
+
+// Faza UI.3: pasek pogody u gory -- jedno zdanie + 7 dni jako male slupki F (wysokosc = F,
+// z oznaczeniem niepewnosci z 4.5); reszta dotychczasowego tekstu w zwinietych Szczegolach.
 function conditionsHtml(median: number | null, conditions: ConditionsTimeline | null): string {
   const moisture = fruitingClass(median).toLocaleLowerCase("pl");
   if (!conditions)
-    return `<span class="condition-symbol">${icon("leaf")}</span><div><strong>Warunki w obszarze: ${moisture}</strong><p>Ocena pogody z analizy · mediana dla wydzieleń przechodzących filtry</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
-  const tiles = conditions.days
-    .map((d, i) => {
-      const uncertain = uncertaintyLabel(d.uncertainty);
-      const local = localPhenomenaNote(d);
-      const title = `${formatDate(d.date)}: ${Math.round(d.F * 100)}/100${uncertain ? ` · ${uncertain}` : ""}${local ? ` · ${local}` : ""}`;
-      return `<li class="conditions-day level-${d.level}${d.forecast ? " forecast" : ""}${d.uncertainty && d.uncertainty !== "ok" ? ` uncertain-${d.uncertainty}` : ""}" title="${escape(title)}"><span>${dayLabel(d.date, i)}</span><b aria-label="poziom ${d.level} z 3">${"●".repeat(d.level)}${"○".repeat(3 - d.level)}</b>${uncertain ? `<small class="uncertain-label">${escape(uncertain)}</small>` : ""}</li>`;
-    })
+    return `<span class="condition-symbol">${icon("leaf")}</span><div class="cond-main"><strong>Warunki w obszarze: ${moisture}</strong><details class="cond-details"><summary>Szczegóły pogody</summary><p>Ocena pogody z analizy · mediana dla wydzieleń przechodzących filtry.</p><p class="weather-disclaimer">${escape(WEATHER_DISCLAIMER)}</p></details></div>`;
+  const bars = conditionBars(conditions.days, formatDate)
+    .map(
+      (b) =>
+        `<li class="cond-bar level-${b.level}${b.uncertainty !== "ok" ? ` uncertain-${b.uncertainty}` : ""}" title="${escape(b.title)}" aria-label="${escape(b.label + ": " + b.title)}"><span class="cond-col"><i style="height:${Math.max(6, Math.round(b.value * 100))}%"></i></span><span class="cond-day">${escape(b.label)}${b.uncertainty === "uncertain" ? "?" : b.uncertainty === "indicative" ? "~" : ""}</span></li>`,
+    )
     .join("");
   const today = conditions.days[0];
   const componentLines = today?.components ? weatherComponentLines(today.components) : [];
@@ -104,28 +136,37 @@ function conditionsHtml(median: number | null, conditions: ConditionsTimeline | 
     .map((x) => `${x.label}: ${x.note}`);
   const firstUncertain = conditions.days.find((d) => d.uncertainty && d.uncertainty !== "ok");
   const uncertainNote = firstUncertain ? uncertaintyNote(firstUncertain.uncertainty) : null;
+  const legend = conditions.days
+    .map((d) => uncertaintyLabel(d.uncertainty))
+    .some((x) => x !== null)
+    ? '<p class="weather-local">? prognoza niepewna (od 4. dnia) · ~ orientacyjnie (od 8. dnia)</p>'
+    : "";
   const details = [
+    `<p>Warunki wilgotności: ${moisture} · prognoza F na kolejne dni z pogody (radar/model), bez przewidywania szczytu wysypu.</p>`,
     componentLines.length ? `<ul class="weather-components" aria-label="Składniki pogody">${componentLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>` : "",
     localLines.length ? `<p class="weather-local">Lokalnie: ${escape(localLines.join(" · "))}</p>` : "",
+    legend,
     uncertainNote ? `<p class="weather-uncertain">${escape(uncertainNote)}</p>` : "",
     `<p class="weather-disclaimer">${escape(WEATHER_DISCLAIMER)}</p>`,
   ].join("");
-  return `<span class="condition-symbol">${icon("mushroom")}</span><div><strong>${escape(conditions.summary)}</strong><p>Warunki wilgotności: ${moisture} · prognoza F na kolejne dni z pogody (radar/model), bez przewidywania szczytu wysypu</p><ol class="conditions-days" aria-label="Warunki wzrostu w kolejnych dniach">${tiles}</ol>${details}</div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span>`;
-}
-function weatherSection(score: Score | undefined): string {
-  const w = score ? detailFor(score.stand_id)?.weather : null;
-  if (!w) return "";
-  const lines = weatherCardLines(w);
-  if (!lines.length) return "";
-  return `<div class="weather-card"><h3>Pogoda w tym miejscu</h3><ul>${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul><p class="weather-disclaimer">${escape(WEATHER_DISCLAIMER)}</p></div>`;
+  return `<span class="condition-symbol">${icon("mushroom")}</span><div class="cond-main"><strong>${escape(conditions.summary)}</strong><ol class="cond-bars" aria-label="Ocena pogody F na kolejne dni">${bars}</ol><details class="cond-details"><summary>Szczegóły pogody</summary>${details}</details></div>`;
 }
 let entries: StandView[] = [];
+let baseEntries: StandView[] = [];
 let allScores: Score[] = [];
-let allRegions: Region[] = [];
-let allDetails: StandDetail[] = [];
+let regionsWithPressure: Region[] = [];
+let regionsWithoutPressure: Region[] | null = null;
+let detailsById = new Map<string, StandDetail>();
 let regionViews: RegionView[] = [];
+let startPoint: [number, number] | null = null;
+let pressureAlpha: number | null = null;
+let pressure = true;
+let pressureAvailable = false;
+// Tryby kolorowania mapy: "Wynik" / "Wynik bez presji" idą za przełącznikiem presji, "Wilgotność"
+// (skladowa M, skala bezwzgledna) zmienia tylko kolory mapy.
+let colorMode: MapColorMode = "score";
+let moistureOk = false;
 let selected = "";
-let detail = false;
 const PAGE_SIZE = 30;
 let page = 0;
 let savedOnly = false;
@@ -144,7 +185,11 @@ let selectedRegionId = "";
 // the stand view (list, map, detail) is scoped to just that region's
 // members, with a way back to the region view instead of the full list.
 let regionFilterId: string | null = null;
+// Faza UI.4: na telefonie lista i mapa to zakladki (jedna widoczna naraz).
+let mobilePane: "list" | "map" = "list";
 const VIEW_MODE_KEY = "borowik.view-mode.v1";
+// Faza UI.1: przelacznik presji grzybiarzy (zapamietywany lokalnie, domyslnie wlaczony).
+const PRESSURE_KEY = "borowik.pressure.v1";
 // Faza 3.5: ktore warstwy dostepu sa wlaczone (zapamietywane w przegladarce).
 const LAYERS_KEY = "borowik.access-layers.v1";
 let layerState: Record<AccessLayerId, boolean> = Object.fromEntries(
@@ -163,6 +208,34 @@ function saveLayerState() {
     localStorage.setItem(LAYERS_KEY, JSON.stringify(layerState));
   } catch {
     // Best-effort.
+  }
+}
+function getPressurePreference(): boolean {
+  try {
+    return localStorage.getItem(PRESSURE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+function setPressurePreference(on: boolean) {
+  try {
+    localStorage.setItem(PRESSURE_KEY, on ? "on" : "off");
+  } catch {
+    // Best-effort only.
+  }
+}
+function getColorModePreference(): string | null {
+  try {
+    return localStorage.getItem(MAP_COLOR_KEY);
+  } catch {
+    return null;
+  }
+}
+function setColorModePreference(mode: MapColorMode) {
+  try {
+    localStorage.setItem(MAP_COLOR_KEY, mode);
+  } catch {
+    // Best-effort only.
   }
 }
 function renderLayerControls(
@@ -221,12 +294,13 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   </header>
   <main>
     <section class="intro" aria-labelledby="page-title"><div><p class="eyebrow">MNIEJ SZUKANIA. WIĘCEJ LASU.</p><h1 id="page-title">Wybierz swój kawałek lasu.</h1><p class="intro-copy">Obiecujące wydzielenia na prawdziwki, wybrane na podstawie siedliska i pogody.</p></div><div class="trip-date">${icon("calendar")}<div><small>DATA ANALIZY</small><strong id="analysis-date">Wczytywanie…</strong></div></div></section>
-    <section id="conditions" class="conditions" aria-live="polite"><span class="condition-symbol">${icon("leaf")}</span><div><strong>Sprawdzamy warunki w obszarze</strong><p>Wczytujemy przygotowaną analizę lasu.</p></div><span class="model-label">MODEL EKSPERCKI · NIESKALIBROWANY</span></section>
+    <section id="conditions" class="conditions" aria-live="polite"><span class="condition-symbol">${icon("leaf")}</span><div class="cond-main"><strong>Sprawdzamy warunki w obszarze</strong><p>Wczytujemy przygotowaną analizę lasu.</p></div></section>
     <div id="wfs-banner" class="data-banner" role="note" hidden></div>
     <section id="trips-bar" class="trips-bar" aria-label="Zapisane mapy"><label for="trips-select">${icon("bookmark")}<span>Zapisane mapy</span></label><select id="trips-select"><option value="">Aktualna</option></select></section>
-    <section class="workspace" aria-label="Wydzielenia poszukiwań">
-      <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Ranking porównuje miejsca w tej analizie.<br>Nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
-      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
+    <section id="workspace" class="workspace" data-pane="list" aria-label="Wydzielenia poszukiwań">
+      <div class="mobile-tabs" role="tablist" aria-label="Widok"><button role="tab" data-pane="list" class="mobile-tab active">${icon("list")}Lista</button><button role="tab" data-pane="map" class="mobile-tab">${icon("map")}Mapa</button></div>
+      <aside class="sidebar"><div id="panel-heading" class="panel-heading"></div><div id="pressure-switch" class="pressure-switch"></div><div id="view-toggle" class="view-toggle" hidden><button data-view="regions" class="view-toggle-btn">Rejony</button><button data-view="stands" class="view-toggle-btn">Wydzielenia</button></div><div id="cards" class="cards" aria-live="polite"><div class="empty"><span class="loading-ring"></span><h2>Jeszcze chwila…</h2><p>Wczytujemy oceny i granice wydzieleń.</p></div></div><div class="panel-footer">${icon("info")} Model ekspercki, nieskalibrowany. Ranking porównuje miejsca w tej analizie, nie jest prawdopodobieństwem znalezienia grzybów.</div></aside>
+      <div class="map-area"><div id="map" aria-label="Mapa wydzieleń poszukiwań"></div><div class="map-heading"><span class="status-dot"></span><span id="map-title">Mapa poszukiwań</span></div><button id="fit-map" class="map-fit" aria-label="Pokaż cały obszar">${icon("target")}</button><div id="map-status" class="map-status" role="status" hidden></div><div class="map-legend"><div id="color-modes" class="color-modes"></div><div id="layer-controls" class="layer-controls" role="group" aria-label="Warstwy dostępu" hidden></div><span id="legend-content"><i class="legend-swatch"></i> Obiecujące wydzielenia <span class="legend-divider"></span><i class="legend-point"></i> Punkt orientacyjny</span></div><div class="map-caption">Granice lasu, nie gwarancja zbioru.</div></div>
     </section>
     <footer class="footer"><span>Borowik <span class="footer-dot">·</span> Dobry spacer zaczyna się od dobrego planu.</span><button id="about">O danych i ograniczeniach ${icon("info")}</button></footer>
   </main>
@@ -267,20 +341,92 @@ function setMapStatus(message: string) {
   $("#map-status").textContent = message;
   $("#map-status").hidden = !message;
 }
+function detailFor(standId: string): StandDetail | undefined {
+  return detailsById.get(standId);
+}
+
+// ---- Wspolne klocki karty ----
+
+// Uzasadnienie wyniku: przy wylaczonej presji wiersz o presji jest pomijany (nie wchodzi do wyniku).
+function visibleExplanations(score?: Score) {
+  return (score?.explanation ?? []).filter((e) => pressure || e.factor !== "pressure_factor");
+}
 function explanations(score?: Score, full = false) {
-  const entries = full
-    ? score?.explanation
-    : topExplanations(score?.explanation ?? []);
-  return entries?.length
+  const list = visibleExplanations(score);
+  const entries = full ? list : topExplanations(list);
+  return entries.length
     ? `<ul class="reasons">${entries.map((e) => `<li><span class="reason-mark ${e.contribution < 0 ? "negative" : ""}">${e.contribution < 0 ? "−" : "+"}</span><span>${escape(e.text)}</span></li>`).join("")}</ul>`
     : '<p class="muted">Brak uzasadnienia w eksporcie.</p>';
 }
 function confidence(score?: Score) {
-  return `<details class="confidence"><summary>Pewność: <strong>${confidenceLabel(score?.confidence)}</strong><span> ⓘ</span></summary><ul>${score?.confidence_reasons.length ? score.confidence_reasons.map((r) => `<li>${escape(r)}</li>`).join("") : "<li>Brak szczegółowych powodów w eksporcie.</li>"}</ul></details>`;
+  return `<p>Pewność: <strong>${confidenceLabel(score?.confidence)}</strong></p><ul class="confidence-reasons">${score?.confidence_reasons.length ? score.confidence_reasons.map((r) => `<li>${escape(r)}</li>`).join("") : "<li>Brak szczegółowych powodów w eksporcie.</li>"}</ul>`;
 }
-function assessment(score?: Score) {
-  return `<div class="assessment"><div><small>SIEDLISKO</small><strong>${habitatClass(score?.H)}</strong></div><div><small>WARUNKI TERAZ</small><strong>${fruitingClass(score?.F)}</strong></div></div>`;
+// Male paski (wiersz listy): trzy cienkie kreski, wypelnienie = wartosc modelu 0-1.
+function miniBars(score: Score) {
+  return `<span class="mini-bars" aria-hidden="true">${scoreBars(score, pressure)
+    .map(
+      (b) =>
+        `<i class="mini-${b.key}${b.muted ? " muted" : ""}" style="--v:${b.value === null || b.muted ? 0 : Math.round(b.value * 100)}%"></i>`,
+    )
+    .join("")}</span>`;
 }
+function rows(list: ComponentRow[]) {
+  return list.length
+    ? `<ul class="bar-components">${list
+        .map(
+          (r) =>
+            `<li><span>${escape(r.label)}${r.note ? ` <em>${escape(r.note)}</em>` : ""}</span><b>${escape(r.value)}</b></li>`,
+        )
+        .join("")}</ul>`
+    : "";
+}
+function barHtml(bar: Bar, extra: string, hint: string) {
+  const width = bar.value === null || bar.muted ? 0 : Math.round(Math.max(0, Math.min(1, bar.value)) * 100);
+  const exact = bar.muted ? "nie uwzględniony w wyniku" : `wartość modelu ${formatValue(bar.value)}`;
+  return `<details class="bar bar-${bar.key}${bar.muted ? " is-muted" : ""}"><summary title="${escape(`${bar.label}: ${exact}`)}"><span class="bar-label">${bar.label}</span><span class="bar-track"><i style="width:${width}%"></i></span><span class="bar-word">${escape(bar.word)}</span></summary><div class="bar-body"><p class="bar-value">${escape(bar.label)}: ${escape(exact)}${hint ? ` · ${escape(hint)}` : ""}</p>${extra}</div></details>`;
+}
+// Trzy glowne paski w konwencji "wiecej = lepiej", rozwijane do skladnikow (Faza UI.2).
+function barsSection(score: Score, options: { top?: boolean } = {}) {
+  const detail = detailFor(score.stand_id);
+  const bars = scoreBars(score, pressure);
+  const weather = detail?.weather;
+  const weatherLines = weather ? weatherCardLines(weather) : [];
+  const habitat = habitatComponents(detail?.habitat);
+  const calmRows = pressureTop(detail?.access);
+  const calmExtra = detail?.access
+    ? `${rows(calmRows)}<p class="muted">${escape(topPointSummary(detail.access))}</p>`
+    : '<p class="muted">Rozbicie presji na punkty dostępu niedostępne w tej analizie.</p>';
+  const extras: Record<string, string> = {
+    habitat: habitat.length
+      ? rows(habitat)
+      : '<p class="muted">Składniki siedliska niedostępne w tej analizie.</p>',
+    weather:
+      rows(weatherComponents(weather)) +
+      (weatherLines.length
+        ? `<ul class="weather-lines">${weatherLines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>`
+        : '<p class="muted">Składniki pogody niedostępne w tej analizie.</p>'),
+    calm: pressure
+      ? calmExtra
+      : '<p class="muted">Presja grzybiarzy jest wyłączona — nie wpływa na ranking, listę rejonów ani kolory mapy.</p>',
+  };
+  const hints: Record<string, string> = {
+    habitat: options.top ? "wartości najlepszego wydzielenia" : "H",
+    weather: options.top ? "wartości najlepszego wydzielenia" : "lokalna pogoda F_loc",
+    calm: "1 − P",
+  };
+  return `<div class="bars" aria-label="Rozbicie wyniku">${bars.map((b) => barHtml(b, extras[b.key], hints[b.key])).join("")}<p class="formula">Wynik = siedlisko × pogoda × spokój${pressure ? "" : " (spokój pominięty)"}</p></div>`;
+}
+function factChips(facts: string[]) {
+  return facts.length
+    ? `<ul class="facts">${facts.map((f) => `<li>${escape(f)}</li>`).join("")}</ul>`
+    : "";
+}
+function scoreBadge(value: number) {
+  return `<span class="score-badge" title="Wynik rankingowy ${value.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}${pressure ? "" : " (bez presji grzybiarzy)"}"><b>${Math.round(value)}</b><small>wynik</small></span>`;
+}
+
+// ---- Szczegoly (zwiniete): wszystko, co dotychczas bylo na karcie i w widoku szczegolow ----
+
 function access(score?: Score) {
   // Faza 3.5: przy modelu punktow dostepu karta podaje odleglosci do
   // parkingu/wjazdu/utwardzonego duktu i element o najwiekszym wplywie na P.
@@ -326,38 +472,214 @@ function structureSection(detail?: StandDetail) {
   if (!detail || (!detail.stand_stru && !detail.prot_categ)) return "";
   return `<dl class="metrics">${detail.stand_stru ? `<div><dt>Budowa drzewostanu</dt><dd>${escape(standStructureLabel(detail.stand_stru))}</dd></div>` : ""}${detail.prot_categ ? `<div><dt>Kategoria ochronności</dt><dd>${escape(detail.prot_categ)}</dd></div>` : ""}</dl>`;
 }
-function detailFor(standId: string): StandDetail | undefined {
-  return allDetails.find((d) => d.stand_id === standId);
+function formulaText() {
+  return `R = 100 · H · F_loc · (1 − α·P)${pressureAlpha === null ? "" : `, α = ${pressureAlpha.toLocaleString("pl-PL")}`}`;
 }
-function card(entry: StandView, index: number) {
-  const isSelected = selected === entry.score.stand_id;
-  const isSaved = getSaved().some(
-    (s) => s.key === savedKey(entry.score.stand_id, entry.point),
-  );
-  return `<article class="region-card ${isSelected ? "selected" : ""}" data-card="${escape(entry.score.stand_id)}"><button class="card-select" data-select="${escape(entry.score.stand_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Wydzielenie ${escape(entry.score.stand_id)}</strong><small> ${coordinates(entry.point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(entry.score?.F)}</span>${confidence(entry.score)}</div>${assessment(entry.score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(entry.score)}${isSelected ? `${weatherSection(entry.score)}${access(entry.score)}<div class="point-note">Punkt orientacyjny: środek wydzielenia.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking wydzielenia: ${entry.score.R!.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(entry.score?.P) ? entry.score!.P!.toFixed(2) : "brak danych"}. To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-save="${escape(entry.score.stand_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz miejsce"}</button><a class="navigation-link" href="${navigationUrl(entry.point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego wydzielenia ${escape(entry.score.stand_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-detail="${escape(entry.score.stand_id)}">Szczegóły wydzielenia ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(entry.score.day)}</div></div></article>`;
+function scoreDetails(score: Score, opts: { rankLine: string; point: [number, number] }) {
+  const detail = detailFor(score.stand_id);
+  const w = detail?.weather;
+  const r = pressure ? score.R : score.R_bez_presji;
+  const bothScores = `<div><dt>Wynik z presją (R)</dt><dd>${finite(score.R) ? score.R.toFixed(1) : "—"}</dd></div>${finite(score.R_bez_presji) ? `<div><dt>Wynik bez presji</dt><dd>${score.R_bez_presji.toFixed(1)}</dd></div>` : ""}`;
+  return `<div class="details-block"><h4>Wynik i model</h4><p class="muted">${escape(opts.rankLine)}</p><dl class="metrics">${bothScores}<div><dt>Siedlisko H</dt><dd>${formatValue(score.H)} · ${habitatClass(score.H).toLocaleLowerCase("pl")}</dd></div><div><dt>Pogoda lokalna F_loc</dt><dd>${formatValue(score.F_loc)} · ${fruitingClass(score.F_loc).toLocaleLowerCase("pl")}</dd></div><div><dt>Warunki regionalne F</dt><dd>${formatValue(score.F)} · ${fruitingClass(score.F).toLocaleLowerCase("pl")}</dd></div><div><dt>Presja P (spokój = 1 − P)</dt><dd>${finite(score.P) ? score.P.toFixed(2) : "—"}</dd></div></dl><p class="muted">${escape(formulaText())}. Bez presji: 100 · H · F_loc. Wartość ${pressure ? "z" : "bez"} presji: ${finite(r) ? r!.toFixed(1) : "—"}. Pasek „Spokój” pokazuje 1 − P; do wyniku presja wchodzi z wagą α. P jest wskaźnikiem modelu, nie pomiarem tłoku; brak danych o wejściach może go zawyżać. Model nieskalibrowany na danych terenowych.</p></div>
+    <div class="details-block"><h4>Dlaczego tutaj</h4>${explanations(score, true)}</div>
+    <div class="details-block"><h4>Pewność oceny</h4>${confidence(score)}</div>
+    ${w ? `<div class="details-block"><h4>Pogoda w tym miejscu</h4><p class="weather-disclaimer">${escape(WEATHER_DISCLAIMER)}</p></div>` : ""}
+    <div class="details-block"><h4>Dostęp i punkt orientacyjny</h4>${access(score)}<div class="point-note">Punkt orientacyjny: ${escape(coordinates(opts.point))}.<br>Dojazd samochodem: brak danych.</div></div>
+    <div class="details-block"><h4>Drzewostan i otoczenie</h4>${packageSection(detail)}${structureSection(detail)}${neighborsSection(detail)}</div>
+    <div class="details-block data-note"><strong>Zakres danych</strong><p>${score.mask ? "Wydzielenie przeszło filtry modelu. Nie jest to potwierdzenie pełnej dostępności prawnej." : "Wydzielenie wykluczone przez filtr modelu."}</p><p>Analiza: ${formatDate(score.day)}.<br>Daty pobrania poszczególnych źródeł: brak danych.</p><p>Zakazy wstępu do lasu są sprawdzane na dzień przygotowania analizy, nie na dzień wyjazdu.${zakazNote(score.zakaz_status) ? ` ${zakazNote(score.zakaz_status)}` : ""}</p></div>`;
+}
+
+// ---- Wiersz listy i karty ----
+
+function rowHtml(o: {
+  attr: string;
+  selectAttr: string;
+  id: string;
+  rank: number;
+  name: string;
+  meta: string;
+  value: number;
+  score: Score;
+  selected: boolean;
+  body: string;
+  eyebrow?: string;
+}) {
+  return `<article class="row ${o.selected ? "selected" : ""}" ${o.attr}="${escape(o.id)}"><button class="row-main" ${o.selectAttr}="${escape(o.id)}" aria-pressed="${o.selected}" aria-label="${escape(`${o.rank}. ${o.name}, wynik ${Math.round(o.value)}`)}"><span class="region-number">${String(o.rank).padStart(2, "0")}</span><span class="row-text"><strong class="row-name">${escape(o.name)}</strong><small class="row-meta">${escape(o.meta)}</small></span>${miniBars(o.score)}${scoreBadge(o.value)}</button>${o.body}</article>`;
+}
+function metaLine(parts: (string | null)[]) {
+  return parts.filter((p): p is string => !!p).join(" · ");
+}
+function actions(o: { saveAttr: string; id: string; saved: boolean; saveLabel: string; navPoint: [number, number]; navLabel: string }) {
+  return `<div class="card-actions"><button class="save-button ${o.saved ? "is-saved" : ""}" ${o.saveAttr}="${escape(o.id)}">${icon(o.saved ? "check" : "bookmark")}${o.saved ? "Zapisano" : o.saveLabel}</button><a class="navigation-link" href="${navigationUrl(o.navPoint)}" target="_blank" rel="noopener noreferrer" aria-label="${escape(o.navLabel)}">${icon("location")}Nawiguj</a><button class="show-on-map" data-show-map="1">${icon("map")}Na mapie</button></div>`;
+}
+// Adres lesny po polsku: nadlesnictwo (kod), lesnictwo, oddzial, pododdzial.
+function addressLine(standId: string) {
+  const parsed = parseStandId(standId);
+  if (!parsed) return "";
+  const detail = detailFor(standId);
+  const name = standName(standId, detail).split(" · ")[1] ?? "";
+  return `<p class="muted">${escape(name)} (kod ${escape(parsed.district)}) · leśnictwo nr ${escape(parsed.forestry)} · oddział ${escape(parsed.section)} · pododdział ${escape(parsed.subsection)}</p>`;
+}
+function standRow(entry: StandView, index: number) {
+  const score = entry.score;
+  const detail = detailFor(score.stand_id);
+  const isSelected = selected === score.stand_id;
+  const name = standName(score.stand_id, detail);
+  const meta = metaLine([areaLabel(score.area_ha), startDistanceLabel(startPoint, entry.point)]);
+  let body = "";
+  if (isSelected) {
+    const isSaved = getSaved().some((s) => s.key === savedKey(score.stand_id, entry.point));
+    const rank = `Miejsce ${index + 1} w rankingu${pressure ? "" : " bez presji"}: wynik ${entry.r.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}.`;
+    body = `<div class="card-body">${barsSection(score)}${factChips(keyFacts(detail?.access, score.area_ha, score.d_park_m))}${actions({ saveAttr: "data-save", id: score.stand_id, saved: isSaved, saveLabel: "Zapisz miejsce", navPoint: entry.point, navLabel: `Nawiguj do punktu orientacyjnego wydzielenia ${name}` })}<details class="card-details"><summary>Szczegóły</summary><div class="details-inner"><div class="details-block"><h4>Identyfikator</h4><p class="stand-id">${escape(score.stand_id)}</p>${addressLine(score.stand_id)}</div>${scoreDetails(score, { rankLine: rank, point: entry.point })}</div></details><div class="freshness">Analiza: ${formatDate(score.day)}</div></div>`;
+  }
+  return rowHtml({
+    attr: "data-card",
+    selectAttr: "data-select",
+    id: score.stand_id,
+    rank: index + 1,
+    name,
+    meta,
+    value: entry.r,
+    score,
+    selected: isSelected,
+    body,
+  });
 }
 function regionPoint(view: RegionView): [number, number] {
   return [view.region.centroid_lon, view.region.centroid_lat];
 }
-function regionCard(view: RegionView, index: number) {
+function regionTitle(view: RegionView) {
+  return regionName(view.region, regionViews.indexOf(view) + 1);
+}
+function regionRow(view: RegionView, index: number) {
   const isSelected = selectedRegionId === view.region.region_id;
   const point = regionPoint(view);
-  const isSaved = getSaved().some(
-    (s) => s.key === savedKey(view.region.region_id, point),
-  );
   const score = view.top.score;
-  return `<article class="region-card ${isSelected ? "selected" : ""}" data-region-card="${escape(view.region.region_id)}"><button class="card-select" data-region-select="${escape(view.region.region_id)}" aria-pressed="${isSelected}"><span class="region-number">${String(index + 1).padStart(2, "0")}</span><span class="card-title"><span class="card-eyebrow">${index === 0 ? "PIERWSZY WYBÓR" : "WARTO ROZWAŻYĆ"}</span><strong>Rejon ${escape(view.region.region_id)}</strong><small> ${view.members.length} wydzieleń · ${coordinates(point)}</small></span><span class="select-arrow">${icon("arrow")}</span></button><div class="card-body"><div class="badge-row"><span class="badge">${icon("leaf")}${fruitingClass(score?.F)}</span>${confidence(score)}</div>${assessment(score)}<p class="why-label">Dlaczego tutaj?</p>${explanations(score)}${isSelected ? `${weatherSection(score)}${regionAccess(view, score)}<div class="point-note">Punkt orientacyjny: środek najlepiej ocenionego wydzielenia w rejonie.<br>Dojazd samochodem: brak danych.</div><details class="model-details"><summary>Ranking i dostępność</summary><p>Ranking rejonu: ${view.region.rank_score.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} · mediana najlepszych wydzieleń, model nieskalibrowany.</p><p>Dostępność dla innych odwiedzających (P): ${finite(score?.P) ? score!.P!.toFixed(2) : "brak danych"} (najlepiej ocenione wydzielenie). To wskaźnik modelu, nie pomiar tłoku. Brak danych o wejściach może obniżać ten wynik.</p></details>` : ""}<div class="card-actions"><button class="save-button ${isSaved ? "is-saved" : ""}" data-region-save="${escape(view.region.region_id)}">${icon(isSaved ? "check" : "bookmark")}${isSaved ? "Zapisano" : "Zapisz rejon"}</button><a class="navigation-link" href="${navigationUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="Nawiguj do punktu orientacyjnego rejonu ${escape(view.region.region_id)}">${icon("location")}Nawiguj</a></div><button class="detail-button" data-region-detail="${escape(view.region.region_id)}">Zobacz wydzielenia w rejonie (${view.members.length}) ${icon("arrow")}</button><div class="freshness">Analiza: ${formatDate(view.region.day)}</div></div></article>`;
+  const name = regionName(view.region, index + 1);
+  const totalArea = view.members.reduce((sum, m) => sum + (finite(m.score.area_ha) ? m.score.area_ha : 0), 0);
+  const meta = metaLine([
+    `${view.members.length} wydzieleń`,
+    areaLabel(totalArea > 0 ? totalArea : null),
+    startDistanceLabel(startPoint, point),
+  ]);
+  let body = "";
+  if (isSelected) {
+    const isSaved = getSaved().some((s) => s.key === savedKey(view.region.region_id, point));
+    const topAccess = detailFor(score.stand_id)?.access;
+    const facts = [`${view.members.length} wydzieleń`, ...keyFacts(topAccess, totalArea > 0 ? totalArea : null, score.d_park_m)].slice(0, 4);
+    const place = view.region.near_place
+      ? `<div class="details-block"><h4>Położenie</h4><p>Najbliższa miejscowość: ${escape(view.region.near_place.name)}, ${distanceLabel(view.region.near_place.distance_m)} od środka rejonu.</p></div>`
+      : "";
+    const rankLine = `Ranking rejonu: ${view.region.rank_score.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}${pressure ? "" : " (bez presji grzybiarzy)"} — mediana wyniku najlepszych wydzieleń rejonu. Paski i wartości poniżej dotyczą najlepiej ocenionego wydzielenia w rejonie (${escape(standName(score.stand_id, detailFor(score.stand_id)))}).`;
+    body = `<div class="card-body">${barsSection(score, { top: true })}${factChips(facts)}${actions({ saveAttr: "data-region-save", id: view.region.region_id, saved: isSaved, saveLabel: "Zapisz rejon", navPoint: point, navLabel: `Nawiguj do punktu orientacyjnego rejonu ${name}` })}<button class="detail-button" data-region-detail="${escape(view.region.region_id)}">Zobacz wydzielenia w rejonie (${view.members.length}) ${icon("arrow")}</button><details class="card-details"><summary>Szczegóły</summary><div class="details-inner"><div class="details-block"><h4>Identyfikator</h4><p class="stand-id">${escape(view.region.region_id)}</p><p class="muted">Środek: ${escape(coordinates(point))}. Wydzielenie najlepsze w rejonie: ${escape(score.stand_id)}.</p></div>${place}${scoreDetails(score, { rankLine, point })}<div class="details-block"><h4>Dostęp w całym rejonie</h4>${regionAccess(view, score)}</div></div></details><div class="freshness">Analiza: ${formatDate(view.region.day)}</div></div>`;
+  }
+  return rowHtml({
+    attr: "data-region-card",
+    selectAttr: "data-region-select",
+    id: view.region.region_id,
+    rank: index + 1,
+    name,
+    meta,
+    value: view.region.rank_score,
+    score,
+    selected: isSelected,
+    body,
+  });
 }
+
+// ---- Przelacznik presji (Faza UI.1) ----
+
+function renderPressureSwitch() {
+  const el = $("#pressure-switch");
+  el.hidden = !loaded || savedOnly;
+  if (el.hidden) return;
+  const hint = !pressureAvailable
+    ? "Niedostępne w tej migawce — starszy eksport nie ma wyników bez presji."
+    : pressure
+      ? "Ranking uwzględnia dojazd i to, ilu innych grzybiarzy można spotkać."
+      : "Ranking tylko z siedliska i pogody — bez wpływu presji.";
+  el.innerHTML = `<label class="switch-row${pressureAvailable ? "" : " is-disabled"}"><span class="switch-text"><strong>Uwzględniaj presję grzybiarzy</strong><small>${escape(hint)}</small></span><input type="checkbox" id="pressure-toggle" role="switch" ${pressure ? "checked" : ""} ${pressureAvailable ? "" : "disabled"}><span class="switch-track" aria-hidden="true"><i></i></span></label>`;
+}
+function applyPressure(on: boolean, options: { remember: boolean }) {
+  const next = on && pressureAvailable;
+  if (options.remember) setPressurePreference(on);
+  if (next === pressure && entries.length) {
+    renderPressureSwitch();
+    return;
+  }
+  pressure = next;
+  entries = pressure ? baseEntries : rankEntries(baseEntries, false);
+  const regionSource = pressure ? regionsWithPressure : (regionsWithoutPressure ?? []);
+  regionViews = joinRegions(regionSource, entries);
+  page = 0;
+  regionFilterId = null;
+  map?.setData(entries, false);
+  if (!entries.some((e) => e.score.stand_id === selected)) selected = entries[0]?.score.stand_id ?? "";
+  selectedRegionId = regionViews[0]?.region.region_id ?? "";
+  if (viewMode === "regions" && !regionViews.length && entries.length) viewMode = "stands";
+  if (viewMode === "regions" && regionViews.length) {
+    renderPanel();
+    selectRegionCard(selectedRegionId);
+  } else {
+    renderPanel();
+    map?.select(selected);
+    map?.focusStand(selected);
+  }
+}
+
 function renderRegionsPanel() {
   $("#panel-heading").innerHTML =
     `<div><h2>Rejony <span class="count-pill">${regionViews.length}</span></h2><p>Grupy sąsiadujących wydzieleń · po filtrach modelu</p></div><span class="sort-label">Najlepsze najpierw ↓</span>`;
   $("#cards").innerHTML = regionViews.length
-    ? regionViews.map((view, i) => regionCard(view, i)).join("")
+    ? regionViews.map((view, i) => regionRow(view, i)).join("")
     : `<div class="empty"><span class="empty-icon">${icon("leaf")}</span><h2>Brak rejonów w tej analizie</h2><p>Żadna grupa wydzieleń nie spełniła kryteriów grupowania. Zobacz widok „Wydzielenia” albo przygotuj nową analizę bliżej wyjazdu.</p></div>`;
   $("#map-title").textContent =
     `${regionViews.length} rejonów · przygotowany obszar`;
-  $("#legend-content").innerHTML =
-    '<span class="gradient-legend"></span> Niższy → wyższy ranking (skala wg rozkładu ocen w tej analizie)';
+  updateLegend();
+}
+function updateLegend() {
+  if (colorMode === "moisture") {
+    const gradient = MOISTURE_STOPS.map(([v, c]) => `${c} ${Math.round(v * 100)}%`).join(", ");
+    $("#legend-content").innerHTML = `<span class="moisture-legend"><span class="moisture-bar" style="background:linear-gradient(90deg, ${gradient})"></span><span class="moisture-ticks">${MOISTURE_LEGEND_TICKS.map((v) => `<i>${moistureTickLabel(v)}</i>`).join("")}</span></span><span class="moisture-note">Wilgotność M: sucho → wilgotno (skala bezwzględna 0–1). ${escape(MOISTURE_NOTE)} Wydzielenia poza maską modelu — jaśniej.</span>`;
+    return;
+  }
+  $("#legend-content").innerHTML = `<span class="gradient-legend"></span> Niższy → wyższy ranking${pressure ? "" : " bez presji grzybiarzy"} (skala wg rozkładu ocen w tej analizie)`;
+}
+// Trzy przyciski kolorowania mapy obok legendy (a: wynik, b: wynik bez presji, c: wilgotność).
+function renderColorModes() {
+  const modes: { id: MapColorMode; label: string; ok: boolean; why: string }[] = [
+    { id: "score", label: "Wynik", ok: true, why: "" },
+    {
+      id: "score_no_pressure",
+      label: "Wynik bez presji",
+      ok: pressureAvailable,
+      why: "Wynik bez presji: niedostępny w tej migawce (starszy eksport).",
+    },
+    {
+      id: "moisture",
+      label: "Wilgotność",
+      ok: moistureOk,
+      why: "Wilgotność: niedostępna w tej migawce (starszy eksport bez składowej M).",
+    },
+  ];
+  const hints = modes.filter((m) => !m.ok).map((m) => m.why);
+  $("#color-modes").innerHTML = `<div class="color-mode-group" role="group" aria-label="Kolor mapy">${modes
+    .map(
+      (m) =>
+        `<button class="color-mode${colorMode === m.id ? " active" : ""}" data-color-mode="${m.id}" aria-pressed="${colorMode === m.id}" ${m.ok ? "" : "disabled"} ${m.ok ? "" : `title="${escape(m.why)}"`}>${m.label}</button>`,
+    )
+    .join("")}</div>${hints.length ? `<p class="color-mode-hint">${escape(hints.join(" "))}</p>` : ""}`;
+}
+// Jedno miejsce zmiany kolorowania mapy i presji, zeby przelacznik i przyciski nie byly sprzeczne.
+function setColorControls(next: { pressure: boolean; colorMode: MapColorMode }) {
+  const pressureChanged = next.pressure !== pressure;
+  colorMode = next.colorMode;
+  setColorModePreference(colorMode);
+  if (pressureChanged) applyPressure(next.pressure, { remember: true });
+  map?.setColorMode(colorMode);
+  renderColorModes();
+  renderPressureSwitch();
+  updateLegend();
 }
 function visibleEntries(): StandView[] {
   // Plan 2.1 step A4: sub-0.5ha stands are hidden as standalone targets in
@@ -396,6 +718,7 @@ function renderPanel() {
   $("#explore-nav").classList.toggle("active", !savedOnly);
   $("#saved-nav").classList.toggle("active", savedOnly);
   updateViewToggle();
+  renderPressureSwitch();
   if (savedOnly) {
     renderSaved();
     return;
@@ -407,12 +730,9 @@ function renderPanel() {
         `<div class="empty"><span class="empty-icon">${icon("map")}</span><h2>Nie udało się wczytać analizy</h2><p>${escape(loadError)}</p><button class="primary" id="retry">Spróbuj ponownie</button><p>Zapisane miejsca znajdziesz w zakładce „Zapisane”.</p></div>`;
     return;
   }
-  if (detail) {
-    renderDetail();
-    return;
-  }
   if (viewMode === "regions" && !regionFilterId) {
     renderRegionsPanel();
+    scrollSelectedIntoView();
     return;
   }
   const visible = visibleEntries();
@@ -420,36 +740,26 @@ function renderPanel() {
     ? regionViews.find((v) => v.region.region_id === regionFilterId)
     : undefined;
   $("#panel-heading").innerHTML = filterView
-    ? `<div><button class="back-button" id="back-to-regions">← Wróć do rejonów</button><h2>Rejon ${escape(filterView.region.region_id)} <span class="count-pill">${visible.length}</span></h2><p>Wydzielenia należące do tego rejonu</p></div>`
+    ? `<div><button class="back-button" id="back-to-regions">← Wróć do rejonów</button><h2>${escape(regionTitle(filterView))} <span class="count-pill">${visible.length}</span></h2><p>Wydzielenia należące do tego rejonu</p></div>`
     : `<div><h2>Wydzielenia <span class="count-pill">${visible.length}</span></h2><p>Każde ocenione osobno · po filtrach modelu</p></div><span class="sort-label">Najlepsze najpierw ↓</span>`;
   $("#cards").innerHTML = visible.length
     ? visible
         .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-        .map((entry, i) => card(entry, page * PAGE_SIZE + i))
+        .map((entry, i) => standRow(entry, page * PAGE_SIZE + i))
         .join("") +
       `<div class="pagination"><button id="previous-page" ${page === 0 ? "disabled" : ""}>← Poprzednie</button><span>${page + 1} / ${Math.ceil(visible.length / PAGE_SIZE)}</span><button id="next-page" ${(page + 1) * PAGE_SIZE >= visible.length ? "disabled" : ""}>Następne →</button></div>`
     : '<div class="empty"><span class="empty-icon">' +
       icon("leaf") +
       "</span><h2>Brak propozycji w tej analizie</h2><p>Żadne wydzielenie nie spełniło kryteriów. Sprawdź inny obszar lub przygotuj nową analizę bliżej wyjazdu.</p></div>";
   $("#map-title").textContent = filterView
-    ? `Rejon ${filterView.region.region_id} · ${visible.length} wydzieleń`
+    ? `${regionTitle(filterView)} · ${visible.length} wydzieleń`
     : `${visible.length} wydzieleń · przygotowany obszar`;
-  $("#legend-content").innerHTML =
-    '<span class="gradient-legend"></span> Niższy → wyższy ranking (skala wg rozkładu ocen w tej analizie)';
+  updateLegend();
+  scrollSelectedIntoView();
 }
-function renderDetail() {
-  const entry = entries.find((r) => r.score.stand_id === selected);
-  if (!entry) return;
-  const score = entry.score;
-  const detail = detailFor(score.stand_id);
-  $("#panel-heading").innerHTML =
-    '<button class="back-button" id="back">← Wróć do listy wydzieleń</button>';
-  $("#cards").innerHTML =
-    `<div class="stand-panel">${score ? `<p class="eyebrow detail-eyebrow">SZCZEGÓŁY WYDZIELENIA</p><h3 class="stand-id">${escape(score.stand_id)}</h3><div class="badge-row"><span class="badge">${fruitingClass(score.F)}</span>${confidence(score)}</div>${assessment(score)}<dl class="metrics"><div><dt>Ranking R</dt><dd>${finite(score.R) ? score.R.toFixed(1) : "—"}</dd></div><div><dt>Siedlisko H</dt><dd>${finite(score.H) ? score.H.toFixed(2) : "—"}</dd></div><div><dt>Warunki regionalne F</dt><dd>${fruitingClass(score.F)}</dd></div><div><dt>Warunki lokalne F</dt><dd>${fruitingClass(score.F_loc)}</dd></div><div><dt>Dostępność dla odwiedzających P</dt><dd>${finite(score.P) ? score.P.toFixed(2) : "—"}</dd></div></dl><p class="muted">Model ekspercki, nieskalibrowany. P jest szacunkiem dostępności, nie pomiarem tłoku.</p><h3>Co wpływa na wynik?</h3>${explanations(score, true)}${weatherSection(score)}${access(score)}<h3>Drzewostan i otoczenie</h3>${packageSection(detail)}${structureSection(detail)}${neighborsSection(detail)}<div class="data-note"><strong>Zakres danych</strong><p>${score.mask ? "Wydzielenie przeszło filtry modelu. Nie jest to potwierdzenie pełnej dostępności prawnej." : "Wydzielenie wykluczone przez filtr modelu."}</p><p>Analiza: ${formatDate(score.day)}.<br>Daty pobrania poszczególnych źródeł: brak danych.</p><p>Zakazy wstępu do lasu są sprawdzane na dzień przygotowania analizy, nie na dzień wyjazdu.${zakazNote(score.zakaz_status) ? ` ${zakazNote(score.zakaz_status)}` : ""}</p></div>` : "<p>Brak szczegółów.</p>"}</div>`;
-  $("#map-title").textContent = `Wydzielenie ${entry.score.stand_id}`;
-  $("#legend-content").innerHTML =
-    '<span class="gradient-legend"></span> Niższy → wyższy ranking (skala wg rozkładu ocen w tej analizie)';
-  map?.select(selected);
+function scrollSelectedIntoView() {
+  const el = document.querySelector<HTMLElement>("#cards .row.selected");
+  el?.scrollIntoView({ block: "nearest" });
 }
 function renderSaved() {
   const saved = getSaved();
@@ -467,7 +777,6 @@ function selectStand(id: string, focus = true) {
       visibleEntries().findIndex((e) => e.score.stand_id === id) / PAGE_SIZE,
     ),
   );
-  detail = false;
   savedOnly = false;
   renderPanel();
   map?.select(id);
@@ -475,7 +784,6 @@ function selectStand(id: string, focus = true) {
 }
 function selectRegionCard(id: string, focus = true) {
   selectedRegionId = id;
-  detail = false;
   savedOnly = false;
   viewMode = "regions";
   regionFilterId = null;
@@ -506,11 +814,11 @@ function save(id: string) {
   if (!entry) return;
   const item: SavedRegion = {
     key: savedKey(id, entry.point),
-    title: `Wydzielenie ${entry.score.stand_id}`,
+    title: standName(entry.score.stand_id, detailFor(entry.score.stand_id)),
     point: entry.point,
     day: entry.score.day,
     conditions: fruitingClass(entry.score?.F),
-    reasons: topExplanations(entry.score?.explanation ?? []).map((e) => e.text),
+    reasons: topExplanations(visibleExplanations(entry.score)).map((e) => e.text),
     savedAt: new Date().toISOString(),
   };
   try {
@@ -529,11 +837,11 @@ function saveRegionCard(id: string) {
   const point = regionPoint(view);
   const item: SavedRegion = {
     key: savedKey(id, point),
-    title: `Rejon ${view.region.region_id}`,
+    title: regionTitle(view),
     point,
     day: view.region.day,
     conditions: fruitingClass(view.top.score?.F),
-    reasons: topExplanations(view.top.score?.explanation ?? []).map(
+    reasons: topExplanations(visibleExplanations(view.top.score)).map(
       (e) => e.text,
     ),
     savedAt: new Date().toISOString(),
@@ -564,24 +872,56 @@ function switchView(mode: "regions" | "stands") {
     map?.fitAll();
   }
 }
+// Faza UI.4: zakladki Lista / Mapa na waskim ekranie (na szerokim sa ignorowane przez CSS).
+function setPane(pane: "list" | "map") {
+  mobilePane = pane;
+  $("#workspace").dataset.pane = pane;
+  document.querySelectorAll<HTMLElement>(".mobile-tab").forEach((tab) => {
+    const active = tab.dataset.pane === pane;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  if (pane === "map")
+    requestAnimationFrame(() => {
+      // Mapa ukryta na zakladce "Lista" ma zerowy rozmiar -- po pokazaniu odswiez rozmiar i widok.
+      map?.resize();
+      const region =
+        viewMode === "regions" && !regionFilterId
+          ? regionViews.find((v) => v.region.region_id === selectedRegionId)
+          : undefined;
+      if (region) map?.focusStands(region.members.map((m) => m.score.stand_id));
+      else if (selected) map?.focusStand(selected);
+    });
+}
+const isNarrow = () => window.matchMedia("(max-width: 760px)").matches;
 
 document.addEventListener("click", (event) => {
   const button = (event.target as Element).closest<HTMLElement>("button");
   if (!button) return;
+  if (button.dataset.pane === "list" || button.dataset.pane === "map") {
+    setPane(button.dataset.pane);
+    return;
+  }
+  if (button.dataset.colorMode) {
+    const next = chooseColorMode(
+      { pressure, colorMode },
+      button.dataset.colorMode as MapColorMode,
+      { pressure: pressureAvailable, moisture: moistureOk },
+    );
+    if (next) setColorControls(next);
+    else notify("Ten tryb kolorowania jest niedostępny w tej migawce.");
+    return;
+  }
+  if (button.dataset.showMap) {
+    setPane("map");
+    return;
+  }
   if (button.dataset.select) {
     selectStand(button.dataset.select);
     return;
   }
   if (button.dataset.save) {
     save(button.dataset.save);
-    return;
-  }
-  if (button.dataset.detail) {
-    selected = button.dataset.detail;
-    detail = true;
-    renderPanel();
-    map?.focusStand(selected);
-    $("#back").focus();
     return;
   }
   if (button.dataset.regionSelect) {
@@ -616,11 +956,7 @@ document.addEventListener("click", (event) => {
       page += button.id === "next-page" ? 1 : -1;
       renderPanel();
       $("#cards").scrollTop = 0;
-      break;
-    case "back":
-      detail = false;
-      renderPanel();
-      map?.select(selected);
+      if (isNarrow()) $("#workspace").scrollIntoView();
       break;
     case "back-to-regions":
       if (regionFilterId) selectRegionCard(regionFilterId);
@@ -640,8 +976,7 @@ document.addEventListener("click", (event) => {
         viewMode === "regions" && !regionFilterId
           ? regionViews.find((v) => v.region.region_id === selectedRegionId)
           : undefined;
-      if (detail) map?.focusStand(selected);
-      else if (activeRegion)
+      if (activeRegion)
         map?.focusStands(activeRegion.members.map((m) => m.score.stand_id));
       else map?.fitAll();
       break;
@@ -659,6 +994,12 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("change", (event) => {
   const select = event.target as HTMLElement;
+  if (select.id === "pressure-toggle") {
+    setColorControls(
+      togglePressureControls((select as HTMLInputElement).checked, { pressure: pressureAvailable }),
+    );
+    return;
+  }
   if (select.id !== "trips-select") return;
   const value = (select as HTMLSelectElement).value;
   void initialize(value ? `data/trips/${value}/` : "data/", value || null);
@@ -708,19 +1049,32 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
   try {
     const data = await loadData(basePath);
     if (seq !== loadSeq) return; // a newer switch/retry already started
-    entries = data.entries;
+    baseEntries = data.entries;
     allScores = data.scores;
-    allRegions = data.regions;
-    allDetails = data.details;
-    regionViews = joinRegions(allRegions, entries);
+    regionsWithPressure = data.regions;
+    regionsWithoutPressure = data.regionsNoPressure;
+    detailsById = new Map(data.details.map((d) => [d.stand_id, d]));
+    startPoint = data.start;
+    pressureAlpha = data.pressureAlpha;
+    // Faza UI.1: bez R_bez_presji i drugiego zestawu rejonow (starsza migawka) przelacznik jest
+    // nieaktywny, a ranking dziala jak dotad.
+    pressureAvailable = pressureSwitchAvailable(allScores, regionsWithoutPressure);
+    pressure = pressureAvailable ? getPressurePreference() : true;
+    moistureOk = moistureAvailable(allScores);
+    colorMode = resolveColorMode(getColorModePreference(), pressure, moistureOk);
+    entries = pressure ? baseEntries : rankEntries(baseEntries, false);
+    regionViews = joinRegions(
+      pressure ? regionsWithPressure : (regionsWithoutPressure ?? []),
+      entries,
+    );
     loaded = true;
     page = 0;
-    detail = false;
     regionFilterId = null;
     selected = entries[0]?.score.stand_id ?? "";
     selectedRegionId = regionViews[0]?.region.region_id ?? "";
     viewMode =
       getViewModePreference() ?? (regionViews.length > 0 ? "regions" : "stands");
+    if (viewMode === "regions" && regionViews.length === 0) viewMode = "stands";
     const day = allScores[0]?.day ?? entries[0]?.score.day;
     $("#analysis-date").textContent = day ? formatDate(day) : "Brak wyników";
     const values = allScores
@@ -741,6 +1095,13 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
         map = new ForestMap(
           $("#map"),
           (id) => {
+            // Tryb Wilgotnosc pokazuje tez wydzielenia poza maska modelu -- nie maja oceny ani karty.
+            if (!entries.some((e) => e.score.stand_id === id)) {
+              notify("To wydzielenie jest poza maską modelu — nie ma oceny ani karty.");
+              return;
+            }
+            // Faza UI.4: dotkniecie wydzielenia na mapie (telefon) pokazuje jego karte na liscie.
+            if (isNarrow()) setPane("list");
             if (viewMode === "stands" || regionFilterId) {
               selectStand(id);
               const card = Array.from(
@@ -769,7 +1130,18 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
         );
       }
     }
+    // Geometria WSZYSTKICH wydzielen z M (tryb Wilgotnosc pokazuje tez te poza maska).
+    const moistureById = new Map(allScores.map((sc) => [sc.stand_id, finite(sc.M) ? sc.M : null]));
+    map?.setAllStands(
+      data.stands.features.map((feature) => ({
+        feature,
+        moisture: moistureById.get(feature.properties.stand_id) ?? null,
+      })),
+    );
     map?.setData(entries);
+    map?.setColorMode(colorMode);
+    renderColorModes();
+    updateLegend();
     map?.setAccessData(data.accessPoints, data.forestRoads);
     for (const l of ACCESS_LAYERS) map?.setLayerVisible(l.id, layerState[l.id]);
     renderLayerControls(data.accessPoints, data.forestRoads);
@@ -789,17 +1161,25 @@ async function initialize(basePath: string = "data/", tripId: string | null = nu
       error instanceof Error ? error.message : "Nieznany błąd wczytywania.";
     $("#analysis-date").textContent = "Dane niedostępne";
     $("#conditions").innerHTML =
-      `<span class="condition-symbol">${icon("info")}</span><div><strong>Brak dostępnej analizy</strong><p>Przygotuj komplet danych przed wyjazdem.</p></div>`;
+      `<span class="condition-symbol">${icon("info")}</span><div class="cond-main"><strong>Brak dostępnej analizy</strong><p>Przygotuj komplet danych przed wyjazdem.</p></div>`;
     // Otherwise a failed switch (e.g. a corrupted saved trip) leaves the
     // PREVIOUS dataset's polygons/pin drawn under the error banner, which
     // misleadingly looks like it's still the current view.
     entries = [];
+    baseEntries = [];
+    regionViews = [];
+    moistureOk = false;
+    pressureAvailable = false;
+    colorMode = "score";
+    map?.setAllStands([]);
     map?.setData([]);
+    renderColorModes();
     map?.setAccessData(null, null);
     $("#layer-controls").hidden = true;
     map?.select("");
     renderPanel();
   }
 }
+setPane(mobilePane);
 updateSavedCount();
 void initialize();

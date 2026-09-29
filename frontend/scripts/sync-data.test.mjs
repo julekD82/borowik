@@ -33,6 +33,7 @@ it("copies one complete same-day bundle", async () => {
     day: "2026-09-24",
     stands: 1,
     regions: 0,
+    regionsNoPressure: 0,
     details: 0,
     conditions: 0,
     manifest: 0,
@@ -113,6 +114,33 @@ it("removes a stale regions.json from a previous sync when the new day has none"
   await expect(
     readFile(path.join(target, "regions.json"), "utf8"),
   ).rejects.toThrow();
+});
+
+// Faza UI.1: regions_bez_presji_{day}.json -> regions_bez_presji.json, optional, walidowany jak regions.
+it("syncs a same-day regions_bez_presji file and removes a stale one later", async () => {
+  const { source, target } = await fixture();
+  const file = path.join(source, "regions_bez_presji_2026-09-24.json");
+  await writeFile(
+    file,
+    JSON.stringify([{ region_id: "region_1", day: "2026-09-24", stand_ids: ["A"] }]),
+  );
+  const result = await syncData(source, target);
+  expect(result.regionsNoPressure).toBe(1);
+  expect(
+    JSON.parse(await readFile(path.join(target, "regions_bez_presji.json"), "utf8"))[0].region_id,
+  ).toBe("region_1");
+  await rm(file);
+  expect((await syncData(source, target)).regionsNoPressure).toBe(0);
+  await expect(readFile(path.join(target, "regions_bez_presji.json"), "utf8")).rejects.toThrow();
+});
+it("rejects a regions_bez_presji file that references an unknown stand_id", async () => {
+  const { source, target } = await fixture();
+  await writeFile(
+    path.join(source, "regions_bez_presji_2026-09-24.json"),
+    JSON.stringify([{ region_id: "region_1", day: "2026-09-24", stand_ids: ["A", "GHOST"] }]),
+  );
+  await expect(syncData(source, target)).rejects.toThrow("bez presji");
+  await expect(readFile(path.join(target, "scores.json"), "utf8")).rejects.toThrow();
 });
 
 // Plan 2.1 step B3: details_{day}.json -> details.json, same optional
