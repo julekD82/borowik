@@ -60,6 +60,22 @@ def to_local_date(dates: pd.Series) -> pd.Series:
     return (dates + pd.Timedelta(hours=12)).dt.tz_convert("Europe/Warsaw").dt.date
 
 
+def _point_frame(data: dict, lat: float, lon: float) -> pd.DataFrame:
+    """One point's DataFrame with lat/lon and a `date` column of a single, fixed
+    dtype (datetime64[ns, UTC]). Needed because a fresh API response and a
+    per-point cache read (parquet round trip) carry the same instants at
+    DIFFERENT datetime resolutions (seconds vs milliseconds), and pandas 3's
+    pd.concat of such frames yields dtype `object` -- which then crashed
+    `.dt` accessors downstream (radar merge) as soon as a run mixed cached and
+    freshly fetched points, e.g. after widening the search radius."""
+    df = pd.DataFrame(data)
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], utc=True).astype("datetime64[ns, UTC]")
+    df["lat"] = lat
+    df["lon"] = lon
+    return df
+
+
 def _point_cache_path(cache_dir: Path, lat: float, lon: float, suffix: str | None) -> Path:
     name = f"{lat:.6f}_{lon:.6f}"
     if suffix is not None:
@@ -224,12 +240,7 @@ def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92,
             f"{date.today().isoformat()}_fd{forecast_days}_pd{past_days}_v1",
             lambda pts: call_api(pts, past_days, forecast_days=forecast_days),
         )
-    frames = []
-    for (lat, lon), data in zip(points, results):
-        df = pd.DataFrame(data)
-        df["lat"] = lat
-        df["lon"] = lon
-        frames.append(df)
+    frames = [_point_frame(data, lat, lon) for (lat, lon), data in zip(points, results)]
     result = pd.concat(frames, ignore_index=True)
     if cache_dir is not None:
         # Plan 2.2: keep the raw forecast with its issue time. Best-effort --
@@ -416,12 +427,7 @@ def fetch_climatology_raw(points: list[tuple[float, float]], start_year: int = 1
             points, Path(cache_dir) / "climatology_points", f"{start_year}_{end_year}_v1",
             lambda pts: call_api(pts, start_year, end_year),
         )
-    frames = []
-    for (lat, lon), data in zip(points, results):
-        df = pd.DataFrame(data)
-        df["lat"] = lat
-        df["lon"] = lon
-        frames.append(df)
+    frames = [_point_frame(data, lat, lon) for (lat, lon), data in zip(points, results)]
     return pd.concat(frames, ignore_index=True)
 
 

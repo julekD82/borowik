@@ -461,3 +461,35 @@ def test_stand_precip_features_table_falls_back_for_uneven_group_sizes():
     expected_b = precip_derived_features(pd.Series([10.0] * 5), pd.Series([0.5] * 5))
     assert table.loc["a", "p26w"] == pytest.approx(expected_a["p26w"])
     assert table.loc["b", "p26w"] == pytest.approx(expected_b["p26w"])
+
+
+# --- regresja: cache + swiezy pobor punktow (pandas 3: concat roznych rozdzielczosci dat -> object) ---
+
+def _fake_point_data(resolution: str, days: int = 5) -> dict:
+    """Mimics pipeline.weather._parse_open_meteo_response: a tz-aware date range at
+    second resolution (a fresh API response), while a parquet round trip
+    (the per-point cache) gives millisecond resolution."""
+    start = pd.Timestamp("2026-09-20", tz="UTC").as_unit(resolution)
+    dates = pd.date_range(start=start, periods=days, freq="D")
+    zeros = np.zeros(days)
+    return {"date": dates, "precipitation_mm": zeros, "tmean_c": zeros, "tmin_c": zeros,
+            "tmax_c": zeros, "et0_mm": zeros, "soil_moisture": zeros}
+
+
+def test_fetch_weather_raw_mixing_cached_and_fresh_points_keeps_datetime_dtype(tmp_path):
+    from pipeline.weather import fetch_weather_raw, to_local_date
+    points = [(50.0, 18.0), (50.1, 18.1), (50.2, 18.2), (50.3, 18.3)]
+    api = lambda pts, past, forecast_days=1: [_fake_point_data("s") for _ in pts]
+    fetch_weather_raw(points[:2], 92, 1, api, tmp_path)         # fills the per-point cache (2 points)
+    result = fetch_weather_raw(points, 92, 1, api, tmp_path)    # 2 from cache + 2 fresh, like a 25 km run
+    assert isinstance(result["date"].dtype, pd.DatetimeTZDtype)  # was `object` -> .dt crashed in radar merge
+    assert len(to_local_date(result["date"])) == len(result)
+
+
+def test_fetch_climatology_raw_mixing_cached_and_fresh_points_keeps_datetime_dtype(tmp_path):
+    from pipeline.weather import fetch_climatology_raw
+    points = [(50.0, 18.0), (50.1, 18.1), (50.2, 18.2)]
+    api = lambda pts, start, end: [_fake_point_data("s") for _ in pts]
+    fetch_climatology_raw(points[:1], 1991, 2020, api, tmp_path)
+    result = fetch_climatology_raw(points, 1991, 2020, api, tmp_path)
+    assert isinstance(result["date"].dtype, pd.DatetimeTZDtype)
