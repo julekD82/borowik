@@ -142,7 +142,7 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
                            tie_break_index: dict, extra_features_index: dict | None = None,
                            access: dict | None = None, weather: dict | None = None,
-                           habitat: dict | None = None) -> dict:
+                           habitat: dict | None = None, forest_district: str | None = None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -173,6 +173,9 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         "weather": weather,
         # Faza UI.2: skladniki siedliska (S_host, S_site, S_age) do rozwiniecia paska.
         "habitat": habitat,
+        # Faza UI.3: nazwa nadlesnictwa z nazwy paczki BDL (bez polskich znakow) -- do nazwy
+        # wydzielenia "Oddz. 96a · Nadl. Koszecin".
+        "forest_district": forest_district,
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -230,11 +233,23 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             access=build_access_card(row),
             weather=build_weather_card(row, profile),
             habitat=build_habitat_card(row, profile),
+            forest_district=forest_district_name(row.get("nazwa")),
         )
         for _, row in stands.iterrows()
     ]
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path
+
+
+def forest_district_name(package_name) -> str | None:
+    """"BDL_02_16_KOSZECIN_2026" -> "Koszecin" (bez polskich znakow -- tak nazywaja sie
+    paczki BDL); None dla braku/innego formatu. Tylko prezentacja."""
+    if not isinstance(package_name, str):
+        return None
+    parts = package_name.split("_")
+    if len(parts) < 5 or parts[0] != "BDL":
+        return None
+    return " ".join(w.capitalize() for w in parts[3:-1]) or None
 
 
 def build_habitat_card(row, profile: dict | None = None) -> dict | None:
@@ -317,7 +332,28 @@ def build_access_card(row) -> dict | None:
     }
 
 
-def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
+_NAMED_PLACE_CLASSES = ("city", "town", "village", "hamlet", "suburb", "locality", "isolated_dwelling")
+
+
+def nearest_place(point_2180, places: gpd.GeoDataFrame | None) -> dict | None:
+    """Faza UI.3: najblizsza nazwana miejscowosc OSM od punktu (EPSG:2180) -- do nazwy
+    rejonu "Rejon 1 · kolo Lazisk". None, gdy brak miejscowosci z nazwa. Tylko
+    prezentacja."""
+    if places is None or len(places) == 0 or "name" not in places.columns:
+        return None
+    named = places[places["name"].fillna("").astype(str).str.len() > 0]
+    if "place" in named.columns:
+        named = named[named["place"].isin(_NAMED_PLACE_CLASSES)]
+    if len(named) == 0:
+        return None
+    metric = named.to_crs("EPSG:2180") if named.crs is not None and str(named.crs) != "EPSG:2180" else named
+    distances = metric.geometry.distance(point_2180)
+    best = distances.idxmin()
+    return {"name": str(named.loc[best, "name"]), "distance_m": round(float(distances.loc[best]))}
+
+
+def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path,
+                       places: gpd.GeoDataFrame | None = None) -> pathlib.Path:
     out_path = pathlib.Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Centroid computed in the regions' own (projected, metric) CRS and only
@@ -327,10 +363,14 @@ def write_regions_json(regions: gpd.GeoDataFrame, day: str, out_path) -> pathlib
     # cannot place a region at all (final review finding).
     centroids_4326 = regions.geometry.centroid.to_crs("EPSG:4326")
     records = []
-    for (_, row), point in zip(regions.iterrows(), centroids_4326):
+    for (_, row), point, centroid_2180 in zip(regions.iterrows(), centroids_4326, regions.geometry.centroid):
         record = build_region_record(row, day)
         record["centroid_lat"] = point.y
         record["centroid_lon"] = point.x
+        # Faza UI.3: najblizsza miejscowosc (nazwa rejonu w interfejsie); brak klucza
+        # w plikach sprzed tej zmiany, null gdy nie ma miejscowosci z nazwa.
+        if places is not None:
+            record["near_place"] = nearest_place(centroid_2180, places)
         records.append(record)
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path

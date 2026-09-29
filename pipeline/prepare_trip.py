@@ -894,9 +894,11 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     scores_path = write_scores_json(enriched, day=day, out_path=out_dir / f"scores_{day}.json")
     stands_path = export_stand_geometries(enriched, out_dir / "stands_mvp.parquet")
     geojson_path = export_stand_geometries_geojson(enriched, out_dir / "stands.geojson")
-    regions_path = write_regions_json(regions, day=day, out_path=out_dir / f"regions_{day}.json")
+    places = osm_features.get("places")
+    regions_path = write_regions_json(regions, day=day, out_path=out_dir / f"regions_{day}.json",
+                                      places=places)
     regions_bez_presji_path = write_regions_json(
-        regions_bez_presji, day=day, out_path=out_dir / f"regions_bez_presji_{day}.json")
+        regions_bez_presji, day=day, out_path=out_dir / f"regions_bez_presji_{day}.json", places=places)
     details_path = write_details_json(
         enriched, package_details_index, neighbors_by_stand, dictionaries,
         day=day, out_path=out_dir / f"details_{day}.json",

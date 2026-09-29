@@ -81,7 +81,9 @@ def test_access_card_is_json_safe_when_stand_has_no_top_point():
         "top_point_source": nan, "top_point_name": nan}))
     assert json.dumps(card, allow_nan=False) == json.dumps(
         {"d_parking_m": None, "d_entrance_m": None, "d_hard_forest_road_m": None, "top_point_id": None,
-         "top_point_type": None, "top_point_source": None, "top_point_name": None})
+         "top_point_type": None, "top_point_source": None, "top_point_name": None,
+             # Faza UI.2: brak kolumn pcontrib_* w wierszu -> pusty slownik (nie NaN).
+             "pressure_contrib": {}})
 
 
 def _many_segments_model(n=400):

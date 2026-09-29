@@ -45,6 +45,9 @@ export type Score = {
   // (gdos_status) -- same optional-field pattern as the others above.
   zakaz_status?: string;
   gdos_status?: string;
+  // Faza UI.1: wynik bez presji grzybiarzy, 100 * H * F_loc (alpha = 0) -- brak w
+  // eksportach sprzed tej zmiany (przelacznik presji jest wtedy nieaktywny).
+  R_bez_presji?: number | null;
 };
 export type StandFeature = Feature<
   Polygon | MultiPolygon,
@@ -58,6 +61,9 @@ export type StandView = {
   score: Score;
   feature: StandFeature;
   point: [number, number];
+  // Wynik uzywany w rankingu, na mapie i w karcie: R przy wlaczonej presji
+  // grzybiarzy, R_bez_presji przy wylaczonej (Faza UI.1).
+  r: number;
 };
 export const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
@@ -235,7 +241,36 @@ export function standCentroid(feature: StandFeature): [number, number] {
     points.reduce((s, p) => s + p[1], 0) / points.length,
   ];
 }
-export function joinData(scores: Score[], stands: Stands): StandView[] {
+// Wynik rankingowy wydzielenia w wybranym trybie presji (Faza UI.1).
+export function effectiveR(score: Score, pressure: boolean): number | null {
+  const value = pressure ? score.R : score.R_bez_presji;
+  return finite(value) ? value : null;
+}
+// Plan 2.1 "Zmiana 4": R rounded to 2 decimal places is the primary key (same
+// precision pipeline.regions._summarize_cluster uses for region member
+// ordering, chosen against a real Będziemyśl export -- see that function's own
+// docstring), tie_break the secondary key among stands tied at that
+// precision, stand_id the final deterministic tiebreaker.
+function compareViews(a: StandView, b: StandView): number {
+  const ra = Math.round(a.r * 100);
+  const rb = Math.round(b.r * 100);
+  if (rb !== ra) return rb - ra;
+  const ta = a.score.tie_break ?? -1;
+  const tb = b.score.tie_break ?? -1;
+  if (tb !== ta) return tb - ta;
+  return a.score.stand_id.localeCompare(b.score.stand_id);
+}
+// Ponowne uszeregowanie wydzielen wg wybranego trybu presji; przy `pressure = true`
+// wynik jest identyczny z joinData (test). Geometria i punkt sa wspoldzielone.
+export function rankEntries(entries: StandView[], pressure: boolean): StandView[] {
+  const ranked: StandView[] = [];
+  for (const e of entries) {
+    const r = effectiveR(e.score, pressure);
+    if (e.score.mask && r !== null) ranked.push({ ...e, r });
+  }
+  return ranked.sort(compareViews);
+}
+export function joinData(scores: Score[], stands: Stands, pressure = true): StandView[] {
   const byGeometry = new Map(
     stands.features.map((f) => [f.properties.stand_id, f]),
   );
@@ -245,27 +280,14 @@ export function joinData(scores: Score[], stands: Stands): StandView[] {
     [...ids].some((id) => !byGeometry.has(id))
   )
     throw new Error("Wyniki i geometrie dotyczą różnych zestawów wydzieleń.");
-  return scores
-    .filter((s) => s.mask && finite(s.R))
-    .sort((a, b) => {
-      // Plan 2.1 "Zmiana 4": R rounded to 2 decimal places is the primary
-      // key (same precision pipeline.regions._summarize_cluster uses for
-      // region member ordering, chosen against a real Będziemyśl export --
-      // see that function's own docstring), tie_break the secondary key
-      // among stands tied at that precision, stand_id the final
-      // deterministic tiebreaker.
-      const ra = Math.round(a.R! * 100);
-      const rb = Math.round(b.R! * 100);
-      if (rb !== ra) return rb - ra;
-      const ta = a.tie_break ?? -1;
-      const tb = b.tie_break ?? -1;
-      if (tb !== ta) return tb - ta;
-      return a.stand_id.localeCompare(b.stand_id);
-    })
-    .map((score) => {
-      const feature = byGeometry.get(score.stand_id)!;
-      return { score, feature, point: standCentroid(feature) };
-    });
+  const views: StandView[] = [];
+  for (const score of scores) {
+    const r = effectiveR(score, pressure);
+    if (!score.mask || r === null) continue;
+    const feature = byGeometry.get(score.stand_id)!;
+    views.push({ score, feature, point: standCentroid(feature), r });
+  }
+  return views.sort(compareViews);
 }
 
 // Plan 2.1 step B3 (spec §5.3 pkt 3): card-detail data only -- never fed
@@ -322,6 +344,8 @@ export type AccessCard = {
   top_point_type: string | null;
   top_point_source: string | null;
   top_point_name: string | null;
+  // Faza UI.2: wklad kazdego typu punktu w surowa presje (opcjonalne w plikach sprzed UI).
+  pressure_contrib?: Record<string, number | null>;
 };
 export type AccessCollection = FeatureCollection<Geometry, Record<string, unknown>>;
 // Plan Faza 3.5: warstwy punktow dostepu przelaczane w legendzie.
@@ -484,6 +508,16 @@ export type StandDetail = {
   // Faza 4.3/4.5: skladniki pogody tego wydzielenia (tylko prezentacja, nie wplywaja na F/R);
   // brak/null w plikach sprzed Fazy 4.
   weather?: WeatherCard | null;
+  // Faza UI.2/UI.3: skladniki siedliska i nazwa nadlesnictwa (brak w plikach sprzed UI).
+  habitat?: HabitatCard | null;
+  forest_district?: string | null;
+};
+
+export type HabitatCard = {
+  S_host: number | null;
+  S_site: number | null;
+  S_age: number | null;
+  age_mode: string | null;
 };
 
 export type WeatherCard = {
@@ -497,6 +531,10 @@ export type WeatherCard = {
   frost: "brak" | "slaby" | "silny" | null;
   frost_date: string | null;
   F: number | null;
+  // Faza UI.2: skladniki F wprost z modelu (opcjonalne w plikach sprzed UI).
+  M?: number | null;
+  T?: number | null;
+  K_frost?: number | null;
   forecast_days: number | null;
   forecast_window_share: number | null;
 };
@@ -509,6 +547,8 @@ export type Region = {
   day: string;
   centroid_lat: number;
   centroid_lon: number;
+  // Faza UI.3: najblizsza nazwana miejscowosc (OSM); brak w plikach sprzed tej zmiany.
+  near_place?: { name: string; distance_m: number } | null;
 };
 export type RegionView = {
   region: Region;
@@ -534,9 +574,7 @@ export function joinRegions(
       .map((id) => byId.get(id))
       .filter((e): e is StandView => e !== undefined);
     if (!members.length) continue;
-    const top = members.reduce((best, e) =>
-      (e.score.R ?? -Infinity) > (best.score.R ?? -Infinity) ? e : best,
-    );
+    const top = members.reduce((best, e) => (e.r > best.r ? e : best));
     views.push({ region, top, members });
   }
   return views.sort((a, b) => b.region.rank_score - a.region.rank_score);
@@ -560,11 +598,14 @@ export function parseData(
   rawStands: unknown,
   rawRegions?: unknown,
   rawDetails?: unknown,
+  rawRegionsNoPressure?: unknown,
 ): {
   entries: StandView[];
   scores: Score[];
   stands: Stands;
   regions: Region[];
+  // Faza UI.1: rejony liczone bez presji grzybiarzy; null = brak pliku (starsza migawka).
+  regionsNoPressure: Region[] | null;
   details: StandDetail[];
 } {
   if (
@@ -584,6 +625,7 @@ export function parseData(
         (s.area_ha === undefined || numeric(s.area_ha)) &&
         (s.G_season === undefined || numeric(s.G_season)) &&
         (s.tie_break === undefined || numeric(s.tie_break)) &&
+        (s.R_bez_presji === undefined || numeric(s.R_bez_presji)) &&
         (s.rain_radar_coverage === undefined || numeric(s.rain_radar_coverage)) &&
         (s.zakaz_status === undefined || typeof s.zakaz_status === "string") &&
         (s.gdos_status === undefined || typeof s.gdos_status === "string") &&
@@ -648,12 +690,11 @@ export function parseData(
   // this bundle" -- an empty list, not an error, so the per-stand view
   // still loads. If a value IS provided, it must be well-formed and
   // consistent, same as scores/stands above.
-  let regions: Region[] = [];
-  if (rawRegions !== undefined) {
-    const knownStandIds = new Set(standIds);
+  const knownIds = new Set(standIds);
+  const parseRegions = (raw: unknown, label: string): Region[] => {
     if (
-      !Array.isArray(rawRegions) ||
-      !rawRegions.every(
+      !Array.isArray(raw) ||
+      !raw.every(
         (r) =>
           object(r) &&
           typeof r.region_id === "string" &&
@@ -663,20 +704,29 @@ export function parseData(
           finite(r.centroid_lat) &&
           finite(r.centroid_lon) &&
           strings(r.stand_ids) &&
-          r.stand_ids.length > 0,
+          r.stand_ids.length > 0 &&
+          (r.near_place === undefined ||
+            r.near_place === null ||
+            (object(r.near_place) &&
+              typeof r.near_place.name === "string" &&
+              finite(r.near_place.distance_m))),
       )
     )
-      throw new Error("Niepoprawny plik rejonów.");
-    regions = rawRegions as Region[];
-    if (regions.some((r) => r.day !== scores[0]?.day))
+      throw new Error(`Niepoprawny plik rejonów${label}.`);
+    const parsed = raw as Region[];
+    if (parsed.some((r) => r.day !== scores[0]?.day))
       throw new Error(
-        "Plik rejonów pochodzi z innej daty. Zsynchronizuj dane ponownie.",
+        `Plik rejonów${label} pochodzi z innej daty. Zsynchronizuj dane ponownie.`,
       );
-    if (regions.some((r) => r.stand_ids.some((id) => !knownStandIds.has(id))))
+    if (parsed.some((r) => r.stand_ids.some((id) => !knownIds.has(id))))
       throw new Error(
-        "Rejon odwołuje się do wydzielenia spoza zsynchronizowanego zestawu.",
+        `Rejon${label} odwołuje się do wydzielenia spoza zsynchronizowanego zestawu.`,
       );
-  }
+    return parsed;
+  };
+  const regions: Region[] = rawRegions !== undefined ? parseRegions(rawRegions, "") : [];
+  const regionsNoPressure: Region[] | null =
+    rawRegionsNoPressure !== undefined ? parseRegions(rawRegionsNoPressure, " bez presji") : null;
   // Details are optional, same pattern as regions above: absent means no
   // B3 section on a stand's card, not an error. When present, one entry per
   // wydzielenie is expected but not required -- a stand missing from
@@ -704,7 +754,9 @@ export function parseData(
           (d.veg_cover === undefined || nullableString(d.veg_cover)) &&
           (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)) &&
           (d.searchability_hint === undefined || nullableString(d.searchability_hint)) &&
-          (d.access === undefined || d.access === null || object(d.access)),
+          (d.access === undefined || d.access === null || object(d.access)) &&
+          (d.habitat === undefined || d.habitat === null || object(d.habitat)) &&
+          (d.forest_district === undefined || nullableString(d.forest_district)),
       )
     )
       throw new Error("Niepoprawny plik szczegółów wydzieleń.");
@@ -719,7 +771,7 @@ export function parseData(
       );
   }
 
-  return { entries: joinData(scores, stands), scores, stands, regions, details };
+  return { entries: joinData(scores, stands), scores, stands, regions, regionsNoPressure, details };
 }
 
 export type ConditionsComponents = {
@@ -884,11 +936,20 @@ export async function loadData(basePath: string = "data/") {
   };
   const accessPoints = parseAccessCollection(await optionalJson("access_points.json"), "access_points.json");
   const forestRoads = parseAccessCollection(await optionalJson("forest_roads.json"), "forest_roads.json");
-  const manifest = (await optionalJson("manifest.json")) as { wfs_only_share_of_masked?: unknown } | undefined;
-  const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw);
+  const regionsNoPressureRaw = await optionalJson("regions_bez_presji.json");
+  const manifest = (await optionalJson("manifest.json")) as
+    | { wfs_only_share_of_masked?: unknown; lat?: unknown; lon?: unknown; pressure_alpha?: unknown }
+    | undefined;
+  const parsed = parseData(scoresRaw, standsRaw, regionsRaw, detailsRaw, regionsNoPressureRaw);
   return {
     ...parsed,
     wfsOnlyShare: finiteNumber(manifest?.wfs_only_share_of_masked) ? manifest.wfs_only_share_of_masked : null,
+    // Faza UI.3: punkt startu analizy (odleglosc na liscie) i waga presji (Szczegoly).
+    start:
+      finiteNumber(manifest?.lat) && finiteNumber(manifest?.lon)
+        ? ([manifest.lon, manifest.lat] as [number, number])
+        : null,
+    pressureAlpha: finiteNumber(manifest?.pressure_alpha) ? manifest.pressure_alpha : null,
     conditions: parseConditions(conditionsRaw, parsed.scores[0]?.day),
     accessPoints,
     forestRoads,
@@ -1024,4 +1085,259 @@ export const WFS_ONLY_BANNER_THRESHOLD = 0.2;
 export function wfsOnlyBanner(share: number | null | undefined): string | null {
   if (!finiteNumber(share) || share <= WFS_ONLY_BANNER_THRESHOLD) return null;
   return `Skład drzewostanu tylko z opisu WFS (bez paczki BDL) dla ${pl(Math.round(share * 100))}% wydzieleń w masce — ocena siedliska H jest tu mniej dokładna.`;
+}
+
+// ---- Faza UI: przelacznik presji, paski wyniku, nazwy, fakty karty (czyste funkcje, testowane) ----
+
+/** Przelacznik presji dziala tylko, gdy migawka ma R_bez_presji i drugi zestaw rejonow. */
+export function pressureSwitchAvailable(
+  scores: Score[],
+  regionsNoPressure: Region[] | null,
+): boolean {
+  return (
+    regionsNoPressure !== null &&
+    scores.some((s) => s.mask && finite(s.R_bez_presji))
+  );
+}
+
+export type BarKey = "habitat" | "weather" | "calm";
+export type Bar = {
+  key: BarKey;
+  label: string;
+  // Wartosc modelu 0-1 w konwencji "wiecej = lepiej" (Siedlisko = H, Pogoda = F_loc, Spokoj = 1 - P).
+  value: number | null;
+  // Ocena slowna przy pasku; przy wylaczonej presji Spokoj ma opis "nie uwzgledniony".
+  word: string;
+  muted: boolean;
+};
+const threeWords = (
+  value: number | null | undefined,
+  low: number,
+  high: number,
+  words: [string, string, string],
+) =>
+  !finite(value) ? "brak danych" : value < low ? words[0] : value < high ? words[1] : words[2];
+/** Trzy paski: Siedlisko (H), Pogoda (F_loc), Spokoj (1 - P). Tylko wartosci z eksportu. */
+export function scoreBars(
+  v: { H: number | null; F_loc: number | null; P: number | null },
+  pressure: boolean,
+): Bar[] {
+  const calm = finite(v.P) ? 1 - v.P : null;
+  return [
+    {
+      key: "habitat",
+      label: "Siedlisko",
+      value: finite(v.H) ? v.H : null,
+      word: threeWords(v.H, 0.4, 0.7, ["niskie", "średnie", "wysokie"]),
+      muted: false,
+    },
+    {
+      key: "weather",
+      label: "Pogoda",
+      value: finite(v.F_loc) ? v.F_loc : null,
+      word: fruitingClass(v.F_loc).toLocaleLowerCase("pl"),
+      muted: false,
+    },
+    {
+      key: "calm",
+      label: "Spokój",
+      value: calm,
+      word: pressure ? threeWords(calm, 0.4, 0.7, ["niski", "średni", "wysoki"]) : "nie uwzględniony",
+      muted: !pressure,
+    },
+  ];
+}
+
+const pln = (value: number, digits = 2) =>
+  value.toLocaleString("pl-PL", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+export const formatValue = (value: number | null | undefined, digits = 2) =>
+  finite(value) ? pln(value, digits) : "—";
+
+export type ComponentRow = { label: string; value: string; note?: string };
+/** Skladniki paska Siedlisko: sklad drzewostanu, typ siedliska, wiek (S_age). */
+export function habitatComponents(h: HabitatCard | null | undefined): ComponentRow[] {
+  if (!h) return [];
+  const neutral = h.age_mode === "neutral";
+  return [
+    { label: "Skład drzewostanu", value: formatValue(h.S_host) },
+    { label: "Typ siedliska", value: formatValue(h.S_site) },
+    neutral
+      ? { label: "Wiek drzewostanu", value: "—", note: "nie wpływa na wynik" }
+      : { label: "Wiek drzewostanu", value: formatValue(h.S_age) },
+  ];
+}
+/** Skladniki paska Pogoda: wilgotnosc (M), temperatura (T), przymrozek (K_frost). */
+export function weatherComponents(w: WeatherCard | null | undefined): ComponentRow[] {
+  if (!w) return [];
+  const rows: ComponentRow[] = [];
+  if (w.M !== undefined) rows.push({ label: "Wilgotność", value: formatValue(w.M) });
+  if (w.T !== undefined) rows.push({ label: "Temperatura", value: formatValue(w.T) });
+  if (w.K_frost !== undefined)
+    rows.push({
+      label: "Przymrozek",
+      value: formatValue(w.K_frost),
+      note: w.frost === "brak" ? "brak przymrozku" : w.frost ? "był przymrozek" : undefined,
+    });
+  return rows;
+}
+
+const PRESSURE_TYPE_LABELS: Record<string, string> = {
+  parking: "parking",
+  entrance: "wjazd lub szlaban",
+  gate: "wjazd lub szlaban",
+  road_fallback: "dojście od drogi",
+  settlement: "osiedle",
+  forest_road: "droga leśna",
+};
+const roundedDistance = (v: number | null | undefined) =>
+  finite(v) ? (v < 1000 ? `${Math.round(v / 10) * 10} m` : `${pln(v / 1000, 1)} km`) : null;
+/**
+ * Skladniki paska Spokoj: do `count` punktow o najwiekszym wkladzie w presje (parking,
+ * wjazd/szlaban, osiedle, droga lesna...), z najblizsza odlegloscia tam, gdzie eksport ja ma.
+ * Wklad = udzial typu w surowej presji z modelu punktow dostepu (bez nowych wzorow).
+ */
+export function pressureTop(card: AccessCard | null | undefined, count = 3): ComponentRow[] {
+  const contrib = card?.pressure_contrib;
+  if (!card || !contrib) return [];
+  const merged = new Map<string, number>();
+  for (const [type, value] of Object.entries(contrib)) {
+    if (!finite(value) || value <= 0) continue;
+    const key = PRESSURE_TYPE_LABELS[type] ?? type;
+    merged.set(key, (merged.get(key) ?? 0) + value);
+  }
+  const total = [...merged.values()].reduce((a, b) => a + b, 0);
+  if (total <= 0) return [];
+  const distanceFor: Record<string, number | null> = {
+    parking: card.d_parking_m,
+    "wjazd lub szlaban": card.d_entrance_m,
+    "droga leśna": card.d_hard_forest_road_m,
+  };
+  return [...merged.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, count)
+    .map(([label, value]) => {
+      const named =
+        card.top_point_name &&
+        card.top_point_type &&
+        (PRESSURE_TYPE_LABELS[card.top_point_type] ?? card.top_point_type) === label
+          ? ` ${card.top_point_name}`
+          : "";
+      return {
+        label: `${label}${named}`,
+        value: roundedDistance(distanceFor[label]) ?? "",
+        note: `${Math.round((100 * value) / total)}% presji`,
+      };
+    });
+}
+
+// Kody nadlesnictw RDLP Katowice (paczki BDL dostepne lokalnie) z polskimi znakami; dla innych
+// nadlesnictw nazwa idzie z eksportu (forest_district, bez polskich znakow) albo kod.
+export const FOREST_DISTRICTS: Record<string, string> = {
+  "02-03": "Brynek",
+  "02-09": "Katowice",
+  "02-10": "Kędzierzyn",
+  "02-14": "Zawadzkie",
+  "02-16": "Koszęcin",
+  "02-19": "Lubliniec",
+  "02-21": "Oleśno",
+  "02-25": "Rudziniec",
+  "02-29": "Strzelce Opolskie",
+};
+export type ParsedStandId = {
+  district: string;
+  forestry: string;
+  section: string;
+  subsection: string;
+};
+/** "02-14-3-11-96 -a -00@2026" -> nadlesnictwo 02-14, lesnictwo 3, oddzial 96, pododdzial a. */
+export function parseStandId(standId: string): ParsedStandId | null {
+  const address = standId.split("@")[0];
+  const parts = address.split("-").map((p) => p.trim());
+  if (parts.length < 6 || parts.slice(0, 5).some((p) => !p)) return null;
+  return {
+    district: `${parts[0]}-${parts[1]}`,
+    forestry: parts[2],
+    section: parts[4],
+    subsection: parts[5],
+  };
+}
+/** "Oddz. 96a · Nadl. Zawadzkie"; pelny identyfikator zostaje w Szczegolach. */
+export function standName(standId: string, detail?: StandDetail | null): string {
+  const parsed = parseStandId(standId);
+  if (!parsed) return `Wydzielenie ${standId}`;
+  const district = FOREST_DISTRICTS[parsed.district] ?? detail?.forest_district;
+  return `Oddz. ${parsed.section}${parsed.subsection} · ${district ? `Nadl. ${district}` : `nadl. ${parsed.district}`}`;
+}
+/** "Rejon 1 · Łaziska" (najblizsza miejscowosc OSM; bez odmiany), inaczej "Rejon 1". */
+export function regionName(region: Region, position: number): string {
+  const place = region.near_place?.name;
+  return place ? `Rejon ${position} · ${place}` : `Rejon ${position}`;
+}
+
+/** Odleglosc w linii prostej (km) miedzy punktami [lon, lat]. */
+export function haversineKm(a: [number, number], b: [number, number]): number {
+  const rad = (x: number) => (x * Math.PI) / 180;
+  const dLat = rad(b[1] - a[1]);
+  const dLon = rad(b[0] - a[0]);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+export function startDistanceLabel(
+  start: [number, number] | null | undefined,
+  point: [number, number],
+): string | null {
+  if (!start) return null;
+  return `${pln(haversineKm(start, point), 1)} km od startu`;
+}
+export function areaLabel(areaHa: number | null | undefined): string | null {
+  return finite(areaHa) ? `${pln(areaHa, areaHa < 10 ? 1 : 0)} ha` : null;
+}
+
+/** Do 4 krotkich faktow karty: parking, wjazd, utwardzony dukt, powierzchnia. */
+export function keyFacts(
+  card: AccessCard | null | undefined,
+  areaHa: number | null | undefined,
+  fallbackDistanceM?: number | null,
+): string[] {
+  const facts: string[] = [];
+  const parking = roundedDistance(card?.d_parking_m);
+  const entrance = roundedDistance(card?.d_entrance_m);
+  const road = roundedDistance(card?.d_hard_forest_road_m);
+  if (card) {
+    if (parking) facts.push(`parking ${parking}`);
+    if (entrance) facts.push(`wjazd ${entrance}`);
+    if (road) facts.push(`utwardzony dukt ${road}`);
+  } else {
+    const walk = roundedDistance(fallbackDistanceM);
+    if (walk) facts.push(`dojście ok. ${walk}`);
+  }
+  const area = areaLabel(areaHa);
+  if (area) facts.push(area);
+  return facts.slice(0, 4);
+}
+
+export type ConditionBar = {
+  label: string;
+  value: number;
+  level: number;
+  uncertainty: ForecastUncertainty;
+  title: string;
+};
+/** 7 dni panelu jako male slupki F (wysokosc = F), z oznaczeniem niepewnosci z 4.5. */
+export function conditionBars(
+  days: ConditionsDay[],
+  formatDate: (iso: string) => string,
+): ConditionBar[] {
+  return days.map((d, i) => {
+    const uncertain = uncertaintyLabel(d.uncertainty);
+    const local = localPhenomenaNote(d);
+    return {
+      label: dayLabel(d.date, i),
+      value: Math.max(0, Math.min(1, d.F)),
+      level: d.level,
+      uncertainty: d.uncertainty ?? "ok",
+      title: `${formatDate(d.date)}: ${Math.round(d.F * 100)}/100${uncertain ? ` · ${uncertain}` : ""}${local ? ` · ${local}` : ""}`,
+    };
+  });
 }

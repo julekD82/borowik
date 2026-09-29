@@ -88,7 +88,10 @@ export class ForestMap {
     );
     this.map.on("style.load", () => {
       this.addLayers();
-      this.select(this.selected);
+      // Tryb rejonow: podswietlenie i pinezka ustawione przed zaladowaniem stylu (mapa ukryta
+      // na zakladce telefonu laduje sie pozniej) -- odtworz filtr zamiast go zgubic.
+      if (this.groupSelected.length) this.applyGroupFilter();
+      else this.select(this.selected);
     });
     this.map.on("error", () =>
       this.status(
@@ -396,25 +399,28 @@ export class ForestMap {
       ["interpolate", ["linear"], ["get", "rank"], ...this.rankStops.flat()],
     ] as unknown as maplibregl.ExpressionSpecification;
   }
-  setData(entries: StandView[]) {
+  // `refit = false`: przelaczenie presji tylko przekolorowuje i przeszereguje wydzielenia,
+  // bez przesuwania widoku mapy.
+  setData(entries: StandView[], refit = true) {
     this.entries = entries;
-    this.rankStops = rankColorStops(entries.map((e) => e.score.R));
+    this.rankStops = rankColorStops(entries.map((e) => e.r));
     if (this.map.getLayer("stand-fill"))
       this.map.setPaintProperty("stand-fill", "fill-color", this.rankFillColor());
     this.geometry = {
       type: "FeatureCollection",
       features: entries.map((e) => ({
         ...e.feature,
-        properties: { ...e.feature.properties, rank: e.score.R, pressure: e.score.P },
+        properties: { ...e.feature.properties, rank: e.r, pressure: e.score.P },
       })),
     };
     (
       this.map.getSource("stands") as maplibregl.GeoJSONSource | undefined
     )?.setData(this.geometry);
-    this.fit(
-      entries.map((e) => e.feature),
-      0,
-    );
+    if (refit)
+      this.fit(
+        entries.map((e) => e.feature),
+        0,
+      );
   }
   select(id: string) {
     this.selected = id;

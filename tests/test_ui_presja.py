@@ -180,3 +180,44 @@ def test_manifest_carries_alpha_and_region_count_bez_presji(tmp_path):
         zakaz_checked_count=0, region_count=5, pressure_alpha=0.3, region_count_bez_presji=4)
     assert manifest["pressure_alpha"] == 0.3
     assert manifest["counts"]["region_count_bez_presji"] == 4
+
+
+# --- UI.3: nazwy (miejscowosc przy rejonie, nadlesnictwo przy wydzieleniu) ---
+
+def _places():
+    return gpd.GeoDataFrame({
+        "name": ["Lazniki", "Daleko", "", "Pole"],
+        "place": ["village", "town", "village", "farm"],
+        "geometry": [Point(380500, 486000), Point(400000, 500000), Point(380010, 486010), Point(380001, 486001)],
+    }, crs="EPSG:2180")
+
+
+def test_nearest_place_skips_unnamed_and_non_settlement_classes():
+    from pipeline.export import nearest_place
+    result = nearest_place(Point(380000, 486000), _places())
+    assert result == {"name": "Lazniki", "distance_m": 500}
+
+
+def test_nearest_place_none_without_places():
+    from pipeline.export import nearest_place
+    assert nearest_place(Point(0, 0), None) is None
+    assert nearest_place(Point(0, 0), gpd.GeoDataFrame({"name": []}, geometry=[], crs="EPSG:2180")) is None
+
+
+def test_write_regions_json_adds_near_place_only_when_places_given(tmp_path):
+    stands = _two_clusters()
+    regions = group_into_regions(stands, _regions_profile())
+    without = json.loads(write_regions_json(regions, "2026-09-29", tmp_path / "a.json").read_text(encoding="utf-8"))
+    with_places = json.loads(
+        write_regions_json(regions, "2026-09-29", tmp_path / "b.json", places=_places()).read_text(encoding="utf-8"))
+    assert all("near_place" not in r for r in without)
+    assert all(r["near_place"]["name"] for r in with_places)
+
+
+def test_forest_district_name_from_package_name():
+    from pipeline.export import forest_district_name
+    assert forest_district_name("BDL_02_16_KOSZECIN_2026") == "Koszecin"
+    assert forest_district_name("BDL_02_29_STRZELCE_OPOLSKIE_2026") == "Strzelce Opolskie"
+    assert forest_district_name(None) is None
+    assert forest_district_name(float("nan")) is None
+    assert forest_district_name("cos innego") is None
