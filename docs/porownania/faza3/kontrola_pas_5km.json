@@ -1,0 +1,40 @@
+{
+  "wydzielen_w_pasie": 118,
+  "zakres": "<= 8 km od centrum Lublinca i >= 5 km od najblizszego duzego osiedla",
+  "prog_m": 2500.0,
+  "odsetek_glowny_punkt_do_2_5_km": 1.0,
+  "liczba_do_2_5_km": 118,
+  "wg_typu": {
+    "entrance": {
+      "liczba": 13,
+      "mediana_odleglosci_m": 1497.28547387524,
+      "do_2_5_km": 13,
+      "srednie_P": 0.05532071663593533
+    },
+    "forest_road": {
+      "liczba": 7,
+      "mediana_odleglosci_m": 95.48274481055266,
+      "do_2_5_km": 7,
+      "srednie_P": 0.017324607564616037
+    },
+    "gate": {
+      "liczba": 26,
+      "mediana_odleglosci_m": 1633.3553622275697,
+      "do_2_5_km": 26,
+      "srednie_P": 0.07442483161938837
+    },
+    "parking": {
+      "liczba": 72,
+      "mediana_odleglosci_m": 438.8171263430969,
+      "do_2_5_km": 72,
+      "srednie_P": 0.7059432545411517
+    }
+  },
+  "odleglosc_kwantyle_m": {
+    "0.1": 138.93116812741792,
+    "0.5": 566.4503549107741,
+    "0.9": 1763.8790347570937,
+    "1.0": 2095.177500430948
+  },
+  "srednie_P_pasa": 0.45426611456175
+}

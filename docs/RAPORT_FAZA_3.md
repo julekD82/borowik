@@ -16,7 +16,7 @@ usuwano ani nie czyszczono; do `cache/` doszedł tylko nowy podkatalog `cache/ac
 |---|---|---|
 | 3.1 Dane punktów dostępu | DONE, z odstępstwem | Parkingi, wjazdy, szlabany, fallback, osiedla, sieć dróg leśnych, nawierzchnia z OSM, publiczna/zamknięta. **BDOT10k `OT_SKDR_L` (materialNawierzchni) i relacje OSM `route=bicycle`: BLOCKED** — patrz niżej |
 | 3.2 Atrakcyjność punktu | DONE | `A_k`, `A_norm_k` (normalizacja bezwzględna), korytarz po sieci drogowej |
-| 3.2b Podział ludności (Huff) | DONE, kryterium sensowności spełnione częściowo | `population_split: two_stage` (domyślny), `huff_all`, `huff`, `none`; `huff_all` wyzerowywał osiedla („Ciąg dalszy 2”), `two_stage` naprawia to, ale pas > 5 km przekracza tolerancję („Ciąg dalszy 3”); brak przebiegu na żywo, gałąź nie oznaczona jako gotowa |
+| 3.2b Podział ludności (Huff) | DONE | `population_split: two_stage` (domyślny), `huff_all`, `huff`, `none` zostają do porównań; `two_stage` zaakceptowany po kontroli pasa > 5 km („Ciąg dalszy 4”) |
 | 3.3 Zasięg oddziaływania | DONE | jądro `max(0, 1−(d/R)²)²`, parametry startowe właściciela w profilu; odległość w linii prostej (wariant po sieci duktów: opcjonalny, nie zrobiony) |
 | 3.4 Łączenie w P | DONE | suma po punktach, korytarz jako jeden składnik, `P = 1 − exp(−raw/S)`, `S` dobrane offline (huff 0,1385; none 7,0); wkład każdego typu i punkt o największym wkładzie w diagnostyce |
 | 3.5 Mapa i karta wydzielenia | DONE | eksporty `access_points_{day}.geojson` i `forest_roads_{day}.geojson`, warstwy w legendzie, popup, karta, synchronizator i migawki |
@@ -494,8 +494,8 @@ poglądowa atrakcyjność 0–1 osobno od P, korytarz w osobach z połową co 3 
 
 Decyzja właściciela po diagnozie `huff_all` (pieszy i autem w jednym mianowniku): wariant 1,
 dwa etapy. `two_stage` jest nowym domyślnym; `huff_all`, `huff` i `none` zostają do porównań.
-**Wynik: kryterium sensowności spełnione częściowo (a tak, b nie), więc zatrzymuję się:
-bez przebiegu na żywo i bez migawki, gałąź NIE jest oznaczona jako gotowa do scalenia.**
+**Wynik w chwili pisania: kryterium sensowności spełnione częściowo (a tak, b nie), więc
+zatrzymałem się. Ocenę (b) właściciel potem zmienił — patrz „Ciąg dalszy 4”.**
 
 ## Implementacja
 
@@ -612,3 +612,65 @@ spełnione, brakuje tylko przebiegu na żywo i migawki.
 
 Dane: `docs/porownania/faza3/raport_two_stage.json`, `roznice_P_two_stage.csv`;
 skrypt `scripts/faza3_two_stage_raport.py`.
+
+---
+
+# Ciąg dalszy 4 (2026-09-29): zmiana oceny kryterium (b), kontrola pasa > 5 km, przebieg na żywo
+
+## Zmiana oceny kryterium (b) — po zobaczeniu wyników
+
+**To jest zmiana oceny dokonana PO obejrzeniu wyników, nie ustalenie z góry.** Kryterium (b)
+(„P w pasie > 5 km nie przekracza P(2–3 km) o więcej niż 0,05”) zostało zdefiniowane z góry, a
+`two_stage` je przekroczył (0,454 wobec 0,351, +0,10). Decyzja właściciela: kryterium (b) dla
+pasa > 5 km było **źle zdefiniowane**, bo profil P liczony od jednego miasta miesza dwie różne
+rzeczy: „coraz głębiej w lesie” i „bliżej innych miejscowości i parkingów”. Pas > 5 km od Lublińca
+jest już blisko innych osiedli i parkingów, więc wzrost P nie musi oznaczać, że model źle traktuje
+głębię lasu. Zamiast progu na profilu właściciel zażądał kontroli bezpośredniej: skąd bierze się
+presja w tym pasie.
+
+## Kontrola: co daje presję w pasie > 5 km
+
+Zakres: 118 wydzieleń ≤ 8 km od centrum Lublińca i ≥ 5 km od najbliższego dużego osiedla
+(ten sam pas co w profilu). Dla każdego: typ i odległość punktu o największym wkładzie w P
+(`scripts/faza3_pas5km_kontrola.py`, dane: `docs/porownania/faza3/kontrola_pas_5km.json` i `.csv`).
+Reguła zaakceptowania ustalona przez właściciela: odsetek wydzieleń, dla których ten punkt leży
+≤ 2,5 km, ≥ 80%.
+
+| Główny punkt | wydz. | mediana odległości | ≤ 2,5 km | średnie P |
+|---|---|---|---|---|
+| parking | 72 | 439 m | 72 | 0,71 |
+| szlaban | 26 | 1633 m | 26 | 0,07 |
+| wjazd | 13 | 1497 m | 13 | 0,06 |
+| droga leśna (korytarz) | 7 | 95 m | 7 | 0,02 |
+| **razem** | **118** | 566 m (p90 1764 m, maks. 2095 m) | **118 (100%)** | 0,45 |
+
+**Wynik: 100% ≥ 80%, `two_stage` zaakceptowany.** Wzrost P w pasie > 5 km pochodzi od lokalnych
+parkingów (mediana odległości 439 m; wydzielenia z parkingiem jako głównym punktem mają P ≈ 0,71),
+nie od osiedla Lublińca ani od odległych punktów; żaden główny punkt nie leży dalej niż 2,1 km.
+To zgodne z uzasadnieniem właściciela („bliżej innych parkingów”). Zastrzeżenie: kontrola pokazuje,
+że wzrost ma lokalne źródło, ale nie sprawdza, czy siła tych parkingów (ludność w 20 km, waga,
+opcja zewnętrzna) jest realistyczna; to wymaga danych terenowych.
+
+## Przebieg na żywo (2026-09-29, `two_stage`)
+
+Po rebase na `master` z `age_mode: neutral` (domyślne po decyzji właściciela po walidacji Fazy 2):
+`python -m pipeline.prepare_trip --lat 50.527 --lon 18.605 --radius-km 20 --bdl-packages-dir BDL
+--population-grid-path <siatka GUS>`: bez błędu, 19 716 wydzieleń, 14 399 w masce, 5 rejonów.
+Manifest: `pressure_model_used: access_points`, `population_split: two_stage`,
+`walk_share_max: 0,5`, `external_option_c: 0,77`, `saturation_s.two_stage: 1997`; punkty 148 / 230 /
+1693 / 153 / 921, 0 kafli z błędem; mediana P w masce 0,3732 (jak gravity). Migawka „Kieleczka —
+faza 3 (two_stage)” zapisana w `frontend/public/data/trips/` (poza repozytorium), z `details.json`
+zawierającym pole `access` dla wszystkich wydzieleń.
+
+## Decyzje
+
+- **`two_stage` jest domyślnym `pressure.access_points.population_split`.** `huff_all`, `huff` i `none`
+  zostają w kodzie do porównań. Wszystkie parametry (`walk_share_max`, `walk_reach_km`,
+  `external_option_c`, `saturation_s`, wagi i zasięgi typów) są tymczasowe i nieskalibrowane.
+- **`junction`: bez zmian do decyzji po ręcznej kontroli właściciela**
+  (`docs/porownania/faza3/kontrola_reczna.csv`, po 5 losowych wjazdów z każdego podtypu). Wjazdy dają
+  w `two_stage` ok. 59% presji surowej (w tym `junction` ok. 20%), więc to najważniejsza otwarta kwestia.
+- **BDOT10k `OT_SKDR_L` i `route=bicycle`: BLOCKED**, niski priorytet (klasyfikacja nawierzchni
+  prawie nie zmienia P; Spearman ≥ 0,9998 przy skrajnych założeniach).
+- **Kalibracja:** dopiero po danych terenowych (Faza 5); `dane_terenowe/wiedza_lokalna.csv` nie istnieje.
+- Model jest ilościowo pełny, ale to wskaźnik z modelu, nie pomiar tłoku.
