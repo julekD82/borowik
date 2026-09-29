@@ -11,6 +11,7 @@ the AREA MEDIAN of the weather grid -- a different, not separately
 validated, aggregation (median-of-points ranked against pooled
 climatology, vs. the backtest's one-point-ranked-against-its-own-cell).
 Still answers "kiedy", never "gdzie": R is untouched."""
+import math
 from datetime import date, timedelta
 
 import numpy as np
@@ -82,9 +83,82 @@ def rains_summary(rains: list[dict], pulse_min_mm: float) -> str:
     return " · ".join(parts)
 
 
+AGGREGATIONS = ("median_of_features", "median_f_points", "median_f_stands", "area_weighted_mean")
+
+
+def uncertainty_level(days_ahead: int, profile: dict) -> str:
+    """Faza 4.5: "ok" / "uncertain" ("prognoza niepewna") / "indicative"
+    ("orientacyjnie") wg progow profilu ui.forecast_uncertain_from_day i
+    ui.forecast_indicative_from_day, liczonych w dniach naprzod od dzis (dzis = 0).
+    Progi to hipoteza do zaktualizowania po weryfikacji prognoz (Faza 2.7)."""
+    ui = profile.get("ui") or {}
+    if days_ahead >= ui.get("forecast_indicative_from_day", 8):
+        return "indicative"
+    if days_ahead >= ui.get("forecast_uncertain_from_day", 4):
+        return "uncertain"
+    return "ok"
+
+
+def weighted_median(values, weights) -> float:
+    v, w = np.asarray(values, dtype=float), np.asarray(weights, dtype=float)
+    ok = ~np.isnan(v) & (w > 0)
+    v, w = v[ok], w[ok]
+    if not len(v):
+        return float("nan")
+    order = np.argsort(v)
+    v, w = v[order], w[order]
+    cum = np.cumsum(w)
+    return float(v[int(np.searchsorted(cum, 0.5 * cum[-1]))])
+
+
+def aggregate_point_f(f_points, method: str, area_weights=None, stand_weights=None) -> float:
+    """Faza 4.4: jedna wartosc F panelu z F policzonych osobno dla punktow siatki.
+    median_f_points: mediana po punktach; median_f_stands: mediana wazona liczba
+    wydzielen w masce przy punkcie (= mediana po wydzieleniach); area_weighted_mean:
+    srednia wazona powierzchnia lasu przy punkcie. Bez wag -> wagi rowne."""
+    f = np.asarray(f_points, dtype=float)
+    ones = np.ones(len(f))
+    if method == "median_f_points":
+        return float(np.nanmedian(f))
+    if method == "median_f_stands":
+        return weighted_median(f, ones if stand_weights is None else stand_weights)
+    if method == "area_weighted_mean":
+        w = ones if area_weights is None else np.asarray(area_weights, dtype=float)
+        ok = ~np.isnan(f) & (w > 0)
+        return float((f[ok] * w[ok]).sum() / w[ok].sum()) if ok.any() else float("nan")
+    raise ValueError(f"nieznana agregacja panelu: {method!r}")
+
+
+def _share(mask, weights) -> float:
+    mask, w = np.asarray(mask, dtype=bool), np.asarray(weights, dtype=float)
+    return float(w[mask].sum() / w.sum()) if w.sum() > 0 else 0.0
+
+
+def _nan_to_none(value):
+    """NaN nie ma reprezentacji w JSON (write_conditions_json uzywa allow_nan=False)."""
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, dict):
+        return {k: _nan_to_none(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_nan_to_none(v) for v in value]
+    return value
+
+
 def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame, clim_points,
-                               today: date, profile: dict, rain_scale: float = 1.0) -> dict:
+                               today: date, profile: dict, rain_scale: float = 1.0,
+                               point_weights: dict | None = None) -> dict:
+    """`point_weights` (Faza 4.4): {(lat, lon): {"area_ha": powierzchnia lasu (wydzielenia w
+    masce) najblizsza temu punktowi, "stands": ich liczba}} -- do agregacji F po wydzieleniach /
+    wazonej powierzchnia oraz do udzialu powierzchni z przymrozkiem i silnym opadem. Bez wag
+    udzialy sa liczone po punktach siatki.
+
+    Wartosc F dnia zalezy od profilu `conditions.aggregation` (domyslnie `median_of_features` =
+    dotychczasowa: mediana cech po punktach, potem jeden F); pozostale metody: AGGREGATIONS."""
     cfg = profile["conditions"]
+    aggregation = cfg.get("aggregation", "median_of_features")
+    if aggregation not in AGGREGATIONS:
+        raise ValueError(f"nieznana agregacja panelu: {aggregation!r}")
     params = _pulse_params(profile, rain_scale)
     area = area_daily_weather(daily, points)
     rains = recent_rains(area, today, profile, rain_scale)  # raises ValueError if today missing
@@ -108,8 +182,53 @@ def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame
         k_frost = score_frost(float(feats["tmin3"].median()), profile)
         g_season = compute_g_season(target_doy, profile)
         f = compute_fruiting(m, t, k_frost, g_season=g_season)
-        days.append({"date": day_k.isoformat(), "F": round(f, 3),
-                     "level": classify_fruiting_level(f, profile), "forecast": k > 0})
-    return {"generated_for": today.isoformat(), "horizon_days": cfg["horizon_days"],
-            "pulse_min_mm": round(params.pulse_min_mm, 1), "rains": rains, "days": days,
-            "summary": rains_summary(rains, params.pulse_min_mm)}
+        # Faza 4.4: F liczone osobno dla kazdego punktu siatki (kazdy punkt: wlasny percentyl
+        # wzgledem tej samej puli klimatologii co wyzej) -- do porownania metod agregacji,
+        # udzialu przymrozku/silnego opadu i, gdy wybrano, do samej wartosci panelu.
+        pct_pts = np.array([percentile_rank(float(c), cwb_hist) for c in feats["cwb26"]])
+        f_pts = np.array([
+            compute_fruiting(score_moisture(pp, 0.5, profile),
+                             score_temperature(tm20, tm5, p5, profile), score_frost(tm3, profile),
+                             g_season=g_season)
+            for pp, tm20, tm5, p5, tm3 in zip(pct_pts, feats["tmean20"], feats["tmean5"], feats["p5"], feats["tmin3"])])
+        keys = list(zip(feats["lat"], feats["lon"]))
+        pw = point_weights or {}
+        area_w = np.array([pw.get(key, {}).get("area_ha", 0.0) for key in keys]) if pw else np.ones(len(keys))
+        stand_w = np.array([pw.get(key, {}).get("stands", 0) for key in keys]) if pw else np.ones(len(keys))
+        if pw and area_w.sum() == 0:
+            area_w, stand_w = np.ones(len(keys)), np.ones(len(keys))
+        f_by_method = {
+            "median_of_features": f,
+            **{name: aggregate_point_f(f_pts, name, area_w, stand_w) for name in AGGREGATIONS[1:]},
+        }
+        f_panel = f_by_method[aggregation]
+        day_rain = with_ld[with_ld["local_date"] == day_k].groupby(["lat", "lon"])["precipitation_mm"].sum()
+        heavy = np.array([day_rain.get(key, 0.0) >= cfg.get("heavy_rain_day_mm", cfg["pulse_min_mm"]) for key in keys])
+        cwb_typical = float(np.nanmedian(cwb_hist)) if len(cwb_hist) else None
+        days.append({"date": day_k.isoformat(), "F": round(f_panel, 3),
+                     "level": classify_fruiting_level(f_panel, profile), "forecast": k > 0,
+                     # Faza 4.5: dni naprzod i oznaczenie niepewnosci prognozy (progi w profilu ui.*)
+                     "days_ahead": k, "uncertainty": uncertainty_level(k, profile),
+                     # Faza 4.3: skladniki (mediana po punktach), bez wplywu na F
+                     "components": {
+                         "cwb26_mm": round(float(feats["cwb26"].median()), 1),
+                         "cwb26_typical_mm": None if cwb_typical is None else round(cwb_typical, 1),
+                         "pct_cwb26": round(pct_cwb26, 3),
+                         "tmean20_c": round(float(feats["tmean20"].median()), 1),
+                         "temp_optimum_c": profile["fruiting"]["temp_optimum_c"],
+                         "tmin3_c": round(float(feats["tmin3"].median()), 1),
+                         "M": round(m, 3), "T": round(t, 3), "K_frost": k_frost, "G_season": round(g_season, 3),
+                     },
+                     # Faza 4.4: lokalne zjawiska, ktorych mediana nie pokazuje
+                     "frost_area_share": round(_share(feats["tmin3"].to_numpy() < profile["fruiting"]["frost_tmin3_soft_c"], area_w), 3),
+                     "heavy_rain_area_share": round(_share(heavy, area_w), 3),
+                     "F_by_aggregation": {name: round(float(v), 3) for name, v in f_by_method.items()}})
+    return _nan_to_none({
+        "generated_for": today.isoformat(), "horizon_days": cfg["horizon_days"],
+        "pulse_min_mm": round(params.pulse_min_mm, 1), "rains": rains, "days": days,
+        "summary": rains_summary(rains, params.pulse_min_mm),
+        "aggregation": aggregation,
+        "uncertainty_thresholds": {
+            "uncertain_from_day": (profile.get("ui") or {}).get("forecast_uncertain_from_day", 4),
+            "indicative_from_day": (profile.get("ui") or {}).get("forecast_indicative_from_day", 8)},
+    })

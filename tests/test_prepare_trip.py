@@ -550,3 +550,15 @@ def test_coarser_grid_points_are_a_subset_of_the_default_grid_so_the_cache_is_re
     fine = set(make_grid(bbox, spacing_m=5000.0))
     coarse = set(make_grid(bbox, spacing_m=10000.0))
     assert coarse < fine
+
+
+def test_conditions_point_weights_sum_area_and_count_of_masked_stands_per_weather_point():
+    from pipeline.prepare_trip import conditions_point_weights
+    scored = gpd.GeoDataFrame({
+        "mask": [True, True, False, True],
+        "weather_point_lat": [50.0, 50.0, 50.0, 50.1], "weather_point_lon": [19.0, 19.0, 19.0, 19.1],
+        "geometry": [box(0, 0, 100, 100), box(0, 0, 100, 200), box(0, 0, 1000, 1000), box(0, 0, 50, 100)],
+    }, crs="EPSG:2180")
+    w = conditions_point_weights(scored)
+    assert w[(50.0, 19.0)] == {"area_ha": pytest.approx(3.0), "stands": 2}
+    assert w[(50.1, 19.1)] == {"area_ha": pytest.approx(0.5), "stands": 1}

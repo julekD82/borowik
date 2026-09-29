@@ -109,6 +109,20 @@ def points_within_radius(points, lat: float, lon: float, radius_km: float) -> li
     return out
 
 
+def conditions_point_weights(scored: gpd.GeoDataFrame) -> dict:
+    """Faza 4.4: {(lat, lon): {"area_ha", "stands"}} -- powierzchnia i liczba wydzielen
+    w masce strukturalnej, dla ktorych dany punkt siatki jest najblizszym punktem
+    pogody. Wagi agregacji F panelu 7 dni i udzialu powierzchni z przymrozkiem/silnym
+    opadem (pipeline.conditions_timeline)."""
+    masked = scored[scored["mask"]]
+    if not len(masked):
+        return {}
+    grouped = masked.assign(_ha=masked.geometry.area / 10000.0).groupby(
+        ["weather_point_lat", "weather_point_lon"])["_ha"].agg(["sum", "count"])
+    return {(lat, lon): {"area_ha": float(r["sum"]), "stands": int(r["count"])}
+            for (lat, lon), r in grouped.iterrows()}
+
+
 def radar_mode(profile: dict, use_radar: bool) -> str:
     """Plan 1.5: "off" (no radar at all), "block" (pre-1.5 behaviour --
     RainGRS averaged over each weather point's own grid_spacing_m square),
@@ -666,7 +680,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         )
         conditions_clim = climatology_fetcher(conditions_clim_points, 1991, 2020)  # cached from run_poc's own fetch
         timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
-                                             conditions_clim_points, date.today(), profile, rain_scale=rain_scale)
+                                             conditions_clim_points, date.today(), profile, rain_scale=rain_scale,
+                                             point_weights=conditions_point_weights(scored))
     except (ValueError, requests.RequestException, OpenMeteoRequestsError) as exc:
         print(f"UWAGA: warunki na kolejne dni pominiete ({exc}).", flush=True)
     else:

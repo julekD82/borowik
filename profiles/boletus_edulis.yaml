@@ -387,6 +387,21 @@ conditions:
   lookback_days: 45
   horizon_days: 7
   max_rains: 2
+  # Faza 4.4: jak z F punktow siatki powstaje wartosc panelu 7 dni:
+  # median_of_features (dotychczasowa: mediana cech, potem jeden F) |
+  # median_f_points | median_f_stands (wazona liczba wydzielen) | area_weighted_mean
+  # (waga: powierzchnia lasu). Zmiana tylko wg reguly z planu 4.4 (roznica > 0,05
+  # w ktoryms dniu) -- patrz docs/RAPORT_FAZA_4.md.
+  aggregation: median_of_features
+  # Faza 4.4: dobowy opad (mm) uznawany za "silny" w udziale powierzchni z silnym opadem.
+  heavy_rain_day_mm: 15.0
+
+ui:
+  # Faza 4.5: oznaczenia niepewnosci prognozy w panelu 7 dni, w dniach naprzod od dzis
+  # (dzis = 0). Hipoteza -- do zaktualizowania po weryfikacji prognoz (Faza 2.7,
+  # po >= 30 dniach archiwum).
+  forecast_uncertain_from_day: 4     # "prognoza niepewna"
+  forecast_indicative_from_day: 8    # "orientacyjnie"
 
 osm:
   parking_amenity: "parking"
