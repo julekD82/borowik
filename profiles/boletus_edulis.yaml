@@ -276,7 +276,14 @@ pressure:
     surface_multiplier: {hard: 1.0, gravel: 0.8, compacted: 0.8, unknown: 0.5, dirt: 0.3}
     # Nasycenie: P = 1 - exp(-raw / S). S dobrane tak, by mediana P w
     # przebiegu Kieleczki byla zblizona do modelu gravity (TYMCZASOWO, jak d_half w 1.5).
-    saturation_s: 7.0   # 2026-09-29: dopasowane offline do mediany P gravity w przebiegu Kieleczki (0,373; docs/porownania/faza3). TYMCZASOWE, NIESKALIBROWANE (jak d_half w 1.5)
+    # Podzial ludnosci miedzy punkty dostepu (plan 3.2b): huff (domyslny) -- ludnosc
+    # kazdego oczka GUS dzielona miedzy punkty w zasiegu dojazdu proporcjonalnie do
+    # w_t * g(d), suma udzialow oczka = jego ludnosc; none -- kazdy punkt zbiera
+    # ludnosc niezaleznie (pierwsza wersja Fazy 3). Osiedla przy lesie (pieszo) bez dzielenia.
+    population_split: huff
+    # S per wariant (te same mediany P co gravity w przebiegu Kieleczki, 0,373).
+    # TYMCZASOWE, NIESKALIBROWANE (jak d_half w 1.5). none: 2026-09-29 offline.
+    saturation_s: {huff: 0.1385, none: 7.0}
     # 3.1 -- dane punktow dostepu
     parking_osm_max_dist_to_forest_m: 200.0
     parking_dedupe_m: 100.0            # pierwszenstwo BDL

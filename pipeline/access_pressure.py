@@ -60,15 +60,22 @@ def _xy(geoms) -> np.ndarray:
     return np.array([(g.x, g.y) for g in geoms], dtype=float).reshape(-1, 2)
 
 
-def compute_attractiveness(points: gpd.GeoDataFrame, pop_xy: np.ndarray, pop_values: np.ndarray,
-                            cfg: dict) -> tuple[np.ndarray, np.ndarray]:
-    """(A, A_norm) dla kazdego punktu. Ludnosc w zasiegu
-    `attractiveness_range_km` typu punktu, jadro k; A_norm z `a_half` typu."""
-    a = np.zeros(len(points))
-    a_norm = np.zeros(len(points))
-    if not len(points) or not len(pop_xy):
-        return a, a_norm
-    pop_tree = cKDTree(pop_xy)
+# Typy punktow, do ktorych dojezdza sie autem (dziela miedzy siebie ludnosc w
+# modelu Huffa). Osiedla przy lesie (pieszo) i droga lesna nie naleza do tej grupy.
+HUFF_TYPES = ("parking", "entrance", "gate", "road_fallback")
+
+
+def saturation_for(cfg: dict) -> float:
+    """S dla biezacego `population_split`. `saturation_s` moze byc liczba
+    (testy, stare profile) albo slownikiem {huff: .., none: ..} -- S jest
+    dobierane osobno dla kazdego wariantu (ta sama mediana P)."""
+    s = cfg["saturation_s"]
+    return float(s[cfg.get("population_split", "huff")]) if isinstance(s, dict) else float(s)
+
+
+def _compute_a_none(points, pop_tree, pop_values, cfg, a):
+    """population_split: none -- kazdy punkt zbiera ludnosc niezaleznie:
+    A_k = sum_j Pop_j g(d_jk) (jedno oczko liczy sie w pelni w kazdym punkcie w zasiegu)."""
     for ptype, tcfg in cfg["types"].items():
         idx = np.where(points["type"].values == ptype)[0]
         if not len(idx):
@@ -78,7 +85,63 @@ def compute_attractiveness(points: gpd.GeoDataFrame, pop_xy: np.ndarray, pop_val
         m = pop_tree.sparse_distance_matrix(pt_tree, radius, output_type="coo_matrix")
         weights = pop_values[m.row] * kernel(m.data, radius)
         a[idx] = np.bincount(m.col, weights=weights, minlength=len(idx))
-        a_norm[idx] = a[idx] / (a[idx] + tcfg["a_half"])
+
+
+def _compute_a_huff(points, pop_tree, pop_values, cfg, a):
+    """population_split: huff (plan 3.2b) -- ludnosc kazdego oczka GUS jest
+    DZIELONA miedzy punkty dostepu (auto) w zasiegu dojazdu proporcjonalnie do
+    w_t * g(d): udzial_jk = w_k g_jk / sum_k' w_k' g_k'j, wiec suma udzialow
+    jednego oczka = jego ludnosc. Osiedla przy lesie (pieszo) liczone jak
+    dotad, bez dzielenia."""
+    rows, cols, wts = [], [], []
+    for ptype in HUFF_TYPES:
+        tcfg = cfg["types"].get(ptype)
+        idx = np.where(points["type"].values == ptype)[0]
+        if tcfg is None or not len(idx):
+            continue
+        radius = tcfg["attractiveness_range_km"] * 1000.0
+        pt_tree = cKDTree(_xy(points.geometry.iloc[idx]))
+        m = pop_tree.sparse_distance_matrix(pt_tree, radius, output_type="coo_matrix")
+        rows.append(m.row)
+        cols.append(idx[m.col])
+        wts.append(tcfg["weight"] * kernel(m.data, radius))
+    if rows:
+        row, col, w = np.concatenate(rows), np.concatenate(cols), np.concatenate(wts)
+        denom = np.bincount(row, weights=w, minlength=len(pop_values))
+        share = np.divide(w, denom[row], out=np.zeros_like(w), where=denom[row] > 0)
+        a += np.bincount(col, weights=pop_values[row] * share, minlength=len(points))
+    # osiedla: bez dzielenia
+    idx = np.where(points["type"].values == "settlement")[0]
+    tcfg = cfg["types"].get("settlement")
+    if tcfg is not None and len(idx):
+        radius = tcfg["attractiveness_range_km"] * 1000.0
+        pt_tree = cKDTree(_xy(points.geometry.iloc[idx]))
+        m = pop_tree.sparse_distance_matrix(pt_tree, radius, output_type="coo_matrix")
+        a[idx] = np.bincount(m.col, weights=pop_values[m.row] * kernel(m.data, radius), minlength=len(idx))
+
+
+def compute_attractiveness(points: gpd.GeoDataFrame, pop_xy: np.ndarray, pop_values: np.ndarray,
+                            cfg: dict) -> tuple[np.ndarray, np.ndarray]:
+    """(A, A_norm) dla kazdego punktu. `population_split` (profil): "huff"
+    (domyslny) dzieli ludnosc oczka miedzy punkty w zasiegu, "none" liczy
+    kazdy punkt osobno (model z pierwszej wersji Fazy 3). A_norm = A/(A+a_half),
+    a_half z typu punktu."""
+    a = np.zeros(len(points))
+    a_norm = np.zeros(len(points))
+    if not len(points) or not len(pop_xy):
+        return a, a_norm
+    pop_tree = cKDTree(pop_xy)
+    split = cfg.get("population_split", "huff")
+    if split == "huff":
+        _compute_a_huff(points, pop_tree, pop_values, cfg, a)
+    elif split == "none":
+        _compute_a_none(points, pop_tree, pop_values, cfg, a)
+    else:
+        raise ValueError(f"population_split: {split!r} (dozwolone: huff, none)")
+    for ptype, tcfg in cfg["types"].items():
+        idx = np.where(points["type"].values == ptype)[0]
+        if len(idx):
+            a_norm[idx] = a[idx] / (a[idx] + tcfg["a_half"])
     return a, a_norm
 
 
@@ -248,7 +311,7 @@ def compute_access_pressure(centroids_xy: np.ndarray, model: AccessModel) -> pd.
         _consider(m.row, vals, road_ids, "forest_road")
 
     raw = sum(contrib.values())
-    p = 1.0 - np.exp(-raw / cfg["saturation_s"])
+    p = 1.0 - np.exp(-raw / saturation_for(cfg))
     out = pd.DataFrame({"access_raw": raw, "P": p})
     for t, v in contrib.items():
         out[f"pcontrib_{t}"] = v

@@ -15,6 +15,7 @@ from pipeline.habitat import load_profile
 
 CFG = load_profile("profiles/boletus_edulis.yaml")["pressure"]["access_points"]
 CRS = "EPSG:2180"
+CFG_NONE = {**CFG, "population_split": "none"}   # pierwsza wersja: kazdy punkt zbiera ludnosc osobno
 
 
 def _pts(rows):
@@ -56,7 +57,7 @@ def test_attractiveness_uses_population_within_range_and_saturates():
     points = _pts([(0, 0, "parking"), (100000, 0, "parking")])
     pop_xy = np.array([[0.0, 0.0], [10000.0, 0.0]])
     pop = np.array([5000.0, 5000.0])
-    a, a_norm = compute_attractiveness(points, pop_xy, pop, CFG)
+    a, a_norm = compute_attractiveness(points, pop_xy, pop, CFG_NONE)
     # parking 0: komorka na miejscu (g=1) + druga w 10 km (jadro 20 km)
     expected = 5000.0 + 5000.0 * kernel(10000.0, 20000.0)
     assert a[0] == pytest.approx(expected)
@@ -97,8 +98,8 @@ def test_stand_beyond_every_range_has_zero_pressure():
 
 
 def test_pressure_is_sum_over_points_not_max():
-    one = _model(_pts([(0, 0, "parking")]), _empty_roads())
-    three = _model(_pts([(0, 0, "parking"), (100, 0, "parking"), (0, 100, "parking")]), _empty_roads())
+    one = _model(_pts([(0, 0, "parking")]), _empty_roads(), cfg=CFG_NONE)
+    three = _model(_pts([(0, 0, "parking"), (100, 0, "parking"), (0, 100, "parking")]), _empty_roads(), cfg=CFG_NONE)
     p1 = compute_access_pressure(_stand(500, 0), one)["access_raw"].iloc[0]
     p3 = compute_access_pressure(_stand(500, 0), three)["access_raw"].iloc[0]
     assert p3 > 2.5 * p1
@@ -218,3 +219,61 @@ def test_no_access_data_gives_zero_pressure_without_crashing():
     model = _model(empty_pts, _empty_roads())
     out = compute_access_pressure(np.array([[0.0, 0.0], [10.0, 10.0]]), model)
     assert out["P"].tolist() == [0.0, 0.0]
+
+
+# --- population_split: huff ---------------------------------------------------
+
+def _huff(cfg=None):
+    return {**CFG, "population_split": "huff", **(cfg or {})}
+
+
+def test_huff_splits_each_cell_population_between_points_in_range():
+    # jedno oczko 10 000, dwa parkingi w tej samej odleglosci: kazdy dostaje polowe
+    points = _pts([(1000, 0, "parking"), (-1000, 0, "parking")])
+    a, _ = compute_attractiveness(points, np.array([[0.0, 0.0]]), np.array([10000.0]), _huff())
+    assert a[0] == pytest.approx(5000.0) and a[1] == pytest.approx(5000.0)
+    assert a.sum() == pytest.approx(10000.0)       # suma udzialow oczka = jego ludnosc
+
+
+def test_huff_shares_proportional_to_type_weight_times_kernel():
+    cfg = _huff()
+    points = _pts([(1000, 0, "parking"), (-2000, 0, "entrance")])
+    a, _ = compute_attractiveness(points, np.array([[0.0, 0.0]]), np.array([10000.0]), cfg)
+    wp = cfg["types"]["parking"]["weight"] * float(kernel(1000.0, 20000.0))
+    we = cfg["types"]["entrance"]["weight"] * float(kernel(2000.0, 20000.0))
+    assert a[0] == pytest.approx(10000.0 * wp / (wp + we))
+    assert a[1] == pytest.approx(10000.0 * we / (wp + we))
+    assert a[0] > a[1]                              # blizszy parking o wiekszej wadze wygrywa
+
+
+def test_huff_cell_outside_every_range_contributes_nothing():
+    points = _pts([(0, 0, "parking")])
+    a, _ = compute_attractiveness(points, np.array([[90000.0, 0.0]]), np.array([10000.0]), _huff())
+    assert a[0] == 0.0
+
+
+def test_huff_leaves_settlements_undivided_and_out_of_the_split():
+    points = _pts([(0, 0, "settlement"), (0, 0, "parking")])
+    pop_xy, pop = np.array([[0.0, 0.0]]), np.array([400.0])
+    a_huff, _ = compute_attractiveness(points, pop_xy, pop, _huff())
+    a_none, _ = compute_attractiveness(points, pop_xy, pop, CFG_NONE)
+    assert a_huff[0] == pytest.approx(400.0) == pytest.approx(a_none[0])   # osiedle: bez zmian
+    assert a_huff[1] == pytest.approx(400.0)        # jedyny punkt samochodowy dostaje cala ludnosc oczka
+
+
+def test_huff_makes_added_points_share_rather_than_multiply_pressure():
+    one = _model(_pts([(0, 0, "parking")]), _empty_roads(), cfg=_huff())
+    three = _model(_pts([(0, 0, "parking"), (100, 0, "parking"), (0, 100, "parking")]), _empty_roads(), cfg=_huff())
+    p1 = compute_access_pressure(_stand(500, 0), one)["access_raw"].iloc[0]
+    p3 = compute_access_pressure(_stand(500, 0), three)["access_raw"].iloc[0]
+    assert p3 < 2.0 * p1                            # w none bylo > 2,5 x
+
+
+def test_unknown_population_split_is_rejected_and_saturation_dict_is_resolved():
+    from pipeline.access_pressure import saturation_for
+    with pytest.raises(ValueError):
+        compute_attractiveness(_pts([(0, 0, "parking")]), np.array([[0.0, 0.0]]), np.array([1.0]),
+                               {**CFG, "population_split": "zzz"})
+    assert saturation_for({"saturation_s": {"huff": 3.0, "none": 7.0}, "population_split": "huff"}) == 3.0
+    assert saturation_for({"saturation_s": {"huff": 3.0, "none": 7.0}, "population_split": "none"}) == 7.0
+    assert saturation_for({"saturation_s": 0.05}) == 0.05
