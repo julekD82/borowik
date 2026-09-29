@@ -181,3 +181,41 @@ def test_passes_mask_accepts_normal_stand():
 def test_passes_mask_rejects_non_stand_area_type():
     row = {"area_type": "ZRAB", "spec_age": 60, "species_cd": "SO", "part_cd": 10}
     assert passes_mask(row, PROFILE) is False
+
+
+def _neutral_profile():
+    import copy
+    p = copy.deepcopy(PROFILE)
+    p["habitat"] = {"age_mode": "neutral"}
+    return p
+
+
+def test_default_profile_age_mode_is_curve_and_unchanged():
+    assert PROFILE["habitat"]["age_mode"] == "curve"
+    assert score_age(15, PROFILE) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
+
+
+def test_neutral_age_mode_gives_one_for_mask_passing_ages_and_keeps_the_mask():
+    p = _neutral_profile()
+    assert score_age(12, p) == 1.0
+    assert score_age(15, p) == 1.0
+    assert score_age(80, p) == 1.0
+    assert score_age(150, p) == 1.0      # bez kary za > 120 lat
+    assert score_age(5, p) is None       # maska wieku nadal dziala
+    assert score_age(None, p) is None
+
+
+def test_neutral_age_mode_makes_h_independent_of_age():
+    p = _neutral_profile()
+    row = {"species_cd": "SO", "part_cd": 10, "site_type": "BMSW"}
+    h_young = compute_habitat({**row, "spec_age": 15}, p)
+    h_old = compute_habitat({**row, "spec_age": 100}, p)
+    assert h_young == pytest.approx(h_old)
+    assert compute_habitat({**row, "spec_age": 5}, p) is None
+
+
+def test_missing_habitat_section_defaults_to_curve():
+    import copy
+    p = copy.deepcopy(PROFILE)
+    p.pop("habitat")
+    assert score_age(15, p) == pytest.approx(0.3 + (15 - 12) / (20 - 12) * (0.6 - 0.3))
