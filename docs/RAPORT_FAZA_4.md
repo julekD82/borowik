@@ -13,7 +13,7 @@ Surowe wyniki: `docs/porownania/faza4/*.json`, skrypty: `scripts/faza4_*.py` (ty
 | 4.1 Rzadsza siatka temperatury/ET0 | DONE | reguła **nie spełniona** → `weather.temp_grid_km` zostaje opcją, domyślnie bez zmian |
 | 4.2 Spójność percentyli radar / ERA5 / E-OBS | DONE (E-OBS vs radar: BLOCKED, powód niżej) | mediana \|Δpct\| = 0,095 ≤ 0,10 → **mapowanie kwantylowe nie wdrożone** |
 | 4.3 Nasycenie F — diagnoza i prezentacja | DONE | bez zmian w modelu; składniki + notka w panelu i karcie |
-| 4.4 Panel 7 dni — agregacja | DONE | reguła (różnica > 0,05) spełniona → domyślnie `median_f_stands` |
+| 4.4 Panel 7 dni — agregacja | DONE (po poprawce panelu przeliczone) | reguła (różnica > 0,05) **niespełniona** (max 0,043) → zostaje `median_of_features` |
 | 4.5 Niepewność prognozy w interfejsie | DONE | progi w profilu `ui.*`, oznaczenia w panelu, udział prognozy w karcie |
 | 4.6 Przebieg i raport | DONE | migawka „Kieleczka — faza 4” (promień 20 km jak w migawkach faz 1.6 i 3) |
 
@@ -107,32 +107,35 @@ stała notka „Ocena pogody nie została potwierdzona…”. Panel warunków: t
 
 ## 4.4 Panel 7 dni — agregacja
 
-Cztery metody policzone na tym samym przebiegu (fd7, 79 punktów w promieniu, wagi = powierzchnia/liczba wydzieleń w masce przy najbliższym punkcie):
+**Poprawka po pierwszej wersji raportu (spójność panelu z mapą).** Pierwsza tabela (niżej, „przed poprawką”) była policzona z osi czasu warunków opartej na
+surowym opadzie modelu Open-Meteo i puli komórek klimatologii; panel dawał dziś F ≈ 0,45, a mediana F wydzieleń na mapie wynosiła 0,647. Po poprawce
+oś czasu liczy opad **tak jak wydzielenia** (seria per wydzielenie: radar RainGRS scalony z modelem dla dni przeszłych, model dla prognozy; średnia
+ważona powierzchnią wydzieleń w masce przy najbliższym punkcie pogody), a percentyl każdego punktu względem historii **własnej komórki** klimatologii
+(`prepare_trip.stand_precip_to_points`, `apply_point_precip`, `conditions_timeline(point_clim_cells=…)`). Wynik na przebiegu Kieleczka 20 km:
+**panel dziś 0,636, mediana F wydzieleń w masce 0,641** (różnica 0,005; wymagane ≤ 0,02).
 
-| Dzień | mediana cech (obecna) | mediana F po punktach | mediana F po wydzieleniach | średnia F ważona powierzchnią | max różnica |
+Tabela **po poprawce** (przebieg przez launcher, 20 km, 7 dni; kolumny = metody agregacji zapisane w `conditions_{day}.json`):
+
+| Dzień | mediana cech (dotychczasowa) | mediana F po punktach | mediana F po wydzieleniach | średnia F ważona powierzchnią | max różnica |
 |---|---|---|---|---|---|
-| 29.09 | 0,452 | 0,452 | 0,462 | 0,501 | 0,049 |
-| 30.09 | 0,363 | 0,361 | 0,377 | 0,433 | 0,072 |
-| 01.10 | 0,288 | 0,287 | 0,297 | 0,371 | 0,084 |
-| 02.10 | 0,237 | 0,235 | 0,247 | 0,321 | 0,086 |
-| 03.10 | 0,197 | 0,196 | 0,209 | 0,280 | 0,084 |
-| 04.10 | 0,184 | 0,183 | 0,191 | 0,256 | 0,073 |
-| 05.10 | 0,173 | 0,172 | 0,177 | 0,232 | 0,060 |
+| 29.09 | 0,636 | 0,636 | 0,636 | 0,632 | 0,004 |
+| 30.09 | 0,556 | 0,542 | 0,542 | 0,559 | 0,017 |
+| 01.10 | 0,457 | 0,463 | 0,463 | 0,485 | 0,028 |
+| 02.10 | 0,377 | 0,381 | 0,376 | 0,407 | 0,031 |
+| 03.10 | 0,311 | 0,311 | 0,306 | 0,343 | 0,037 |
+| 04.10 | 0,278 | 0,282 | 0,282 | 0,311 | 0,033 |
+| 05.10 | 0,261 | 0,272 | 0,277 | 0,304 | 0,043 |
 
-**Decyzja (reguła: zmiana metody tylko gdy różnice > 0,05 w którymś dniu): reguła spełniona (max 0,086)**, więc zmiana jest dozwolona.
-Wybrano **`median_f_stands`** (mediana F po wydzieleniach w masce) — ta sama statystyka, co „mediana dla wydzieleń” pokazywana w interfejsie,
-odstaje od dotychczasowej wartości o ≤ 0,014, odporna na pojedyncze punkty. Średnia ważona powierzchnią (odstająca o 0,05–0,09) odrzucona:
-średnia jest podatna na skośność, a wagi czynią z kilku punktów przy dużych lasach całość panelu. Poprzednia metoda zostaje dostępna
-(`conditions.aggregation: median_of_features`), a `conditions_{day}.json` zawiera `F_by_aggregation` dla wszystkich czterech.
+**Decyzja (reguła: zmiana metody tylko gdy różnice > 0,05 w którymś dniu): reguła NIEspełniona (max 0,043), więc wcześniejsza decyzja o `median_f_stands`
+NIE obowiązuje** — opierała się na różnicy 0,086, która wynikała z błędu panelu (opad modelu), nie z samej metody agregacji. Domyślnie wraca
+`conditions.aggregation: median_of_features` (dotychczasowa). Pozostałe metody dostępne w profilu i w `F_by_aggregation`. Test spójności z mapą
+(`tests/test_panel_spojnosc_z_mapa.py`) sprawdza wprost `median_f_stands` (jak w poleceniu) i pokazuje, że bez poprawki panel rozjeżdża się z mapą
+o > 0,02; dla domyślnej metody dzień 0 również zgadza się z mapą (0,636 vs 0,641 na przebiegu rzeczywistym).
 
-**Lokalne zjawiska.** Panel dostał udział powierzchni lasu z przymrozkiem (tmin3 < 0 °C) i z silnym opadem dobowym (≥ 15 mm) w każdym dniu.
-W tym przebiegu oba wynoszą 0% (brak przymrozków i silnych opadów w horyzoncie), więc nic nie zostało „ukryte”, ale i nic nie zostało pokazane;
-mechanizm jest przetestowany na danych syntetycznych (przymrozek na 25% powierzchni przy medianie tmin3 powyżej zera).
+Przed poprawką (opad modelu, pula komórek; przebieg 25 km): 29.09 0,452 / 0,452 / 0,462 / 0,501 (max 0,049) … 02.10 0,237 / 0,235 / 0,247 / 0,321 (max 0,086) … 05.10 0,173 / 0,172 / 0,177 / 0,232 (max 0,060) — patrz `docs/porownania/faza4/nasycenie_agregacja.json`.
 
-**Znalezisko poza planem (niezałatwione).** Panel dla dnia dzisiejszego daje F ≈ 0,45, a mediana F wydzieleń na mapie to 0,647 — różnica 0,2.
-Prawdopodobna przyczyna (spójna z 4.2, nieweryfikowana bezpośrednio): w trybie `radar.mode: stand` oś czasu warunków liczy się z **surowego opadu modelu
-Open-Meteo bez radaru**, który jest suchszy (0,71 × ERA5) niż radar (0,84 × ERA5), a percentyl dostaje sigmoida o stromości 0,10. Panel i mapa opisują więc ten
-sam dzień różnymi liczbami. Nie zmieniałem tego (poza zakresem planu; zmieniłoby wartości panelu) — do decyzji właściciela.
+**Lokalne zjawiska.** Panel ma udział powierzchni lasu z przymrozkiem (tmin3 < 0 °C) i z silnym opadem dobowym (≥ 15 mm). W tym przebiegu oba wynoszą 0% w każdym dniu
+(brak przymrozków i silnych opadów prognozowanych w horyzoncie) — mechanizm przetestowany tylko na danych syntetycznych.
 
 ## 4.5 Niepewność prognozy
 
@@ -151,15 +154,35 @@ Zmienione pliki: `pipeline/{prepare_trip,orchestrate,weather,conditions_timeline
 `frontend/src/{model,main}.ts`, `frontend/src/{model.test.ts,style.css}`, testy `tests/test_faza4_*.py`, `tests/test_{prepare_trip,conditions_timeline}.py`,
 skrypty `scripts/faza4_*.py`.
 
+## Poprawki przed scaleniem
+
+**1. Paczki BDL w każdym przebiegu (dokończenie 1.3).** Przyczyna: `BDL/` (9 paczek nadleśnictw RDLP Katowice) leży w katalogu repo, ale domyślny katalog
+paczek to `<cache>/bdl_packages` (nie istnieje), a launcher woła `python -m pipeline.prepare_trip --lat --lon --radius-km` bez `--bdl-packages-dir`
+i nie ma pola/konfiguracji na tę ścieżkę — każdy przebieg z launchera miał więc 100% składu z WFS (tak samo migawki fazy 1.6/3/4). Naprawa:
+`pipeline/local_config.py` — kolejność: `--bdl-packages-dir` > zmienna `BOROWIK_BDL_DIR` > `local_config.json` w katalogu repo (w `.gitignore`, poza repozytorium; klucz
+`bdl_packages_dir`, ścieżka bezwzględna lub względem pliku) > `<cache>/bdl_packages`. Na tej maszynie `local_config.json` wskazuje `BDL/`. Brak katalogu daje jawne „UWAGA” w logu.
+Baner z 1.3 **nie był zaimplementowany w interfejsie** (w NOC_RAPORT oznaczony jako odłożony; jedynie log konsoli) — dodany: interfejs czyta `manifest.json`
+(`wfs_only_share_of_masked`) i pokazuje „Skład drzewostanu tylko z opisu WFS … dla X% wydzieleń w masce”, gdy > 20% (`wfsOnlyBanner`). Zweryfikowany w przeglądarce na
+podmienionej wartości 35% (na prawdziwych danych baner słusznie się nie pokazuje: 10,9% < 20%; zrzuty `*_baner_wfs_35proc_test.jpg`, manifest przywrócony).
+Test: `tests/test_local_config.py` (kolejność źródeł; `main([--lat --lon --radius-km])` jak launcher przekazuje do przebiegu skonfigurowany katalog) + przebieg na żywo niżej.
+
+**2. Panel warunków spójny z mapą** — opis i tabela w 4.4.
+
 ## Wynik przebiegu (4.6)
 
-`python -m pipeline.prepare_trip --lat 50.527 --lon 18.605 --radius-km 20 --out-dir output/faza4_kieleczka` (kod z gałęzi, 19 716 wydzieleń,
-14 399 w masce, 5 rejonów), zsynchronizowany do frontendu i zapisany jako migawka **„Kieleczka — faza 4”** (`frontend/public/data/trips/kieleczka-faza-4-2026-09-29/`).
-**R niezmienione:** porównanie z ostatnią migawką sprzed Fazy 4 (`kieleczka-29-09-2026-09-29`, ten sam dzień i promień) na 19 711 wspólnych wydzieleniach:
-F, F_loc, R, P i H identyczne (0 różnic). Panel warunków tego przebiegu: agregacja `median_f_stands`, dzień 5 oznaczony `uncertain`;
-karta wydzielenia ma blok `weather` (np. opad 55 mm/26 dni, bilans −1,0 mm przy typowym −3,6 mm, percentyl 0,56, 14,0 °C przy optimum 13 °C, przymrozek: brak, F 0,66).
-Uwaga poza Fazą 4: przebieg nadal ma 100% składu z WFS (paczki BDL nie są w `cache/bdl_packages`, a launcher nie przekazuje `--bdl-packages-dir`) — jak w poprzednich migawkach.
-Wygląd panelu i karty nie był sprawdzany w przeglądarce (tylko testy jednostkowe, `tsc`, `vite build`).
+Przebieg identyczny z tym, co robi launcher (`python -m pipeline.prepare_trip --lat 50.527 --lon 18.605 --radius-km 20`, bez żadnych dodatkowych parametrów,
+potem `npm run sync-data`, potem zapis migawki funkcją launchera `save_trip`; GUI Tk nie było uruchamiane): log „Paczki BDL: 45565 wydzieleń z pełnym składem gatunkowym”.
+Migawka **„Kieleczka — faza 4 (paczki)”** (`frontend/public/data/trips/kieleczka-faza-4-paczki-2026-09-29/`; poprzednia „Kieleczka — faza 4” zostaje jako wersja sprzed poprawek).
+
+- **Skład z paczek: 89,1% wydzieleń w masce** (14 399 w masce; WFS-only 10,9% → poniżej progu banera). Nadleśnictwa: 02-03 100%, 02-16 100%, 02-19 99,9%, 02-14 97,1%, 02-25 95,8%, 02-29 90,9%;
+  **bez paczki: 02-31 (1339 wydzieleń) i 02-06 (5)**.
+- **F panelu vs mediana mapy (dziś): 0,636 vs 0,641** (mediana R 47,6; 5 rejonów).
+- Zmiana H/R względem migawek sprzed poprawki jest oczekiwana (skład z paczek zamiast WFS); F i F_loc niezmienione — F jest niezależne od składu, a poprzednia migawka miała identyczne F/F_loc (0 różnic).
+
+**Przeglądarka (zrzuty w `docs/porownania/faza4/zrzuty/`).** Komputer 1536 px: panel z dniami (dni od 4. naprzód wyszarzone „prognoza niepewna”), składniki, notka; karta rejonu z sekcją „Pogoda w tym miejscu”.
+Telefon: okno przeglądarki nie dało się zwęzić narzędziem, więc widok 375 px to ta sama aplikacja w ramce iframe o szerokości 390 px — bez poziomego przewijania (scrollWidth = clientWidth = 375),
+panel, baner i karta czytelne, dni prognozy zawijają się do drugiego wiersza. Poprawka stylu po zrzucie komputerowym: nagłówek „Pogoda w tym miejscu” zmniejszony, baner wyrównany do panelu (bez ponownego zrzutu).
+Karta wydzielenia (widok „Wydzielenia”/szczegóły) używa tej samej funkcji `weatherSection`; sprawdzona tylko na karcie rejonu.
 
 ## Testy
 
