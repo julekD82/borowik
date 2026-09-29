@@ -88,6 +88,40 @@ export async function syncData(source, target) {
     }
   }
 
+  // Faza UI.1: zestaw rejonow liczony bez presji grzybiarzy -- opcjonalny (starsze
+  // eksporty go nie maja; wtedy przelacznik presji jest nieaktywny), ale jesli
+  // istnieje, musi byc poprawny i odwolywac sie tylko do wydzielen z tej paczki.
+  let regionsNoPressureRaw = null;
+  try {
+    regionsNoPressureRaw = await readFile(
+      path.join(source, `regions_bez_presji_${day}.json`),
+      "utf8",
+    );
+  } catch {
+    regionsNoPressureRaw = null;
+  }
+  let regionsNoPressure = null;
+  if (regionsNoPressureRaw !== null) {
+    try {
+      regionsNoPressure = JSON.parse(regionsNoPressureRaw);
+    } catch {
+      throw new Error(`Plik regions_bez_presji_${day}.json jest uszkodzony.`);
+    }
+    if (!Array.isArray(regionsNoPressure))
+      throw new Error(`Niepoprawny format regions_bez_presji_${day}.json.`);
+    for (const region of regionsNoPressure) {
+      if (region.day !== day)
+        throw new Error("Niezgodna data wewnątrz pliku rejonów bez presji.");
+      if (
+        !Array.isArray(region.stand_ids) ||
+        region.stand_ids.some((id) => !geometryIds.has(id))
+      )
+        throw new Error(
+          "Rejon bez presji odwołuje się do wydzielenia spoza zsynchronizowanego zestawu.",
+        );
+    }
+  }
+
   // Detail export is optional too, same reasoning as regions above (plan
   // 2.1 step B3) -- but a detail entry references only its OWN stand_id,
   // not a list of others, so the check is simpler than regions'.
@@ -196,6 +230,10 @@ export async function syncData(source, target) {
     targets.push("regions.json");
     allContents.push(regionsRaw);
   }
+  if (regionsNoPressure !== null) {
+    targets.push("regions_bez_presji.json");
+    allContents.push(regionsNoPressureRaw);
+  }
   if (details !== null) {
     targets.push("details.json");
     allContents.push(detailsRaw);
@@ -222,6 +260,8 @@ export async function syncData(source, target) {
     // previous sync, so the toggle doesn't show a different day's regions
     // next to fresh per-stand data.
     await rm(path.join(target, "regions.json"), { force: true });
+  if (regionsNoPressure === null)
+    await rm(path.join(target, "regions_bez_presji.json"), { force: true });
   if (details === null)
     await rm(path.join(target, "details.json"), { force: true });
   if (conditions === null)
@@ -234,6 +274,7 @@ export async function syncData(source, target) {
     day,
     stands: scores.length,
     regions: regions?.length ?? 0,
+    regionsNoPressure: regionsNoPressure?.length ?? 0,
     details: details?.length ?? 0,
     conditions: conditions === null ? 0 : 1,
     manifest: manifest === null ? 0 : 1,

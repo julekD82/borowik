@@ -5,6 +5,7 @@ import pathlib
 import geopandas as gpd
 import pandas as pd
 
+from pipeline.scoring import compute_ranking
 from pipeline.searchability import searchability_hint
 from pipeline.tie_break import veg_cover_label
 
@@ -59,6 +60,12 @@ def build_score_record(row, day: str) -> dict:
     record["day"] = day
     record["R"] = _json_safe(float(row["R_final"]))
     record["mask"] = bool(row["mask_full"])
+    # Faza UI.1: wynik bez presji grzybiarzy, 100 * H * F_loc (ta sama maska).
+    # Kolumna pochodzi z pipeline.mvp; wiersz bez niej (starsza ramka) liczony tu
+    # tym samym compute_ranking z alpha = 0.
+    r_bez = row["R_bez_presji"] if "R_bez_presji" in row.index else compute_ranking(
+        bool(row["mask_full"]), _json_safe(row["H"]), _json_safe(row["F_loc"]), p=0.0, alpha=0.0)
+    record["R_bez_presji"] = _json_safe(float(r_bez))
     # Plan 2.1 step A4 (spec §5.2): from the EPSG:2180 geometry itself (same
     # source pipeline.regions.py already uses for its own area_ha), not
     # BDL's own sub_area attribute -- unused elsewhere, possibly stale.
@@ -134,7 +141,8 @@ def _species_entries(species: list[tuple[str, str]], dictionaries: dict) -> list
 def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, day: str,
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
                            tie_break_index: dict, extra_features_index: dict | None = None,
-                           access: dict | None = None, weather: dict | None = None) -> dict:
+                           access: dict | None = None, weather: dict | None = None,
+                           habitat: dict | None = None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -163,6 +171,8 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         "access": access,
         # Faza 4.3/4.5: skladniki pogody i udzial prognozy w oknie (prezentacja).
         "weather": weather,
+        # Faza UI.2: skladniki siedliska (S_host, S_site, S_age) do rozwiniecia paska.
+        "habitat": habitat,
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -219,11 +229,26 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             extra_features_index=extra_features_index,
             access=build_access_card(row),
             weather=build_weather_card(row, profile),
+            habitat=build_habitat_card(row, profile),
         )
         for _, row in stands.iterrows()
     ]
     out_path.write_text(json.dumps(records, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
     return out_path
+
+
+def build_habitat_card(row, profile: dict | None = None) -> dict | None:
+    """Faza UI.2: skladniki H tego wydzielenia (S_host, S_site, S_age) i tryb wieku
+    z profilu -- tylko prezentacja, wartosci wprost z modelu. None dla wiersza
+    bez tych kolumn."""
+    if "S_host" not in row.index:
+        return None
+    return {
+        "S_host": _json_safe(row.get("S_host")),
+        "S_site": _json_safe(row.get("S_site")),
+        "S_age": _json_safe(row.get("S_age")),
+        "age_mode": (profile or {}).get("habitat", {}).get("age_mode", "neutral"),
+    }
 
 
 def build_weather_card(row, profile: dict | None = None) -> dict | None:
@@ -282,6 +307,13 @@ def build_access_card(row) -> dict | None:
         "top_point_type": _text_or_none(row.get("top_point_type")),
         "top_point_source": _text_or_none(row.get("top_point_source")),
         "top_point_name": _text_or_none(row.get("top_point_name")),
+        # Faza UI.2: wklad kazdego typu w surowa presje (model punktow dostepu),
+        # z ktorego pasek "Spokoj" wybiera 2-3 najwazniejsze punkty.
+        "pressure_contrib": {
+            t: _json_safe(row.get(f"pcontrib_{t}"))
+            for t in ("parking", "entrance", "gate", "road_fallback", "settlement", "forest_road")
+            if f"pcontrib_{t}" in row.index
+        },
     }
 
 

@@ -162,6 +162,15 @@ def enrich_with_mvp_layers(stands: gpd.GeoDataFrame, profile: dict, gdos_gdf: gp
                 # would still show it as legal.
                 stands.loc[idx, "mask_full"] = False
 
+    # Faza UI.1: wynik bez presji grzybiarzy (alpha = 0), 100 * H * F_loc, z ta
+    # sama maska co R_final (rowniez po zakazie okresowym powyzej). Sluzy tylko
+    # przelacznikowi presji w interfejsie i drugiemu zestawowi rejonow -- nic
+    # w modelu z niego nie korzysta.
+    stands["R_bez_presji"] = [
+        compute_ranking(mask, h, f_loc, p=0.0, alpha=0.0)
+        for mask, h, f_loc in zip(stands["mask_full"], stands["H"], stands["F_loc"])
+    ]
+
     # Plan 1.6: zakaz_status in {brak, zakaz, nie_sprawdzono, blad} -- a
     # single field a card/list can show discretely, instead of a caller
     # having to reconstruct it from three separate booleans.

@@ -389,7 +389,9 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
                     radar_stand_spatial_coverage_mean: float | None = None,
                     radar_stand_precip_used_count: int | None = None,
                     pressure_model_used: str | None = None,
-                    access_points: dict | None = None) -> dict:
+                    access_points: dict | None = None,
+                    pressure_alpha: float | None = None,
+                    region_count_bez_presji: int | None = None) -> dict:
     """Plan wdrozenia 1.1 (spec S18.1 "Manifest analizy"): one dict with
     every field the acceptance test checks for, assembled from values the
     caller (run_trip_preparation) already computed -- this function does no
@@ -438,6 +440,7 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
             "stand_count": diagnostics.get("stand_count", 0),
             "mask_passing_count": diagnostics.get("mask_passing_count", 0),
             "region_count": region_count,
+            "region_count_bez_presji": region_count_bez_presji,
             "package_stand_count": diagnostics.get("package_stand_count", 0),
             "wfs_stand_count": diagnostics.get("stand_count", 0) - diagnostics.get("package_stand_count", 0),
             "unknown_site_count": diagnostics.get("unknown_site_count", 0),
@@ -461,6 +464,9 @@ def build_manifest(*, lat: float, lon: float, radius_km: float, day: str,
         # z fallbackiem bez wjazdow i kafli z bledem pobrania.
         "pressure_model_used": pressure_model_used,
         "access_points": access_points,
+        # Faza UI.1: waga presji w R = 100 * H * F_loc * (1 - alpha * P); interfejs
+        # podaje ja w Szczegolach przy pasku "Spokoj".
+        "pressure_alpha": pressure_alpha,
     }
 
 
@@ -836,6 +842,11 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
 
     print("Grouping into search regions...")
     regions = group_into_regions(enriched, profile)
+    # Faza UI.1: ta sama procedura dla rankingu bez presji grzybiarzy (alpha = 0):
+    # R_bez_presji = 100 * H * F_loc podstawione w miejsce R_final. Jedynie
+    # przelacznik presji w interfejsie czyta ten zestaw; model sie nie zmienia.
+    regions_bez_presji = group_into_regions(
+        enriched.assign(R_final=enriched["R_bez_presji"]), profile)
 
     # plan 2.1 step B3: card-detail data only (species composition, density,
     # podszyt, soil type from a BDL package; neighbours + stand_stru/
@@ -884,6 +895,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     stands_path = export_stand_geometries(enriched, out_dir / "stands_mvp.parquet")
     geojson_path = export_stand_geometries_geojson(enriched, out_dir / "stands.geojson")
     regions_path = write_regions_json(regions, day=day, out_path=out_dir / f"regions_{day}.json")
+    regions_bez_presji_path = write_regions_json(
+        regions_bez_presji, day=day, out_path=out_dir / f"regions_bez_presji_{day}.json")
     details_path = write_details_json(
         enriched, package_details_index, neighbors_by_stand, dictionaries,
         day=day, out_path=out_dir / f"details_{day}.json",
@@ -891,7 +904,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         extra_features_index=extra_features_index,
         profile=profile,
     )
-    print(f"  {len(regions)} region(s)")
+    print(f"  {len(regions)} region(s), {len(regions_bez_presji)} bez presji")
     access_points_path = forest_roads_path = None
     if access_model is not None:
         access_points_path = write_access_points_geojson(access_model, out_dir / f"access_points_{day}.geojson")
@@ -944,6 +957,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         radar_stand_precip_used_count=scored.attrs["diagnostics"].get("stand_precip_used_count"),
         pressure_model_used=str(enriched["pressure_model"].iloc[0]) if len(enriched) else None,
         access_points=access_manifest,
+        pressure_alpha=profile["pressure"]["alpha_default"],
+        region_count_bez_presji=len(regions_bez_presji),
     )
     manifest_path = write_manifest_json(manifest, out_dir / f"run_manifest_{day}.json")
 
@@ -954,6 +969,8 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         "region_count": len(regions),
         "scores_path": scores_path, "stands_path": stands_path,
         "geojson_path": geojson_path, "regions_path": regions_path,
+        "regions_bez_presji_path": regions_bez_presji_path,
+        "region_count_bez_presji": len(regions_bez_presji),
         "details_path": details_path,
         "conditions_path": str(conditions_path) if conditions_path else None,
         "diagnostics_path": diagnostics_path,
