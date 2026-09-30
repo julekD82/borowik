@@ -67,6 +67,18 @@ describe("mapa w interfejsie", () => {
     act(() => S.setPressure(false));
     expect(map.calls.fitFeatures).toHaveLength(fits);
   });
+  it("przełączenie presji nie wysyła od nowa geometrii (ta sama lista wydzieleń)", () => {
+    render(<MapView />);
+    const map = mocks.maps[0];
+    act(() => {
+      S.analysis.value = makeAnalysis({ scores: [makeScore("A", { R: 80, R_bez_presji: 50 }), makeScore("B", { R: 50, R_bez_presji: 80 })], regionsNoPressure: [] });
+    });
+    const first = map.calls.setStands.at(-1)![0];
+    act(() => S.setPressure(false));
+    const [features, props] = map.calls.setStands.at(-1)! as [unknown[], Map<string, { cls: number }>];
+    expect(features).toBe(first);
+    expect(props.get("B")?.cls).toBe(1);
+  });
   it("znacznik rejonu otwiera kartę rejonu", () => {
     render(<MapView />);
     act(() => {

@@ -27,8 +27,15 @@ beforeEach(() => {
 describe("pasek górny", () => {
   it("opisuje bieżącą analizę", () => {
     S.analysis.value = makeAnalysis({ scores: [makeScore("A")] });
+    S.load.value = { status: "ready" };
     render(<TopBar />);
     expect(screen.getByText("Aktualna analiza · 20 km · 30 września 2026")).toBeTruthy();
+  });
+  it("podczas wczytywania innej analizy nie łączy nazwy nowej z datą poprzedniej", () => {
+    S.analysis.value = makeAnalysis({ scores: [makeScore("A")] });
+    S.load.value = { status: "loading" };
+    render(<TopBar />);
+    expect(screen.getByText("Wczytywanie analizy…")).toBeTruthy();
   });
   it("lista analiz: ukryta bez migawek, wybór otwiera migawkę", () => {
     const { container, rerender } = render(<TopBar />);

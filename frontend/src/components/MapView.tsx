@@ -3,7 +3,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { ACCESS_LAYERS } from "../domain/access";
 import { ForestMap } from "../map/forestMap";
 import {
-  access, analysis, featuresFor, fitRequest, layers, mapMode, mapStatus, mobilePane, openRegion, openStand,
+  access, analysis, featureList, featuresFor, fitRequest, layers, mapMode, mapStatus, mobilePane, openRegion, openStand,
   regionMarkers, selection, standProps, standTooltip,
 } from "../state/store";
 import { Legend } from "./Legend";
@@ -21,8 +21,7 @@ export function MapView() {
     });
     const stops = [
       effect(() => {
-        const a = analysis.value;
-        if (a) map.setStands([...a.features.values()], standProps.value);
+        if (analysis.value) map.setStands(featureList.value, standProps.value);
       }),
       effect(() => map.setMode(mapMode.value)),
       effect(() => map.setRegions(regionMarkers.value)),

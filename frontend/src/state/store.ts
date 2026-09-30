@@ -85,6 +85,8 @@ export const start = computed<[number, number] | null>(() => {
   const m = analysis.value?.manifest;
   return m && m.lat !== null && m.lon !== null ? [m.lon, m.lat] : null;
 });
+// Stala lista geometrii dla mapy: zmienia sie tylko z nowa analiza (nie z przelacznikiem presji).
+export const featureList = computed(() => (analysis.value ? [...analysis.value.features.values()] : []));
 export const weatherModel = computed(() => buildWeatherPanel(analysis.value?.conditions ?? null));
 export const regionMarkers = computed<RegionMarker[]>(() =>
   regionViews.value.map((v, i) => ({ id: v.region.region_id, number: i + 1, point: [v.region.centroid_lon, v.region.centroid_lat] })),

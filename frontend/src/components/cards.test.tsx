@@ -99,4 +99,13 @@ describe("panel boczny", () => {
     act(() => S.openRegion("region_1", "list"));
     expect(screen.getByText("Wydzielenia w rejonie (1)")).toBeTruthy();
   });
+  it("przejście do karty przewija panel na górę", () => {
+    S.analysis.value = makeAnalysis({ scores: [makeScore("A")], regions: [makeRegion("region_1", 70, ["A"])] });
+    S.load.value = { status: "ready" };
+    const { container } = render(<Sidebar />);
+    const aside = container.querySelector("aside")!;
+    aside.scrollTop = 500;
+    act(() => S.openRegion("region_1", "list"));
+    expect(aside.scrollTop).toBe(0);
+  });
 });

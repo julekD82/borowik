@@ -6,7 +6,8 @@ import {
 import { vertices } from "../domain/geometry";
 import type { RegionMarker, StandMapProps } from "../state/store";
 import {
-  buildStandCollection, lineColor, lineWidth, moistureFillColor, moistureFillOpacity, scoreFillColor, scoreFillOpacity,
+  buildStandCollection, changedStates, lineColor, lineWidth, moistureFillColor, moistureFillOpacity, regionOutlineOpacity,
+  scoreFillColor, scoreFillOpacity, type StandState,
 } from "./layers";
 
 export type MapHandlers = {
@@ -39,6 +40,9 @@ const ACCESS_CLICK_LAYERS = [
 export class ForestMap {
   private map: maplibregl.Map;
   private collection = buildStandCollection([], new Map());
+  private features: StandFeature[] | null = null;
+  // Ostatnio nalozony stan obiektow (klasa, rejon) -- odtwarzany po przeladowaniu stylu podkladu.
+  private states = new Map<string, StandState>();
   private mode: "score" | "moisture" = "score";
   private selection: { standId: string | null; regionStandIds: string[] } = { standId: null, regionStandIds: [] };
   private markers: maplibregl.Marker[] = [];
@@ -65,6 +69,7 @@ export class ForestMap {
       this.addLayers();
       this.applyMode();
       this.applySelection();
+      this.applyStates([...this.states]);
     });
     this.map.on("error", () => this.handlers.onStatus("Nie udało się wczytać części mapy. Lista pozostaje dostępna."));
     this.map.on("click", "stand-fill", (event) => {
@@ -87,12 +92,14 @@ export class ForestMap {
 
   private addLayers() {
     if (this.map.getSource("stands")) return;
-    this.map.addSource("stands", { type: "geojson", data: this.collection, attribution: "Bank Danych o Lasach" });
+    this.map.addSource("stands", {
+      type: "geojson", data: this.collection, attribution: "Bank Danych o Lasach", promoteId: "stand_id",
+    });
     this.map.addLayer({ id: "stand-fill", type: "fill", source: "stands", paint: { "fill-color": scoreFillColor(), "fill-opacity": scoreFillOpacity() } });
     this.map.addLayer({ id: "stand-line", type: "line", source: "stands", paint: { "line-color": lineColor(), "line-width": lineWidth() } });
     this.map.addLayer({
-      id: "region-outline", type: "line", source: "stands", filter: [">", ["get", "region"], 0],
-      paint: { "line-color": "#234b3d", "line-width": 1.6, "line-opacity": 0.85 },
+      id: "region-outline", type: "line", source: "stands",
+      paint: { "line-color": "#234b3d", "line-width": 1.6, "line-opacity": regionOutlineOpacity() },
     });
     this.map.addLayer({
       id: "region-selected", type: "line", source: "stands", filter: ["in", ["get", "stand_id"], ["literal", []]],
@@ -118,9 +125,23 @@ export class ForestMap {
     this.map.setFilter("region-selected", ["in", ["get", "stand_id"], ["literal", this.selection.regionStandIds]]);
   }
 
+  // Geometria idzie do mapy tylko przy nowej liscie wydzielen (nowa analiza); zmiana klas lub
+  // rejonow (przelacznik presji) zmienia wylacznie stan obiektow, bez ponownego wysylania danych.
   setStands(features: StandFeature[], props: Map<string, StandMapProps>) {
-    this.collection = buildStandCollection(features, props);
-    (this.map.getSource("stands") as maplibregl.GeoJSONSource | undefined)?.setData(this.collection);
+    if (features !== this.features) {
+      this.features = features;
+      this.collection = buildStandCollection(features, props);
+      this.states = new Map();
+      (this.map.getSource("stands") as maplibregl.GeoJSONSource | undefined)?.setData(this.collection);
+    }
+    const changes = changedStates(this.states, props);
+    for (const [id, state] of changes) this.states.set(id, state);
+    this.applyStates(changes);
+  }
+
+  private applyStates(changes: [string, StandState][]) {
+    if (!this.map.getSource("stands")) return;
+    for (const [id, state] of changes) this.map.setFeatureState({ source: "stands", id }, state);
   }
 
   setMode(mode: "score" | "moisture") {

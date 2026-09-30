@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "preact/hooks";
 import { load, tab, top } from "../state/store";
 import { PressureToggle } from "./PressureToggle";
 import { RegionCard } from "./RegionCard";
@@ -17,8 +18,14 @@ function PanelBody() {
 
 export function Sidebar() {
   const state = load.value;
+  const view = top.value;
+  const panel = useRef<HTMLElement>(null);
+  // Nowy widok stosu (rejon, wydzielenie, powrot do listy) zaczyna sie od gory panelu.
+  useEffect(() => {
+    if (panel.current) panel.current.scrollTop = 0;
+  }, [view]);
   return (
-    <aside class="sidebar" aria-label="Panel analizy">
+    <aside ref={panel} class="sidebar" aria-label="Panel analizy">
       {state.status === "loading" ? (
         <LoadingState />
       ) : state.status === "error" ? (
