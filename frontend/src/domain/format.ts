@@ -54,3 +54,6 @@ export function startDistanceLabel(
 export function areaLabel(areaHa: number | null | undefined): string | null {
   return finite(areaHa) ? `${pln(areaHa, areaHa < 10 ? 1 : 0)} ha` : null;
 }
+
+export const joinMeta = (parts: (string | null | undefined | false)[]): string =>
+  parts.filter((p): p is string => typeof p === "string" && p.length > 0).join(" · ");

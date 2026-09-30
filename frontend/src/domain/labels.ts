@@ -1,5 +1,6 @@
-import type { Region, StandDetail, TripMeta } from "../data/types";
-import { finite } from "./format";
+import type { Region, SpeciesShare, StandDetail, TripMeta } from "../data/types";
+import { finite, joinMeta, pl } from "./format";
+import { CLASS_LABELS, type ScoreClass } from "./ranking";
 
 // Same strict upper bounds as profiles/boletus_edulis.yaml::fruiting_classes.
 export function fruitingClass(value: number | null | undefined): string {
@@ -134,4 +135,55 @@ export function standName(standId: string, detail?: StandDetail | null): string 
 export function regionName(region: Region, position: number): string {
   const place = region.near_place?.name;
   return place ? `Rejon ${position} · ${place}` : `Rejon ${position}`;
+}
+
+const MASK_REASON_TEXT: Record<string, string> = {
+  not_dstan: "to nie drzewostan (np. zrąb, łąka, droga)",
+  no_age: "brak wieku drzewostanu w danych",
+  too_young: "za młody drzewostan (młodnik)",
+  excluded_species: "gatunek wykluczający (np. olsza, jesion) stanowi co najmniej 80%",
+  gdos: "rezerwat przyrody lub park narodowy (GDOŚ)",
+  zakaz: "okresowy zakaz wstępu do lasu",
+};
+
+export function maskReasonTexts(reasons?: string[]): string[] {
+  if (!reasons || !reasons.length) return ["powód nieznany w tej analizie"];
+  return reasons.map((r) => MASK_REASON_TEXT[r] ?? r);
+}
+
+export function yearsLabel(n: number): string {
+  const k = Math.round(n);
+  if (k === 1) return "1 rok";
+  const last = k % 10;
+  const lastTwo = k % 100;
+  const few = last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14);
+  return `${k} ${few ? "lata" : "lat"}`;
+}
+
+/** "sosna 70%, świerk 30%": sumuje powtorzone gatunki, pomija udzialy sladowe ("poniżej 5 %"). */
+export function speciesShort(species: SpeciesShare[], max = 3): string | null {
+  const totals = new Map<string, { name: string; share: number }>();
+  for (const s of species) {
+    const match = /udział\s+(\d+)\s*%/.exec(s.share);
+    if (!match) continue;
+    const previous = totals.get(s.species_cd);
+    totals.set(s.species_cd, { name: s.name.split(" ")[0], share: (previous?.share ?? 0) + Number(match[1]) });
+  }
+  const list = [...totals.values()].sort((a, b) => b.share - a.share).slice(0, max);
+  return list.length ? list.map((x) => `${x.name} ${x.share}%`).join(", ") : null;
+}
+
+export function formatDateLong(day?: string | null): string {
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return "—";
+  return new Date(`${day}T12:00:00`).toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" });
+}
+
+export function analysisLabel(o: { tripName: string | null; radiusKm: number | null; day: string | null }): string {
+  return joinMeta([o.tripName ?? "Aktualna analiza", o.radiusKm !== null ? `${pl(o.radiusKm)} km` : null, o.day ? formatDateLong(o.day) : null]);
+}
+
+export function tooltipText(name: string, r: number | null, cls: ScoreClass | 0): string {
+  if (cls === 0) return `${name} · poza filtrami modelu`;
+  if (r === null) return `${name} · brak wyniku`;
+  return `${name} · wynik ${Math.round(r)} · ${CLASS_LABELS[cls]}`;
 }

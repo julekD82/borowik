@@ -1,0 +1,10 @@
+{
+  "opis": "Wspolny przyklad klas procentowych: te same oczekiwane klasy sprawdza test Pythona (phone_kmz) i test frontendu (mapa).",
+  "przypadki": [
+    {"wartosci": [1, 10, 0.5, 8, 7, 1, 9, 0.1, 6, 8, 5, 0.2, 4, 3, 1, 2, 0.5, 0.05, 0.1, 0.0],
+     "klasy": [4, 1, 4, 2, 3, 4, 2, 4, 3, 2, 3, 4, 3, 3, 4, 3, 4, 4, 4, 4]},
+    {"wartosci": [5.0], "klasy": [1]},
+    {"wartosci": [3.0, 3.0, 3.0], "klasy": [1, 1, 1]},
+    {"wartosci": [], "klasy": []}
+  ]
+}

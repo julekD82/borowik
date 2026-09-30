@@ -101,3 +101,39 @@ export function pressureSwitchAvailable(
     scores.some((s) => s.mask && finite(s.R_bez_presji))
   );
 }
+
+export type ScoreClass = 1 | 2 | 3 | 4;
+// Jak pipeline/phone_kmz.py::CLASS_THRESHOLDS -- ten sam podzial co eksport KMZ na telefon.
+export const CLASS_THRESHOLDS = { 1: 0.05, 2: 0.2, 3: 0.5 } as const;
+export const CLASS_LABELS: Record<ScoreClass, string> = {
+  1: "najlepsze 5%",
+  2: "5–20%",
+  3: "20–50%",
+  4: "pozostałe",
+};
+
+/** Klasa 1..4: udzial wartosci scisle wiekszych < 5% / 20% / 50%; remisy w tej samej klasie. */
+export function classifyByPercentile(values: number[]): ScoreClass[] {
+  const n = values.length;
+  if (!n) return [];
+  const ascending = [...values].sort((a, b) => a - b);
+  const countAtMost = (x: number) => {
+    let lo = 0;
+    let hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (ascending[mid] <= x) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  return values.map((v) => {
+    const share = (n - countAtMost(v)) / n;
+    return share < CLASS_THRESHOLDS[1] ? 1 : share < CLASS_THRESHOLDS[2] ? 2 : share < CLASS_THRESHOLDS[3] ? 3 : 4;
+  });
+}
+
+export function regionAreaHa(view: RegionView): number | null {
+  const total = view.members.reduce((sum, m) => sum + (finite(m.score.area_ha) ? m.score.area_ha : 0), 0);
+  return total > 0 ? total : null;
+}
