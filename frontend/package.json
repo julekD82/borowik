@@ -12,10 +12,15 @@
     "sync-data": "node scripts/sync-data.mjs"
   },
   "dependencies": {
-    "maplibre-gl": "^5.0.0"
+    "@preact/signals": "^2.11.3",
+    "maplibre-gl": "^5.0.0",
+    "preact": "^11.0.0"
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@testing-library/preact": "^3.2.4",
     "@types/geojson": "^7946.0.16",
+    "jsdom": "^30.1.1",
     "prettier": "^3.9.9",
     "typescript": "^5.9.0",
     "vite": "^7.0.0",
