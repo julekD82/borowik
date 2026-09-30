@@ -1,6 +1,6 @@
 # Raport Fazy 2 — kontrole wiarygodności i przygotowanie walidacji
 
-Stan: 29.09.2026. Faza 2 (gałąź `ulepszenia-faza2`) jest scalona do `master`; zrealizowane: 2.0 (reguły zatwierdzone), 2.1, 2.2, 2.3, 2.4, 2.5, 2.6 oraz `scripts/zapisz_prognoze.py`. Nie ruszane na polecenie właściciela: 2.7, 2.8. Decyzja właściciela po walidacji (domyślny `habitat.age_mode: neutral`) jest wdrożona na gałęzi `ulepszenia-wiek` — patrz „Decyzje po walidacji”.
+Stan: 29.09.2026. Faza 2 (gałąź `ulepszenia-faza2`) jest scalona do `master`; zrealizowane: 2.0 (reguły zatwierdzone), 2.1, 2.2, 2.3, 2.4, 2.5, 2.6 oraz `scripts/zapisz_prognoze.py`. Nie ruszane na polecenie właściciela: 2.7. 2.8 zrealizowane 30.09.2026 osobno (`docs/RAPORT_BIELEFELD.md`). Decyzja właściciela po walidacji (domyślny `habitat.age_mode: neutral`) jest wdrożona na gałęzi `ulepszenia-wiek` — patrz „Decyzje po walidacji”.
 
 ## Status zadań
 
@@ -14,7 +14,8 @@ Stan: 29.09.2026. Faza 2 (gałąź `ulepszenia-faza2`) jest scalona do `master`;
 | 2.5 Kontrola czasowa F | DONE | wynik: „brak rozróżnienia”, bez czerwonej flagi, patrz niżej |
 | 2.6 E-OBS lokalnie | DONE (bez zmiany produkcji) | `pipeline/eobs.py`, `scripts/pobierz_eobs.py`, `cache/eobs/` (12 plików, 456 MB); porównanie rozkładów percentyli ze stanem obecnym nie wykonane, więc produkcja pozostaje na ERA5 |
 | `scripts/zapisz_prognoze.py` | DONE | 4 punkty w `dane_terenowe/punkty_prognozy.json`; harmonogram Windows do zainstalowania ręcznie wg `docs/ZAPIS_WYJSC.md` |
-| 2.7, 2.8 | nie ruszane (decyzja właściciela) | 2.7 wymaga ≥ 30 dni archiwum z 2.2 (archiwum zaczęło się 28.09) |
+| 2.7 | nie ruszane (decyzja właściciela) | wymaga ≥ 30 dni archiwum z 2.2 (archiwum zaczęło się 28.09) |
+| 2.8 Dane z Bielefeld | DONE 30.09.2026 (gałąź `walidacja-bielefeld`, bez zmiany modelu) | wagi opadu K1 vs K0: „nierozstrzygnięte” → K0 zostaje; raport `docs/RAPORT_BIELEFELD.md`, reguły `docs/WALIDACJA_BIELEFELD.md` |
 
 Uwaga do 2.2: archiwum zapisuje prognozę przy każdym pobraniu z Open-Meteo (od dnia pobrania wzwyż, z `fetched_at` i `forecast_days`), jeden plik na dzień; punkty już zapisane danego dnia nie są nadpisywane. Punkt dopisany później tego samego dnia z cache dostaje znacznik czasu późniejszego przebiegu — dla 2.7 istotna jest data wydania (dzień), nie godzina. Archiwum leży poza `cache/weather_points`. Prognozy sprzed dziś (28.09) nie istnieją — licznik dni zaczyna się od dziś. W dni bez analizy prognozę zapisuje `scripts/zapisz_prognoze.py` (punkty w `dane_terenowe/punkty_prognozy.json`: Kieleczka, Lubliniec, Krupski Młyn, Będziemyśl; harmonogram Windows na 6:00 do zainstalowania ręcznie wg `docs/ZAPIS_WYJSC.md`, do tego czasu archiwum rośnie tylko przy analizach i ręcznych uruchomieniach skryptu).
 

@@ -1,0 +1,2 @@
+# Dane walidacyjne: bez konwersji koncow linii (sumy SHA-256 w README musza sie zgadzac po checkout)
+dane_walidacyjne/** -text

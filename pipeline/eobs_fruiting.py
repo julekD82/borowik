@@ -3,6 +3,10 @@
 Okna jak w produkcji i w notatniku 03: CWB26 = suma wykladniczo wazona (polokres 10 dni, 26 dni)
 opadu minus ET0; tmean20 / tmean5 = srednie z TG; p5 = suma RR z 5 dni; tmin3 = min TN z 3 dni.
 Wartosc NaN, jesli w oknie brakuje choc jednego dnia. ET0: Hargreaves-Samani z TN/TX.
+
+Plan 2.8 (docs/WALIDACJA_BIELEFELD.md): wagi opadu w czasie sparametryzowane (`precip_weights`); domyslnie K0
+= wagi produkcji. Kolumna nadal nazywa sie `cwb26`, ale przy innym wariancie to CWB wazony wagami wariantu
+(klimatologia w CellClimate liczona jest z tej samej kolumny, wiec tymi samymi wagami). Produkcja bez zmian.
 """
 from datetime import date
 
@@ -21,14 +25,32 @@ HALF_LIFE_DAYS = 10.0
 CLIM_YEARS = (1991, 2020)
 CLIM_WINDOW_DAYS = 15
 ASSUMED_MOISTURE_CLS = 1  # jak w notatniku 03: brak dopasowania wydzielenia dla punktu GBIF
+PRECIP_WEIGHT_KINDS = ("K0", "K1", "K2", "K3")
 VARIANTS = ["F_bez_G_season", "F_z_G_season", "sam_kalendarz", "samo_M", "sama_T", "model_staly"]
 
 
-def rolling_features(daily: pd.DataFrame, lat: float) -> pd.DataFrame:
-    """Cechy pogodowe na kazdy dzien z tabeli EobsStore.daily (kolumny tg, tn, tx, rr)."""
+def precip_weights(kind: str = "K0") -> np.ndarray:
+    """Wagi w(j) dla j = 0, 1, ... dni wstecz (j = 0: dzien oceny). Warianty z docs/WALIDACJA_BIELEFELD.md:
+    K0 = 0,5^(j/10), j 0-25 (produkcja); K1 = j/5 dla j < 5, 1 dla 5-10, 0,5^((j-10)/10) dla j > 10, j 0-35;
+    K2 = 1, j 0-25 (rowne wagi jak w pracy z Bielefeld); K3 = 1 dla 5-10, j 0-10."""
+    if kind == "K0":
+        return 0.5 ** (np.arange(CWB_WINDOW) / HALF_LIFE_DAYS)
+    if kind == "K1":
+        j = np.arange(36, dtype=float)
+        return np.where(j < 5, j / 5, np.where(j <= 10, 1.0, 0.5 ** ((j - 10) / 10)))
+    if kind == "K2":
+        return np.ones(CWB_WINDOW)
+    if kind == "K3":
+        return (np.arange(11) >= 5).astype(float)
+    raise ValueError(f"nieznany wariant wag opadu: {kind}")
+
+
+def rolling_features(daily: pd.DataFrame, lat: float, weights: np.ndarray | None = None) -> pd.DataFrame:
+    """Cechy pogodowe na kazdy dzien z tabeli EobsStore.daily (kolumny tg, tn, tx, rr).
+    weights: w(j) dla j = 0.. dni wstecz (domyslnie K0 = produkcja); dotyczy tylko `cwb26`."""
     et0 = hargreaves_et0(daily["tn"], daily["tx"], lat).to_numpy()
     p = daily["rr"].to_numpy(float)
-    w = 0.5 ** (np.arange(CWB_WINDOW - 1, -1, -1) / HALF_LIFE_DAYS)  # od najstarszego do biezacego
+    w = np.asarray(precip_weights("K0") if weights is None else weights, float)[::-1]  # od najstarszego do biezacego
     n = len(daily)
 
     def win(arr, size, fn):
@@ -37,7 +59,7 @@ def rolling_features(daily: pd.DataFrame, lat: float) -> pd.DataFrame:
             out[size - 1:] = fn(sliding_window_view(arr.astype(float), size))  # NaN w oknie -> NaN wyniku
         return out
 
-    cwb = win(p, CWB_WINDOW, lambda v: v @ w) - win(et0, CWB_WINDOW, lambda v: v @ w)
+    cwb = win(p, len(w), lambda v: v @ w) - win(et0, len(w), lambda v: v @ w)
     return pd.DataFrame({
         "cwb26": cwb,
         "tmean20": win(daily["tg"].to_numpy(), 20, lambda v: v.mean(axis=1)),
@@ -50,11 +72,12 @@ def rolling_features(daily: pd.DataFrame, lat: float) -> pd.DataFrame:
 class CellClimate:
     """Cechy dobowe i klimatologia CWB26 (1991-2020) dla jednej komorki E-OBS."""
 
-    def __init__(self, store: EobsStore, lat: float, lon: float):
+    def __init__(self, store: EobsStore, lat: float, lon: float, weights: np.ndarray | None = None):
         clat, clon = store.cell(lat, lon)
         self.lat = clat
         daily = store.daily(clat, clon, date(1990, 12, 1), date(2025, 12, 31))
-        self.features = rolling_features(daily, clat)
+        self.daily = daily
+        self.features = rolling_features(daily, clat, weights)
         clim = self.features.loc[f"{CLIM_YEARS[0]}-01-01":f"{CLIM_YEARS[1]}-12-31", "cwb26"]
         clim = clim.dropna()
         self._clim_doy = clim.index.dayofyear.to_numpy()
