@@ -145,6 +145,71 @@ def _nan_to_none(value):
     return value
 
 
+DAILY_BACK_DAYS = 35
+
+
+def area_daily_table(daily: pd.DataFrame, points) -> pd.DataFrame:
+    """Nowy frontend (panel pogody): mediana obszaru na lokalna dobe -- opad i temperatury
+    (srednia, min., maks.) -- oraz sredni udzial godzin z radaru (0 bez radaru). W odroznieniu
+    od pipeline.flush.area_daily_weather (zamrozony eksperyment) ma tmax_c i radar_share.
+    Kolumn nieobecnych w `daily` (np. tmax_c w starszych testach) po prostu nie ma."""
+    wanted = set(points)
+    sel = daily[[(la, lo) in wanted for la, lo in zip(daily["lat"], daily["lon"])]]
+    sel = sel.assign(local_date=to_local_date(sel["date"]))
+    cols = [c for c in ("precipitation_mm", "tmean_c", "tmin_c", "tmax_c") if c in sel.columns]
+    out = sel.groupby("local_date")[cols].median()
+    if "radar_frac" in sel.columns:
+        out["radar_share"] = sel.groupby("local_date")["radar_frac"].mean().fillna(0.0)
+    else:
+        out["radar_share"] = 0.0
+    return out.sort_index().rename_axis("date")
+
+
+def _round_or_none(value, digits: int):
+    if value is None or pd.isna(value):
+        return None
+    return round(float(value), digits)
+
+
+def daily_series(area: pd.DataFrame, today: date, back_days: int = DAILY_BACK_DAYS) -> list[dict]:
+    """Wiersze do wykresu opadu w panelu: od dzis - back_days do konca danych (prognoza)."""
+    start = today - timedelta(days=back_days)
+    rows = []
+    for day, r in area[area.index >= start].iterrows():
+        rows.append({
+            "date": day.isoformat(),
+            "precip_mm": _round_or_none(r.get("precipitation_mm"), 1),
+            "radar_share": round(float(r.get("radar_share", 0.0)), 2),
+            "tmin_c": _round_or_none(r.get("tmin_c"), 1),
+            "tmax_c": _round_or_none(r.get("tmax_c"), 1),
+            "forecast": day > today,
+        })
+    return rows
+
+
+def weather_warnings(area: pd.DataFrame, today: date, horizon_days: int, profile: dict) -> list[dict]:
+    """Ostrzezenia panelu z progow profilu (bez nowych parametrow): przymrozek -- dni od
+    dzis-2 do konca horyzontu z mediana tmin < frost_tmin3_soft_c; upal z susza -- dni od
+    dzis do konca horyzontu ze srednia temperatura 5 dni > heat_penalty_tmean5_c i opadem
+    5 dni < heat_penalty_p5_mm (ta sama regula co kara za upal w F)."""
+    cfg = profile["fruiting"]
+    end = today + timedelta(days=horizon_days - 1)
+    frost = []
+    if "tmin_c" in area.columns:
+        for day, t in area["tmin_c"].items():
+            if today - timedelta(days=2) <= day <= end and pd.notna(t) and t < cfg["frost_tmin3_soft_c"]:
+                frost.append(day.isoformat())
+    heat = []
+    if {"tmean_c", "precipitation_mm"} <= set(area.columns):
+        tmean5 = area["tmean_c"].rolling(5, min_periods=5).mean()
+        p5 = area["precipitation_mm"].rolling(5, min_periods=5).sum()
+        for day in area.index:
+            if (today <= day <= end and pd.notna(tmean5[day])
+                    and tmean5[day] > cfg["heat_penalty_tmean5_c"] and p5[day] < cfg["heat_penalty_p5_mm"]):
+                heat.append(day.isoformat())
+    return [{"type": "frost", "dates": frost}, {"type": "heat_drought", "dates": heat}]
+
+
 def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame, clim_points,
                                today: date, profile: dict, rain_scale: float = 1.0,
                                point_weights: dict | None = None,
@@ -166,6 +231,7 @@ def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame
         raise ValueError(f"nieznana agregacja panelu: {aggregation!r}")
     params = _pulse_params(profile, rain_scale)
     area = area_daily_weather(daily, points)
+    table = area_daily_table(daily, points)
     rains = recent_rains(area, today, profile, rain_scale)  # raises ValueError if today missing
 
     with_ld = with_local_date(daily)
@@ -242,6 +308,9 @@ def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame
         "pulse_min_mm": round(params.pulse_min_mm, 1), "rains": rains, "days": days,
         "summary": rains_summary(rains, params.pulse_min_mm),
         "aggregation": aggregation,
+        "lookback_days": cfg["lookback_days"],
+        "daily": daily_series(table, today),
+        "warnings": weather_warnings(table, today, cfg["horizon_days"], profile),
         "uncertainty_thresholds": {
             "uncertain_from_day": (profile.get("ui") or {}).get("forecast_uncertain_from_day", 4),
             "indicative_from_day": (profile.get("ui") or {}).get("forecast_indicative_from_day", 8)},

@@ -1,3 +1,4 @@
+import json
 import pathlib
 from datetime import date, timedelta
 
@@ -235,3 +236,55 @@ def test_timeline_is_strict_json_even_with_an_empty_climatology_window():
     json.dumps(out, allow_nan=False)
     assert out["days"][0]["components"]["cwb26_typical_mm"] is None
     assert out["uncertainty_thresholds"] == {"uncertain_from_day": 4, "indicative_from_day": 8}
+
+
+from pipeline.conditions_timeline import area_daily_table, daily_series, weather_warnings
+
+
+def test_area_daily_table_takes_medians_and_mean_radar_share():
+    points = [(50.0, 21.0), (50.1, 21.1), (50.2, 21.2)]
+    daily = _daily_multi_point(points, "2026-09-20", 2, precip=1.0, tmin=5.0)
+    daily["tmax_c"] = [20.0, 20.0, 22.0, 22.0, 24.0, 24.0]
+    daily["precipitation_mm"] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    daily["radar_frac"] = [1.0, 1.0, 0.5, 0.0, 0.0, 1.0]
+    table = area_daily_table(daily, points)
+    first = table.loc[date(2026, 9, 20)]
+    assert first["precipitation_mm"] == 3.0          # mediana 1, 3, 5
+    assert first["tmax_c"] == 22.0
+    assert first["radar_share"] == pytest.approx(0.5)  # srednia 1, 0.5, 0
+
+
+def test_daily_series_starts_35_days_back_and_marks_forecast():
+    points = [(50.0, 21.0)]
+    today = date(2026, 9, 27)
+    start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
+    table = area_daily_table(_daily_multi_point(points, start, 47), points)
+    rows = daily_series(table, today)
+    assert rows[0]["date"] == (today - timedelta(days=35)).isoformat()
+    assert len(rows) == 35 + 1 + 6
+    assert [r["forecast"] for r in rows[-7:]] == [False] + [True] * 6
+    assert rows[0]["radar_share"] == 0.0 and rows[0]["tmax_c"] is None  # brak kolumn w fixture
+
+
+def test_weather_warnings_frost_window_and_heat_with_drought():
+    today = date(2026, 9, 27)
+    idx = [today + timedelta(days=k) for k in range(-4, 6)]
+    area = pd.DataFrame({"tmean_c": [20.0] * 10, "tmin_c": [5.0] * 10,
+                         "precipitation_mm": [0.0] * 10}, index=idx)
+    area.loc[today - timedelta(days=4), "tmin_c"] = -3.0   # przed oknem przymrozku (dzis-2)
+    area.loc[today + timedelta(days=2), "tmin_c"] = -1.0
+    out = {w["type"]: w["dates"] for w in weather_warnings(area, today, 7, PROFILE)}
+    assert out["frost"] == [(today + timedelta(days=2)).isoformat()]
+    assert out["heat_drought"] == [(today + timedelta(days=k)).isoformat() for k in range(0, 6)]
+
+
+def test_build_conditions_timeline_exports_daily_warnings_and_lookback():
+    points = [(50.0, 21.0)]
+    today = date(2026, 9, 27)
+    start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
+    out = build_conditions_timeline(_daily_multi_point(points, start, 47), points, _clim(points),
+                                    points, today, PROFILE)
+    assert out["lookback_days"] == PROFILE["conditions"]["lookback_days"]
+    assert len(out["daily"]) == 42
+    assert {w["type"] for w in out["warnings"]} == {"frost", "heat_drought"}
+    json.dumps(out, allow_nan=False)
