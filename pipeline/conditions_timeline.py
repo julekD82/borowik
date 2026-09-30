@@ -19,6 +19,7 @@ import pandas as pd
 
 from pipeline.flush import FlushParams, area_daily_weather, detect_pulses, fmt_day_range
 from pipeline.phenology import compute_g_season
+from pipeline.rain_normal import EOBS_NORMAL_LABEL
 from pipeline.scoring import (
     classify_fruiting_level, compute_fruiting, score_frost, score_moisture, score_temperature,
 )
@@ -210,10 +211,40 @@ def weather_warnings(area: pd.DataFrame, today: date, horizon_days: int, profile
     return [{"type": "frost", "dates": frost}, {"type": "heat_drought", "dates": heat}]
 
 
+def rain26_current(daily: pd.DataFrame, points, today: date):
+    """Mediana po punktach pogody zwyklej sumy opadu z 26 dni konczacych sie dzis
+    (dzis-25 .. dzis). Zwraca (suma albo None, poczatek, koniec okna)."""
+    start = today - timedelta(days=25)
+    wanted = set(points)
+    sel = with_local_date(daily[[(la, lo) in wanted for la, lo in zip(daily["lat"], daily["lon"])]])
+    win = sel[(sel["local_date"] >= start) & (sel["local_date"] <= today)]
+    if win.empty:
+        return None, start, today
+    sums = win.groupby(["lat", "lon"])["precipitation_mm"].sum()
+    return float(sums.median()), start, today
+
+
+def rain26_block(daily: pd.DataFrame, points, today: date, pool, cells: int) -> dict | None:
+    current, start, end = rain26_current(daily, points, today)
+    if current is None:
+        return None
+    has_normal = pool is not None and len(pool) > 0
+    return {
+        "sum_mm": round(current, 1),
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+        "normal_mm": round(float(np.median(pool)), 1) if has_normal else None,
+        "pct": round(percentile_rank(current, pool), 3) if has_normal else None,
+        "normal_source": EOBS_NORMAL_LABEL if has_normal else None,
+        "normal_cells": int(cells) if has_normal else 0,
+    }
+
+
 def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame, clim_points,
                                today: date, profile: dict, rain_scale: float = 1.0,
                                point_weights: dict | None = None,
-                               point_clim_cells: dict | None = None) -> dict:
+                               point_clim_cells: dict | None = None,
+                               rain_normal_pool=None, rain_normal_cells: int = 0) -> dict:
     """`point_weights` (Faza 4.4): {(lat, lon): {"area_ha": powierzchnia lasu (wydzielenia w
     masce) najblizsza temu punktowi, "stands": ich liczba}} -- do agregacji F po wydzieleniach /
     wazonej powierzchnia oraz do udzialu powierzchni z przymrozkiem i silnym opadem. Bez wag
@@ -310,6 +341,7 @@ def build_conditions_timeline(daily: pd.DataFrame, points, clim_df: pd.DataFrame
         "aggregation": aggregation,
         "lookback_days": cfg["lookback_days"],
         "daily": daily_series(table, today),
+        "rain26": rain26_block(daily, points, today, rain_normal_pool, rain_normal_cells),
         "warnings": weather_warnings(table, today, cfg["horizon_days"], profile),
         "uncertainty_thresholds": {
             "uncertain_from_day": (profile.get("ui") or {}).get("forecast_uncertain_from_day", 4),

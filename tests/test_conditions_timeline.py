@@ -288,3 +288,29 @@ def test_build_conditions_timeline_exports_daily_warnings_and_lookback():
     assert len(out["daily"]) == 42
     assert {w["type"] for w in out["warnings"]} == {"frost", "heat_drought"}
     json.dumps(out, allow_nan=False)
+
+
+def test_rain26_with_a_normal_pool():
+    points = [(50.0, 21.0), (50.1, 21.1)]
+    today = date(2026, 9, 27)
+    start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
+    out = build_conditions_timeline(_daily_multi_point(points, start, 47, precip=2.0), points, _clim(points),
+                                    points, today, PROFILE,
+                                    rain_normal_pool=np.array([40.0, 50.0, 60.0]), rain_normal_cells=4)
+    r = out["rain26"]
+    assert r["sum_mm"] == 52.0                                   # 26 dni x 2 mm
+    assert r["window_start"] == (today - timedelta(days=25)).isoformat()
+    assert r["window_end"] == today.isoformat()
+    assert r["normal_mm"] == 50.0
+    assert r["pct"] == pytest.approx(0.667, abs=0.001)
+    assert r["normal_source"] == "E-OBS v33.0e, 1991–2020" and r["normal_cells"] == 4
+
+
+def test_rain26_without_eobs_has_no_normal():
+    points = [(50.0, 21.0)]
+    today = date(2026, 9, 27)
+    start = pd.Timestamp(today, tz="UTC") - pd.Timedelta(days=40)
+    out = build_conditions_timeline(_daily_multi_point(points, start, 47), points, _clim(points),
+                                    points, today, PROFILE)
+    assert out["rain26"]["normal_mm"] is None and out["rain26"]["pct"] is None
+    assert out["rain26"]["normal_cells"] == 0
