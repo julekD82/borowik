@@ -77,7 +77,38 @@ def build_score_record(row, day: str) -> dict:
     # Frontend-only presentation filter (hide sub-0.5ha stands as standalone
     # targets); not a mask, so every stand still gets a real value here.
     record["area_ha"] = _json_safe(float(row["geometry"].area / 10000.0))
+    # Nowy frontend: dlaczego wydzielenie jest poza filtrami modelu (pusta lista w masce).
+    record["mask_reason"] = mask_reason_list(row)
     return record
+
+
+def mask_reason_list(row) -> list[str]:
+    """Powody odrzucenia: maska strukturalna (kolumna mask_reasons z run_poc, kody z
+    pipeline.habitat.mask_reasons) plus GDOS i zakaz okresowy z pelnej maski. Pusta lista
+    dla wydzielenia w masce albo gdy ramka nie ma tych kolumn. Tylko prezentacja."""
+    if bool(row["mask_full"]):
+        return []
+    structural = row["mask_reasons"] if "mask_reasons" in row.index else None
+    reasons = list(structural) if isinstance(structural, (list, tuple)) else []
+    if row.get("gdos_status") == "blokada":
+        reasons.append("gdos")
+    if row.get("zakaz_status") == "zakaz":
+        reasons.append("zakaz")
+    return reasons
+
+
+def site_type_entry(code, dictionaries: dict) -> dict | None:
+    """Typ siedliskowy do karty: kod i nazwa ze slownika BDL (sam kod, gdy brak nazwy)."""
+    if not isinstance(code, str) or not code.strip():
+        return None
+    code = code.strip()
+    return {"code": code, "label": dictionaries.get("site_type", {}).get(code, code)}
+
+
+def age_years_int(value) -> int | None:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return int(round(float(value)))
 
 
 def write_scores_json(stands: gpd.GeoDataFrame, day: str, out_path) -> pathlib.Path:
@@ -147,7 +178,8 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
                            package_details_index: dict, neighbors_by_stand: dict, dictionaries: dict,
                            tie_break_index: dict, extra_features_index: dict | None = None,
                            access: dict | None = None, weather: dict | None = None,
-                           habitat: dict | None = None, forest_district: str | None = None) -> dict:
+                           habitat: dict | None = None, forest_district: str | None = None,
+                           site_type=None, age_years=None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -181,6 +213,9 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         # Faza UI.3: nazwa nadlesnictwa z nazwy paczki BDL (bez polskich znakow) -- do nazwy
         # wydzielenia "Oddz. 96a · Nadl. Koszecin".
         "forest_district": forest_district,
+        # Nowy frontend: typ siedliskowy (kod + nazwa) i wiek uzyty w modelu -- prezentacja.
+        "site_type": site_type_entry(site_type, dictionaries),
+        "age_years": age_years_int(age_years),
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -239,6 +274,8 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             weather=build_weather_card(row, profile),
             habitat=build_habitat_card(row, profile),
             forest_district=forest_district_name(row.get("nazwa")),
+            site_type=row.get("site_type"),
+            age_years=row.get("age_years"),
         )
         for _, row in stands.iterrows()
     ]

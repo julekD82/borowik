@@ -236,3 +236,30 @@ def test_missing_habitat_section_defaults_to_neutral():
     p = copy.deepcopy(PROFILE)
     p.pop("habitat")
     assert score_age(15, p) == 1.0
+
+
+import pytest
+
+from pipeline.habitat import load_profile as _load_profile_mask, mask_reasons, passes_mask
+
+_PROFILE_MASK = _load_profile_mask("profiles/boletus_edulis.yaml")
+
+
+def _mask_row(**over):
+    base = {"area_type": "D-STAN", "spec_age": 60, "species_cd": "SO", "part_cd": 10, "site_type": "BMSW"}
+    return {**base, **over}
+
+
+@pytest.mark.parametrize("over, expected", [
+    ({}, []),
+    ({"area_type": "ZRAB"}, ["not_dstan"]),
+    ({"spec_age": None}, ["no_age"]),
+    ({"spec_age": 5}, ["too_young"]),
+    ({"species_cd": "OL", "part_cd": 8}, ["excluded_species"]),
+    ({"species_cd": "OL", "part_cd": 7}, []),
+    ({"area_type": "ZRAB", "spec_age": 5}, ["not_dstan", "too_young"]),
+])
+def test_mask_reasons_lists_every_failed_condition(over, expected):
+    row = _mask_row(**over)
+    assert mask_reasons(row, _PROFILE_MASK) == expected
+    assert passes_mask(row, _PROFILE_MASK) is (expected == [])

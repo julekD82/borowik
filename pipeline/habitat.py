@@ -125,12 +125,23 @@ def compute_habitat(row: dict, profile: dict, s_host: float | None = None) -> fl
     return (s_host ** weights["host"]) * (s_site ** weights["site"]) * (s_age ** weights["age"])
 
 
-def passes_mask(row: dict, profile: dict) -> bool:
+def mask_reasons(row: dict, profile: dict) -> list[str]:
+    """Powody odrzucenia przez maske strukturalna (pusta lista = maska spelniona).
+    Te same warunki co dawne passes_mask; passes_mask jest z nich wyprowadzone, wiec
+    obie nie moga sie rozjechac. Tylko prezentacja (karta wydzielenia poza filtrami)."""
+    reasons = []
     if row.get("area_type") != "D-STAN":
-        return False
-    if row.get("spec_age") is None or row["spec_age"] < profile["age_breakpoints"]["mask_below"]:
-        return False
+        reasons.append("not_dstan")
+    age = row.get("spec_age")
+    if age is None:
+        reasons.append("no_age")
+    elif age < profile["age_breakpoints"]["mask_below"]:
+        reasons.append("too_young")
     species = row.get("species_cd")
     if species in profile["zero_affinity_mask_species"] and (row.get("part_cd") or 0) >= 8:
-        return False
-    return True
+        reasons.append("excluded_species")
+    return reasons
+
+
+def passes_mask(row: dict, profile: dict) -> bool:
+    return not mask_reasons(row, profile)

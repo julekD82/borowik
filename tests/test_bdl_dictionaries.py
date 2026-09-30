@@ -73,3 +73,19 @@ def test_load_dictionaries_uses_first_package_with_complete_files(tmp_path):
     _write_dictionary_package(tmp_path / "BBB_COMPLETE")
     dictionaries = load_dictionaries(tmp_path)
     assert dictionaries["storey"]["PODSZ"] == "podszyt"
+
+
+def test_load_dictionaries_adds_site_types_when_the_package_has_them(tmp_path):
+    files = {**_FILES, "f_site_type_dic.txt":
+             "date_from\tdate_to\tsite_type_cd\tsite_type_name\tsite_type_nr\n"
+             "01-01-1970\t\tBMŚW   \tBór mieszany świeży           \t22\n"}
+    _write_dictionary_package(tmp_path / "PKG_ONE", files)
+    dictionaries = load_dictionaries(tmp_path)
+    assert dictionaries["site_type"]["BMSW"] == "Bór mieszany świeży"
+
+
+def test_load_dictionaries_without_site_type_file_still_loads_the_rest(tmp_path):
+    _write_dictionary_package(tmp_path / "PKG_ONE")
+    dictionaries = load_dictionaries(tmp_path)
+    assert "site_type" not in dictionaries
+    assert dictionaries["storey"]["PODSZ"] == "podszyt"

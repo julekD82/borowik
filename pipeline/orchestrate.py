@@ -6,7 +6,7 @@ import pandas as pd
 
 from pipeline.age_update import update_age
 from pipeline.habitat import (
-    compute_habitat, passes_mask, score_site, score_host, score_age, score_host_composition,
+    compute_habitat, mask_reasons, passes_mask, score_site, score_host, score_age, score_host_composition,
     blend_host_with_lower_storeys,
 )
 from pipeline.scoring import (
@@ -220,6 +220,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     # Plan 1.6.3: default 0.0 (DRZEW-only S_host, pre-1.6.3 behaviour).
     host_lower_storeys_weight = float(profile.get("host", {}).get("lower_storeys_weight", 0.0))
     age_update_status_values = []
+    mask_reason_values = []
+    age_used_values = []
     age_update_missing_year_count = 0
     for _, row in stands.iterrows():
         # Correction touches both the mask (age < 12 lat) and S_age below,
@@ -236,6 +238,8 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
         row["spec_age"] = corrected_age
 
         mask = passes_mask(row, profile)
+        mask_reason_values.append(mask_reasons(row, profile))
+        age_used_values.append(corrected_age)
         if mask:
             # Only mask-passing stands matter here: the BDL tile also contains
             # roads/meadows/clearings whose site_type and species_cd are NaN by
@@ -408,6 +412,10 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     stands["forecast_window_share"] = forecast_window_share(forecast_days - 1)
     stands["G_season"] = g_season
     stands["age_update_status"] = age_update_status_values
+    # Nowy frontend: powody odrzucenia przez maske strukturalna (karta wydzielenia poza
+    # filtrami) i wiek uzyty w modelu (po korekcie do roku analizy) -- tylko prezentacja.
+    stands["mask_reasons"] = pd.Series(mask_reason_values, index=stands.index, dtype=object)
+    stands["age_years"] = age_used_values
     stands.attrs["diagnostics"] = {
         "stand_count": len(stands),
         "mask_passing_count": int(sum(mask_values)),
