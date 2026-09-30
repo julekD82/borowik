@@ -145,3 +145,5 @@
   .facts { grid-template-columns: minmax(0, 1fr); }
   .legend { max-width: 220px; }
 }
+
+.rows-section { display: grid; gap: 8px; }
