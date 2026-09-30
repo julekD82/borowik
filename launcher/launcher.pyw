@@ -27,7 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # launcher/ package, breaking with "'launcher' is not a package". A bare
 # sibling import needs no sys.path change, because launcher/ is already on
 # sys.path for direct execution.
-from trip_archive import read_day, save_trip, trip_exists, trip_id
+from trip_archive import (
+    phone_export_args, read_day, read_index, save_trip, trip_choices, trip_exists, trip_id,
+)
 FRONTEND_DIR = REPO_ROOT / "frontend"
 PYTHON_EXE = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 CONFIG_PATH = Path(__file__).resolve().parent / "launcher_config.json"
@@ -65,7 +67,7 @@ class LauncherApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Borowik - launcher")
-        self.root.geometry("640x460")
+        self.root.geometry("640x500")
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.dev_process: subprocess.Popen | None = None
         self.worker_running = False
@@ -105,6 +107,17 @@ class LauncherApp:
             buttons, text="Zapisz do listy", command=self.on_save_trip
         )
         self.save_trip_button.pack(side="left", padx=8)
+
+        phone = ttk.Frame(root, padding=(10, 6, 10, 0))
+        phone.pack(fill="x")
+        self.phone_button = ttk.Button(phone, text="Eksport na telefon", command=self.on_export_phone)
+        self.phone_button.pack(side="left")
+        ttk.Label(phone, text="Zrodlo:").pack(side="left", padx=(10, 4))
+        self.phone_source_var = tk.StringVar()
+        self.phone_combo = ttk.Combobox(phone, textvariable=self.phone_source_var, state="readonly", width=46)
+        self.phone_combo.pack(side="left")
+        self.phone_ids: list[str | None] = [None]
+        self.refresh_phone_sources()
 
         self.status_var = tk.StringVar(value="Gotowy.")
         ttk.Label(root, textvariable=self.status_var, padding=(10, 6)).pack(fill="x")
@@ -214,6 +227,7 @@ class LauncherApp:
         save_config({
             "lat": str(lat), "lon": str(lon), "radius_km": str(radius), "place": name,
         })
+        self.refresh_phone_sources()
         self.log(f"Zapisano '{meta.name} - {meta.radius_km:g}km - {meta.day}' do listy.")
         self.set_status("Zapisano do listy zapisanych map.")
 
@@ -221,6 +235,40 @@ class LauncherApp:
         state = "normal" if enabled else "disabled"
         self.run_button.configure(state=state)
         self.preview_button.configure(state=state)
+        self.phone_button.configure(state=state)
+
+    def refresh_phone_sources(self) -> None:
+        """Lista zrodel eksportu na telefon: biezaca analiza + zapisane migawki (zachowuje wybor)."""
+        labels, self.phone_ids = trip_choices(read_index(FRONTEND_DIR / "public" / "data" / "trips" / "index.json"))
+        previous = self.phone_source_var.get()
+        self.phone_combo.configure(values=labels)
+        self.phone_source_var.set(previous if previous in labels else labels[0])
+
+    def on_export_phone(self) -> None:
+        if self.worker_running:
+            messagebox.showinfo("Info", "Poprzednie zadanie jeszcze trwa.")
+            return
+        index = self.phone_combo.current()
+        trip = self.phone_ids[index] if 0 <= index < len(self.phone_ids) else None
+        args = phone_export_args(self.place_var.get(), trip)
+        self.worker_running = True
+        self.set_buttons_enabled(False)
+        threading.Thread(target=self.run_phone_export, args=(args,), daemon=True).start()
+
+    def run_phone_export(self, args: list[str]) -> None:
+        try:
+            self.set_status("Eksportuje KMZ na telefon...")
+            ok = self.run_command(
+                [str(PYTHON_EXE), str(REPO_ROOT / "scripts" / "eksport_telefon.py"), *args], cwd=REPO_ROOT)
+            if ok:
+                self.log("Zsynchronizuj ten folder z Dyskiem Google / OneDrive i otworz plik w Locus Map / Guru Maps "
+                         "(docs/TELEFON.md).")
+                self.set_status("Eksport na telefon zakonczony.")
+            else:
+                self.set_status("Eksport na telefon sie nie powiodl - zobacz log.")
+        finally:
+            self.worker_running = False
+            self.set_buttons_enabled(True)
 
     def run_command(self, cmd: list[str], cwd: Path) -> bool:
         self.log(f"$ {' '.join(cmd)}")

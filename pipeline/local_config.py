@@ -1,7 +1,8 @@
 """Lokalna konfiguracja maszyny (poza repozytorium): `local_config.json` w katalogu repo,
 wpisany w .gitignore. Obecnie jeden klucz:
 
-  {"bdl_packages_dir": "BDL"}      # sciezka bezwzgledna albo wzgledem tego pliku
+  {"bdl_packages_dir": "BDL",      # sciezka bezwzgledna albo wzgledem tego pliku
+   "telefon_dir": "dane_telefon"}  # gdzie zapisywac KMZ "na telefon" (np. folder synchronizowany z Dyskiem/OneDrive)
 
 Powod (Faza 4, poprawka do 1.3): launcher wola `python -m pipeline.prepare_trip --lat --lon
 --radius-km` bez --bdl-packages-dir, a domyslny katalog `<cache>/bdl_packages` nie istnial,
@@ -35,3 +36,16 @@ def resolve_bdl_packages_dir(cli_value, cache_dir: Path, config_path: Path | Non
         p = Path(configured)
         return p if p.is_absolute() else config_path.parent / p
     return Path(cache_dir) / "bdl_packages"
+
+
+def resolve_telefon_dir(cli_value, config_path: Path | None = None) -> Path:
+    """Katalog eksportu KMZ na telefon: parametr CLI > `telefon_dir` z local_config.json >
+    `dane_telefon/` obok local_config.json (w .gitignore)."""
+    if cli_value:
+        return Path(cli_value)
+    config_path = Path(config_path or LOCAL_CONFIG_PATH)
+    configured = load_local_config(config_path).get("telefon_dir")
+    if configured:
+        p = Path(configured)
+        return p if p.is_absolute() else config_path.parent / p
+    return config_path.parent / "dane_telefon"

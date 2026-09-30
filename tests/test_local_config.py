@@ -54,3 +54,21 @@ def test_main_run_as_the_launcher_does_uses_the_configured_packages_dir(tmp_path
         "gdos_failed_tile_count": 0, "osm_failed_tile_count": 0, "tile_count": 1})
     prepare_trip.main(["--lat", "50.5269", "--lon", "18.605", "--radius-km", "25"])
     assert seen["bdl_packages_dir"] == tmp_path / "BDL"
+
+
+# --- katalog eksportu na telefon (telefon_dir) ----------------------------------
+
+def test_telefon_dir_cli_then_config_then_default_next_to_config(tmp_path):
+    from pipeline.local_config import resolve_telefon_dir
+    cfg = _cfg(tmp_path, {"telefon_dir": str(tmp_path / "drive")})
+    assert resolve_telefon_dir(tmp_path / "cli", cfg) == tmp_path / "cli"
+    assert resolve_telefon_dir(None, cfg) == tmp_path / "drive"
+    sub = tmp_path / "x"
+    sub.mkdir()
+    assert resolve_telefon_dir(None, _cfg(sub, {})) == sub / "dane_telefon"
+
+
+def test_telefon_dir_relative_to_config_file(tmp_path):
+    from pipeline.local_config import resolve_telefon_dir
+    cfg = _cfg(tmp_path, {"telefon_dir": "../OneDrive/Borowik"})
+    assert resolve_telefon_dir(None, cfg) == tmp_path / "../OneDrive/Borowik"

@@ -158,3 +158,25 @@ def save_trip(data_dir: Path, trips_dir: Path, name: str, radius_km: float,
     _backup_if_corrupted(index_path, now)
     write_index(index_path, upsert_entry(read_index(index_path), asdict(meta)))
     return meta
+
+
+CURRENT_ANALYSIS_LABEL = "Bieżąca analiza"
+
+
+def trip_choices(entries: list[dict]) -> tuple[list[str], list[str | None]]:
+    """Zrodla eksportu 'na telefon' dla listy w launcherze: biezaca analiza + zapisane migawki.
+    Zwraca rownolegle listy etykiet i id (None = biezaca analiza)."""
+    labels = [CURRENT_ANALYSIS_LABEL]
+    ids: list[str | None] = [None]
+    for e in entries:
+        labels.append(f"{e.get('name', e['id'])} - {e.get('radius_km', 0):g}km - {e.get('day', '?')}")
+        ids.append(e["id"])
+    return labels, ids
+
+
+def phone_export_args(place: str, trip: str | None) -> list[str]:
+    """Argumenty scripts/eksport_telefon.py: migawka wg id, inaczej biezaca analiza z nazwa miejsca (o ile podana)."""
+    if trip:
+        return ["--migawka", trip]
+    place = place.strip()
+    return ["--nazwa", place] if place else []

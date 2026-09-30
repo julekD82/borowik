@@ -276,3 +276,32 @@ def test_resave_without_conditions_removes_old_conditions_snapshot(tmp_path):
     copied = copy_trip_files(data, dest)
     assert "conditions.json" not in copied
     assert not (dest / "conditions.json").exists()
+
+
+# --- eksport na telefon: wybor zrodla w launcherze ------------------------------
+
+def test_trip_choices_start_with_current_analysis_then_saved_trips():
+    from launcher.trip_archive import trip_choices
+    entries = [
+        {"id": "a-2026-09-30", "name": "Zawadzkie", "radius_km": 20.0, "day": "2026-09-30"},
+        {"id": "b-2026-09-29", "name": "Kieleczka", "radius_km": 15.5, "day": "2026-09-29"},
+    ]
+    labels, ids = trip_choices(entries)
+    assert labels == ["Bieżąca analiza", "Zawadzkie - 20km - 2026-09-30", "Kieleczka - 15.5km - 2026-09-29"]
+    assert ids == [None, "a-2026-09-30", "b-2026-09-29"]
+
+
+def test_trip_choices_with_no_saved_trips_offers_only_current_analysis():
+    from launcher.trip_archive import trip_choices
+    assert trip_choices([]) == (["Bieżąca analiza"], [None])
+
+
+def test_phone_export_args_for_current_analysis_pass_place_name():
+    from launcher.trip_archive import phone_export_args
+    assert phone_export_args("Zawadzkie 30", None) == ["--nazwa", "Zawadzkie 30"]
+    assert phone_export_args("  ", None) == []
+
+
+def test_phone_export_args_for_snapshot_pass_id_and_ignore_typed_place():
+    from launcher.trip_archive import phone_export_args
+    assert phone_export_args("cokolwiek", "a-2026-09-30") == ["--migawka", "a-2026-09-30"]
