@@ -21,3 +21,6 @@ local_config.json
 
 # Eksport "na telefon" (KMZ do synchronizacji z Dyskiem/OneDrive) - pliki wynikowe, nie kod
 /dane_telefon/
+
+# Oryginalne zamrozone zbiory walidacji 2.4/2.5 (nazwy obserwatorow GBIF) i tabela przypisan pseudonimow - tylko lokalnie
+/dane_walidacyjne/gbif_2_4_2_5/
