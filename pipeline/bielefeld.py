@@ -14,7 +14,7 @@ Pogoda autorow: E-OBS 0,1 st. (TG, RR) interpolowane dwuliniowo na srodek obszar
 """
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 from scipy.special import digamma, gammaln
 
 AUTHORS_CSV = "Data/Environmental_fruiting_data_jun8.csv"
@@ -66,6 +66,33 @@ def write_validation_tables(raw: pd.DataFrame, out_dir) -> dict[str, str]:
     return {k: str(v) for k, v in paths.items()}
 
 
+EOBS_CELL_CSV = "pogoda_eobs_v33e_komorka.csv"
+
+
+def write_eobs_cell(daily: pd.DataFrame, out_dir) -> str:
+    """Dzienna pogoda E-OBS jednej komorki (kolumny tg, tn, tx, rr z EobsStore.daily; wartosci w setnych, wiec
+    2 miejsca po przecinku sa dokladne) do dane_walidacyjne/bielefeld/. Brak = puste pole."""
+    from pathlib import Path
+    path = Path(out_dir) / EOBS_CELL_CSV
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out = daily[["tg", "tn", "tx", "rr"]].rename_axis("data").reset_index()
+    out["data"] = pd.to_datetime(out["data"]).dt.strftime("%Y-%m-%d")
+    out.to_csv(path, index=False, float_format="%.2f", lineterminator="\n")
+    return str(path)
+
+
+def compare_weather(ours: pd.DataFrame, authors: pd.DataFrame) -> dict:
+    """Porownanie dziennej pogody (tg, rr) z pogoda autorow na wspolnych dniach: korelacja, srednia roznica
+    (nasze - autorzy), sredni blad bezwzgledny, maks. roznica bezwzgledna."""
+    out = {}
+    for var in ("tg", "rr"):
+        j = pd.concat([ours[var], authors[var]], axis=1, keys=["nasze", "autorzy"]).dropna()
+        d = j["nasze"] - j["autorzy"]
+        out[var] = {"n": int(len(j)), "korelacja": float(j["nasze"].corr(j["autorzy"])), "srednia_roznica": float(d.mean()),
+                    "sredni_blad_bezwzgledny": float(d.abs().mean()), "maks_roznica_bezwzgledna": float(d.abs().max())}
+    return out
+
+
 def descriptive(daily: pd.DataFrame, site: str = "All", md_range: tuple[str, str] | None = None) -> dict:
     """Liczby opisowe jak w pracy. md_range = ("MM-DD", "MM-DD") zaweza dni w kazdym roku."""
     d = daily[daily["stanowisko"] == site]
@@ -102,46 +129,125 @@ def nb1_loglik(y, mu, phi: float) -> np.ndarray:
     return gammaln(y + r) - gammaln(r) - gammaln(y + 1) - r * np.log1p(phi) + y * (np.log(phi) - np.log1p(phi))
 
 
-def _nb1_negll_and_grad(theta: np.ndarray, y: np.ndarray, X: np.ndarray) -> tuple[float, np.ndarray]:
+def _nb1_negll_and_grad(theta: np.ndarray, y: np.ndarray, X: np.ndarray,
+                        codes: np.ndarray | None = None) -> tuple[float, np.ndarray]:
+    """y: liczby na blok; X: dni; codes: numer bloku kazdego dnia (None = kazdy dzien to blok).
+    Srednia bloku = suma mu dni bloku (NB1 ze wspolnym phi jest zamkniety na sumowanie)."""
     beta, log_phi = theta[:-1], theta[-1]
     phi = np.exp(log_phi)
-    eta = np.clip(X @ beta, -50, 50)
-    mu = np.exp(eta)
+    mu_d = np.exp(np.clip(X @ beta, -50, 50))
+    mu = mu_d if codes is None else np.bincount(codes, weights=mu_d, minlength=len(y))
     r = mu / phi
     ll = nb1_loglik(y, mu, phi)
     core = digamma(y + r) - digamma(r) - np.log1p(phi)
-    g_beta = X.T @ (mu * core / phi)
+    per_day = core if codes is None else core[codes]
+    g_beta = X.T @ (mu_d * per_day / phi)
     d_phi = -(mu / phi ** 2) * core - mu / (phi * (1 + phi)) + y / (phi * (1 + phi))
     g = np.append(g_beta, (d_phi * phi).sum())
     return -float(ll.sum()), -g
 
 
-def fit_nb1(y, covariates, groups) -> dict:
+def block_totals(y_daily, blocks) -> tuple[np.ndarray, np.ndarray]:
+    """Sumy liczb w blokach (np. tygodniach) i numer bloku dla kazdego dnia (bloki w kolejnosci sortowania)."""
+    codes, _ = pd.factorize(pd.Series(np.asarray(blocks)), sort=True)
+    return np.bincount(codes, weights=np.asarray(y_daily, float)), codes
+
+
+def week_block(dates) -> np.ndarray:
+    """Tydzien kalendarzowy (pon.-niedz.) jako data poniedzialku, RRRR-MM-DD."""
+    d = pd.DatetimeIndex(dates)
+    return (d - pd.to_timedelta(d.dayofweek, unit="D")).strftime("%Y-%m-%d").to_numpy()
+
+
+def weighted_precip(rr: pd.Series, weights) -> pd.Series:
+    """Srednia wazona opadu sum_j w(j) rr(d - j) / sum_j w(j), j = 0 dzien oceny (mm/dobe); NaN przy braku
+    ktoregokolwiek dnia okna. rr: seria dzienna bez luk w indeksie."""
+    from numpy.lib.stride_tricks import sliding_window_view
+    w = np.asarray(weights, float)
+    vals = rr.to_numpy(float)
+    out = np.full(len(vals), np.nan)
+    if len(vals) >= len(w):
+        out[len(w) - 1:] = sliding_window_view(vals, len(w)) @ w[::-1] / w.sum()
+    return pd.Series(out, index=rr.index)
+
+
+def fit_nb1(y, covariates, groups, blocks=None, se: bool = False) -> dict:
     """NB1 z osobnym wyrazem wolnym dla kazdej grupy (np. roku) i wspolnymi wspolczynnikami covariates.
-    covariates: macierz n x k (moze miec 0 kolumn). Zmienne sa standaryzowane wewnetrznie (stabilnosc),
-    wynik w skali oryginalnej. Wyraz wolny grupy ograniczony do >= -30 (grupa bez owocnikow)."""
+    covariates: macierz n x k dni (moze miec 0 kolumn), groups: grupa kazdego dnia. Bez `blocks` y to liczby
+    dzienne; z `blocks` (np. week_block) liczby dzienne sa sumowane w blokach, a srednia bloku to suma mu
+    jego dni. Zmienne sa standaryzowane wewnetrznie (stabilnosc), wynik w skali oryginalnej. Wyraz wolny
+    grupy ograniczony do >= -30 (grupa bez owocnikow). se=True: bledy standardowe beta z hesjanu (Wald)."""
     y = np.asarray(y, float)
     Z = np.asarray(covariates, float).reshape(len(y), -1)
+    block_codes = None
+    y_day = y
+    if blocks is not None:
+        y, block_codes = block_totals(y, blocks)
     codes, levels = pd.factorize(pd.Series(np.asarray(groups)), sort=True)
     D = np.eye(len(levels))[codes]
     mean, sd = Z.mean(axis=0), Z.std(axis=0)
     sd = np.where(sd > 0, sd, 1.0)
     Zs = (Z - mean) / sd
     X = np.hstack([D, Zs])
-    start_alpha = np.log(np.maximum(np.bincount(codes, weights=y) / np.bincount(codes), 1e-3))
+    start_alpha = np.log(np.maximum(np.bincount(codes, weights=y_day) / np.bincount(codes), 1e-3))
     theta0 = np.concatenate([start_alpha, np.zeros(Z.shape[1]), [0.0]])
     bounds = [(-30, None)] * len(levels) + [(None, None)] * Z.shape[1] + [(-10, 10)]
-    res = minimize(_nb1_negll_and_grad, theta0, args=(y, X), jac=True, method="L-BFGS-B", bounds=bounds,
-                   options={"maxiter": 5000, "ftol": 1e-12, "gtol": 1e-8})
+    res = minimize(_nb1_negll_and_grad, theta0, args=(y, X, block_codes), jac=True, method="L-BFGS-B",
+                   bounds=bounds, options={"maxiter": 5000, "ftol": 1e-12, "gtol": 1e-8})
     alpha_s, beta_s, log_phi = res.x[:len(levels)], res.x[len(levels):-1], res.x[-1]
     beta = beta_s / sd
     alpha = alpha_s - float((beta_s * mean / sd).sum())
     loglik = -float(res.fun)
     k = len(levels) + Z.shape[1] + 1
-    return {
+    out = {
         "alpha": dict(zip(levels.tolist(), alpha.tolist())), "beta": beta, "phi": float(np.exp(log_phi)),
         "loglik": loglik, "n_params": k, "aic": 2 * k - 2 * loglik, "converged": bool(res.success), "n": len(y),
     }
+    if se:
+        h = 1e-5
+        H = np.array([(_nb1_negll_and_grad(res.x + h * e, y, X, block_codes)[1]
+                       - _nb1_negll_and_grad(res.x - h * e, y, X, block_codes)[1]) / (2 * h)
+                      for e in np.eye(len(res.x))])
+        cov = np.linalg.inv((H + H.T) / 2)
+        idx = slice(len(levels), len(levels) + Z.shape[1])
+        out["beta_se"] = np.sqrt(np.diag(cov)[idx]) / sd
+    return out
+
+
+def heldout_loglik(fit: dict, y, covariates, blocks=None) -> tuple[float, float]:
+    """Log-wiarygodnosc danych jednej grupy (pominietego roku) przy beta i phi z `fit`; wyraz wolny tej grupy
+    wyznaczany na tych danych (jeden parametr, jednakowo dla porownywanych wariantow). Zwraca (LL, alpha)."""
+    y = np.asarray(y, float)
+    Z = np.asarray(covariates, float).reshape(len(y), -1)
+    codes = None
+    if blocks is not None:
+        y, codes = block_totals(y, blocks)
+    lin = Z @ fit["beta"]
+    phi = fit["phi"]
+
+    def negll(a):
+        mu_d = np.exp(np.clip(a + lin, -50, 50))
+        mu = mu_d if codes is None else np.bincount(codes, weights=mu_d, minlength=len(y))
+        return -float(nb1_loglik(y, mu, phi).sum())
+
+    shift = float(np.log(max(y.sum(), 1e-3)) - np.log(np.exp(np.clip(lin, -50, 50)).sum()))
+    res = minimize_scalar(negll, bounds=(shift - 30, shift + 30), method="bounded", options={"xatol": 1e-9})
+    return -float(res.fun), float(res.x)
+
+
+def loyo(y, covariates, groups, blocks=None) -> pd.DataFrame:
+    """Zostaw jedna grupe (rok): dopasowanie na pozostalych, LL pominietej wg heldout_loglik."""
+    y = np.asarray(y, float)
+    Z = np.asarray(covariates, float).reshape(len(y), -1)
+    g = np.asarray(groups)
+    b = None if blocks is None else np.asarray(blocks)
+    rows = []
+    for level in sorted(set(g.tolist())):
+        test = g == level
+        fit = fit_nb1(y[~test], Z[~test], g[~test], None if b is None else b[~test])
+        ll, _ = heldout_loglik(fit, y[test], Z[test], None if b is None else b[test])
+        rows.append({"grupa": level, "ll": ll, "converged": fit["converged"]})
+    return pd.DataFrame(rows)
 
 
 def predict_nb1(fit: dict, covariates, groups) -> np.ndarray:

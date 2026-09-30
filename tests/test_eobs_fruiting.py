@@ -42,3 +42,35 @@ def test_variant_scores_shape_and_constant_model():
     out = variant_scores(feat, 260, np.linspace(-20, 20, 50), profile)
     assert set(out) == {"F_bez_G_season", "F_z_G_season", "sam_kalendarz", "samo_M", "sama_T", "model_staly"}
     assert out["model_staly"] == 1.0 and 0 <= out["F_z_G_season"] <= 1.0
+
+
+def test_precip_weights_variants():
+    from pipeline.eobs_fruiting import precip_weights
+    k0 = precip_weights()
+    assert len(k0) == 26 and k0[0] == 1.0 and abs(k0[10] - 0.5) < 1e-12
+    k1 = precip_weights("K1")
+    assert len(k1) == 36
+    assert k1[:5].tolist() == [0.0, 0.2, 0.4, 0.6, 0.8] and (k1[5:11] == 1.0).all()
+    assert abs(k1[20] - 0.5) < 1e-12 and abs(k1[35] - 0.5 ** 2.5) < 1e-12
+    assert (precip_weights("K2") == 1.0).all() and len(precip_weights("K2")) == 26
+    k3 = precip_weights("K3")
+    assert len(k3) == 11 and k3[:5].sum() == 0 and (k3[5:] == 1.0).all()
+    import pytest
+    with pytest.raises(ValueError):
+        precip_weights("K9")
+
+
+def test_rolling_features_default_is_k0_and_custom_weights_apply_to_cwb_only():
+    from pipeline.eobs import hargreaves_et0
+    from pipeline.eobs_fruiting import precip_weights
+    d = _daily(80)
+    base = rolling_features(d, 50.5)
+    assert base.equals(rolling_features(d, 50.5, precip_weights("K0")))
+    w = precip_weights("K1")
+    f = rolling_features(d, 50.5, w)
+    i = 60
+    net = (d["rr"] - hargreaves_et0(d["tn"], d["tx"], 50.5)).to_numpy()
+    expected = sum(w[j] * net[i - j] for j in range(len(w)))
+    assert abs(f["cwb26"].iloc[i] - expected) < 1e-9
+    assert f["cwb26"].iloc[:35].isna().all() and not np.isnan(f["cwb26"].iloc[35])
+    assert f[["tmean20", "tmean5", "p5", "tmin3"]].equals(base[["tmean20", "tmean5", "p5", "tmin3"]])

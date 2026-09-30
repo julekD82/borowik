@@ -2,6 +2,8 @@
 
 1. Liczby opisowe z pracy (1905 owocnikow, 4 w 2016, 354 w 2020, 85,8% dni zerowych, zakres 05.08-21.11).
 2. Czy nasze srednie kroczace z dziennych Temp/Precip autorow odtwarzaja ich kolumny rollT_w/rollP_w.
+4. Wlasna pogoda E-OBS v33.0e (komorka i interpolacja dwuliniowa) vs pogoda autorow; zapis dziennej pogody
+   komorki 1991-2024 do dane_walidacyjne/bielefeld/ (wymaga cache/eobs/*_BI.npz).
 3. Odtworzenie wyboru okien (AIC, okna 2..35 co 3 dni) prostszym modelem: NB1 z rokiem jako efektem
    STALYM (autorzy: glmmTMB nbinom1 z rokiem jako efektem losowym) na pogodzie autorow.
 Bez sieci: dane z cache/bielefeld (scripts/pobierz_bielefeld.py).
@@ -10,14 +12,17 @@ Run: .venv/Scripts/python.exe notebooks/17_bielefeld_wczytanie.py
 """
 import json
 import pathlib
+from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from pipeline import bielefeld as bf
+from pipeline.eobs import EobsStore
 
 SRC = pathlib.Path("cache/bielefeld/V1.2/ebrejonl-Boletus_fruiting_triggers-7967c6d") / bf.AUTHORS_CSV
 OUT = pathlib.Path("notebooks/output/walidacja")
+DATA = pathlib.Path("dane_walidacyjne/bielefeld")
 WINDOWS = list(range(2, 36, 3))
 
 
@@ -77,6 +82,25 @@ def main() -> None:
         }
         res.to_csv(OUT / f"17_okna_{site}.csv", index=False)
     result["przeglad_okien_NB1_rok_staly"] = screens
+
+    # 4. wlasna pogoda E-OBS v33.0e (obszar BI) vs pogoda autorow; zapis komorki do dane_walidacyjne/
+    store = EobsStore("cache", region="BI")
+    lat, lon = bf.CENTROID
+    cell = store.cell(lat, lon)
+    days = (weather.index.min().date(), weather.index.max().date())
+    nearest = store.daily(*cell, *days)
+    if nearest[["tg", "rr"]].notna().any().all():
+        result["pogoda_EOBS_v33e_vs_autorzy"] = {
+            "komorka": list(cell),
+            "najblizsza_komorka": bf.compare_weather(nearest, weather),
+            "interpolacja_dwuliniowa": bf.compare_weather(store.daily_bilinear(lat, lon, *days, ["tg", "rr"]), weather),
+        }
+        full = store.daily(*cell, date(1991, 1, 1), date(2024, 12, 31))
+        result["pogoda_EOBS_v33e_komorka_plik"] = {
+            "sciezka": bf.write_eobs_cell(full, DATA), "dni": len(full),
+            "braki": {k: int(v) for k, v in full.isna().sum().items()}}
+    else:
+        result["pogoda_EOBS_v33e_vs_autorzy"] = "brak plikow cache/eobs/*_BI.npz (scripts/pobierz_eobs.py --obszary BI)"
     (OUT / "17_bielefeld_wczytanie.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=1))
 

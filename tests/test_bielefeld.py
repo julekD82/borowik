@@ -133,3 +133,81 @@ def test_fit_nb1_recovers_parameters_with_group_intercepts():
     assert fit["aic"] == pytest.approx(2 * fit["n_params"] - 2 * fit["loglik"])
     mu_hat = bf.predict_nb1(fit, x[:, None], year)
     assert np.corrcoef(mu_hat, mu)[0, 1] > 0.98
+
+
+def test_week_block_starts_on_monday():
+    b = bf.week_block(pd.to_datetime(["2020-08-02", "2020-08-03", "2020-08-09", "2020-08-10"]))
+    assert b.tolist() == ["2020-07-27", "2020-08-03", "2020-08-03", "2020-08-10"]
+
+
+def test_weighted_precip_uses_lag_weights_and_normalises():
+    idx = pd.date_range("2020-08-01", periods=6, freq="D")
+    rr = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], index=idx)
+    w = np.array([0.0, 1.0, 1.0])  # tylko 1-2 dni wstecz
+    out = bf.weighted_precip(rr, w)
+    assert np.isnan(out.iloc[1]) and out.iloc[2] == 1.5 and out.iloc[5] == 4.5
+    rr.iloc[3] = np.nan
+    assert np.isnan(bf.weighted_precip(rr, w).iloc[4])
+
+
+def test_block_gradient_matches_finite_differences():
+    rng = np.random.default_rng(3)
+    n = 70
+    X = np.column_stack([np.ones(n), rng.normal(size=n)])
+    y_blocks, codes = bf.block_totals(rng.poisson(1.0, n), np.repeat(np.arange(10), 7))
+    theta = np.array([0.1, 0.4, np.log(1.3)])
+    _, g = bf._nb1_negll_and_grad(theta, y_blocks, X, codes)
+    eps = 1e-6
+    num = np.array([(bf._nb1_negll_and_grad(theta + eps * e, y_blocks, X, codes)[0]
+                     - bf._nb1_negll_and_grad(theta - eps * e, y_blocks, X, codes)[0]) / (2 * eps) for e in np.eye(3)])
+    assert np.allclose(g, num, rtol=1e-5, atol=1e-5)
+
+
+def test_block_fit_recovers_daily_effect_and_reports_se():
+    rng = np.random.default_rng(7)
+    days = 7 * 120
+    x = rng.normal(size=days)
+    year = np.repeat([0, 1, 2, 3], days // 4)
+    mu = np.exp(np.array([-1.0, 0.0, 0.3, -0.5])[year] + 0.7 * x)
+    phi = 0.8
+    y = rng.negative_binomial(mu / phi, 1.0 / (1.0 + phi))
+    blocks = np.repeat(np.arange(days // 7), 7)
+    fit = bf.fit_nb1(y, x[:, None], year, blocks=blocks, se=True)
+    assert fit["converged"] and fit["n"] == days // 7
+    assert fit["beta"][0] == pytest.approx(0.7, abs=3 * fit["beta_se"][0])
+    assert 0.01 < fit["beta_se"][0] < 0.3
+
+
+def test_loyo_prefers_true_covariate_over_noise():
+    rng = np.random.default_rng(11)
+    days = 7 * 100
+    x, noise = rng.normal(size=days), rng.normal(size=days)
+    year = np.repeat(np.arange(5), days // 5)
+    y = rng.negative_binomial(np.exp(0.8 * x) / 0.5, 1 / 1.5)
+    blocks = np.repeat(np.arange(days // 7), 7)
+    good = bf.loyo(y, x[:, None], year, blocks)
+    bad = bf.loyo(y, noise[:, None], year, blocks)
+    assert list(good["grupa"]) == [0, 1, 2, 3, 4] and good["converged"].all()
+    assert (good["ll"] - bad["ll"]).sum() > 10
+
+
+def test_heldout_alpha_absorbs_year_level():
+    fit = {"beta": np.array([0.5]), "phi": 1.0}
+    z = np.linspace(-1, 1, 50)
+    y = np.round(np.exp(2.0 + 0.5 * z))
+    ll, a = bf.heldout_loglik(fit, y, z[:, None])
+    assert a == pytest.approx(2.0, abs=0.1) and np.isfinite(ll)
+
+
+def test_write_eobs_cell_and_compare_weather(tmp_path):
+    idx = pd.date_range("2020-08-01", periods=3, freq="D")
+    daily = pd.DataFrame({"tg": [10.0, 11.5, np.nan], "tn": [5.0, 6.0, 7.0], "tx": [15.0, 16.0, 17.0],
+                          "rr": [0.0, 2.25, 1.0]}, index=idx)
+    path = bf.write_eobs_cell(daily, tmp_path)
+    lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "data,tg,tn,tx,rr" and lines[2] == "2020-08-02,11.50,6.00,16.00,2.25"
+    assert lines[3].startswith("2020-08-03,,")
+    authors = pd.DataFrame({"tg": [10.5, 12.0, 9.0], "rr": [0.0, 2.25, 1.0]}, index=idx)
+    c = bf.compare_weather(daily, authors)
+    assert c["tg"]["n"] == 2 and c["tg"]["srednia_roznica"] == pytest.approx(-0.5)
+    assert c["rr"]["korelacja"] == pytest.approx(1.0) and c["rr"]["maks_roznica_bezwzgledna"] == 0.0
