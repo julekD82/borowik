@@ -46,3 +46,6 @@ export const MOISTURE_LEGEND_TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 /** Etykiety progow legendy (0,0 · 0,25 …). */
 export const moistureTickLabel = (v: number) => v.toLocaleString("pl-PL", { minimumFractionDigits: v === 0 || v === 1 ? 0 : 2 });
+export const MOISTURE_LEGEND_NOTE =
+  "Wilgotność w modelu: bilans opadu i parowania z 26 dni względem typowego dla tej pory roku. " +
+  "W obecnym modelu najmocniej liczy się ostatni deszcz, więc mapa może różnić się od wymowy panelu pogody.";
