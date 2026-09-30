@@ -1,5 +1,5 @@
 import type {
-  AccessCollection, ConditionsDay, ConditionsTimeline, Region, Score, SpeciesShare, StandDetail, StandFeature,
+  AccessCollection, ConditionsDay, Manifest, ConditionsTimeline, Region, Score, SpeciesShare, StandDetail, StandFeature,
   StandView, Stands, TripMeta,
 } from "./types";
 import { finite } from "../domain/format";
@@ -57,8 +57,10 @@ export function parseData(
         isoDate(s.day) &&
         typeof s.mask === "boolean" &&
         ["R", "H", "F", "F_loc", "P"].every((k) => numeric(s[k])) &&
-        typeof s.confidence === "string" &&
-        strings(s.confidence_reasons) &&
+        (s.confidence === undefined || typeof s.confidence === "string") &&
+        (s.confidence_reasons === undefined || strings(s.confidence_reasons)) &&
+        (s.mask_reason === undefined || strings(s.mask_reason)) &&
+        (s.s_host_source === undefined || nullableString(s.s_host_source)) &&
         typeof s.distance_method === "string" &&
         typeof s.entrance_status === "string" &&
         (s.d_park_m === undefined || numeric(s.d_park_m)) &&
@@ -71,14 +73,11 @@ export function parseData(
         (s.rain_radar_coverage === undefined || numeric(s.rain_radar_coverage)) &&
         (s.zakaz_status === undefined || typeof s.zakaz_status === "string") &&
         (s.gdos_status === undefined || typeof s.gdos_status === "string") &&
-        Array.isArray(s.explanation) &&
-        s.explanation.every(
-          (e) =>
-            object(e) &&
-            typeof e.text === "string" &&
-            typeof e.factor === "string" &&
-            finite(e.contribution),
-        ),
+        (s.explanation === undefined ||
+          (Array.isArray(s.explanation) &&
+            s.explanation.every(
+              (e) => object(e) && typeof e.text === "string" && typeof e.factor === "string" && finite(e.contribution),
+            ))),
     )
   )
     throw new Error("Niepoprawny plik wyników wydzieleń.");
@@ -117,8 +116,14 @@ export function parseData(
       throw new Error("Geometria musi używać współrzędnych WGS84.");
     }
   }
-  const scores = rawScores as Score[],
-    stands = rawStands as unknown as Stands;
+  // Nowy frontend: pola starego interfejsu sa opcjonalne w pliku, ale typ Score ich wymaga.
+  const scores = (rawScores as Score[]).map((s) => ({
+    ...s,
+    confidence: s.confidence ?? "",
+    confidence_reasons: s.confidence_reasons ?? [],
+    explanation: s.explanation ?? [],
+  }));
+  const stands = rawStands as unknown as Stands;
   if (new Set(scores.map((s) => s.day)).size > 1)
     throw new Error(
       "Pliki pochodzą z różnych dat. Zsynchronizuj dane ponownie.",
@@ -169,52 +174,74 @@ export function parseData(
   const regions: Region[] = rawRegions !== undefined ? parseRegions(rawRegions, "") : [];
   const regionsNoPressure: Region[] | null =
     rawRegionsNoPressure !== undefined ? parseRegions(rawRegionsNoPressure, " bez presji") : null;
-  // Details are optional, same pattern as regions above: absent means no
-  // B3 section on a stand's card, not an error. When present, one entry per
-  // wydzielenie is expected but not required -- a stand missing from
-  // `details` just has no B3 section either.
-  let details: StandDetail[] = [];
-  if (rawDetails !== undefined) {
-    const knownStandIds = new Set(standIds);
-    if (
-      !Array.isArray(rawDetails) ||
-      !rawDetails.every(
-        (d) =>
-          object(d) &&
-          typeof d.stand_id === "string" &&
-          isoDate(d.day) &&
-          Array.isArray(d.drzew_species) &&
-          d.drzew_species.every(speciesShare) &&
-          nullableString(d.density) &&
-          Array.isArray(d.podszyt_species) &&
-          d.podszyt_species.every(speciesShare) &&
-          nullableString(d.soil_type) &&
-          nullableString(d.package_date) &&
-          strings(d.neighbors) &&
-          nullableString(d.stand_stru) &&
-          nullableString(d.prot_categ) &&
-          (d.veg_cover === undefined || nullableString(d.veg_cover)) &&
-          (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)) &&
-          (d.searchability_hint === undefined || nullableString(d.searchability_hint)) &&
-          (d.access === undefined || d.access === null || object(d.access)) &&
-          (d.habitat === undefined || d.habitat === null || object(d.habitat)) &&
-          (d.forest_district === undefined || nullableString(d.forest_district)),
-      )
-    )
-      throw new Error("Niepoprawny plik szczegółów wydzieleń.");
-    details = rawDetails as StandDetail[];
-    if (details.some((d) => d.day !== scores[0]?.day))
-      throw new Error(
-        "Plik szczegółów pochodzi z innej daty. Zsynchronizuj dane ponownie.",
-      );
-    if (details.some((d) => !knownStandIds.has(d.stand_id)))
-      throw new Error(
-        "Szczegóły odwołują się do wydzielenia spoza zsynchronizowanego zestawu.",
-      );
-  }
+  const details = parseDetails(rawDetails, scores[0]?.day, new Set(standIds));
 
   return { entries: joinData(scores, stands), scores, stands, regions, regionsNoPressure, details };
 }
+
+const siteType = (x: unknown) =>
+  x === undefined || x === null || (object(x) && typeof x.code === "string" && typeof x.label === "string");
+
+export function parseDetails(rawDetails: unknown, day: string | undefined, knownIds: Set<string>): StandDetail[] {
+  // Szczegoly sa opcjonalne: brak pliku to brak sekcji na karcie, nie blad.
+  if (rawDetails === undefined) return [];
+  if (
+    !Array.isArray(rawDetails) ||
+    !rawDetails.every(
+      (d) =>
+        object(d) &&
+        typeof d.stand_id === "string" &&
+        isoDate(d.day) &&
+        Array.isArray(d.drzew_species) &&
+        d.drzew_species.every(speciesShare) &&
+        nullableString(d.density) &&
+        Array.isArray(d.podszyt_species) &&
+        d.podszyt_species.every(speciesShare) &&
+        nullableString(d.soil_type) &&
+        nullableString(d.package_date) &&
+        strings(d.neighbors) &&
+        nullableString(d.stand_stru) &&
+        nullableString(d.prot_categ) &&
+        (d.veg_cover === undefined || nullableString(d.veg_cover)) &&
+        (d.standdensity_index === undefined || d.standdensity_index === null || finite(d.standdensity_index)) &&
+        (d.searchability_hint === undefined || nullableString(d.searchability_hint)) &&
+        (d.access === undefined || d.access === null || object(d.access)) &&
+        (d.habitat === undefined || d.habitat === null || object(d.habitat)) &&
+        (d.forest_district === undefined || nullableString(d.forest_district)) &&
+        siteType(d.site_type) &&
+        (d.age_years === undefined || numeric(d.age_years)),
+    )
+  )
+    throw new Error("Niepoprawny plik szczegółów wydzieleń.");
+  const details = rawDetails as StandDetail[];
+  if (details.some((d) => d.day !== day))
+    throw new Error("Plik szczegółów pochodzi z innej daty. Zsynchronizuj dane ponownie.");
+  if (details.some((d) => !knownIds.has(d.stand_id)))
+    throw new Error("Szczegóły odwołują się do wydzielenia spoza zsynchronizowanego zestawu.");
+  return details;
+}
+
+export function parseManifest(raw: unknown): Manifest {
+  const m: Record<string, unknown> = object(raw) ? raw : {};
+  const num = (v: unknown) => (finite(v) ? v : null);
+  return {
+    lat: num(m.lat),
+    lon: num(m.lon),
+    radius_km: num(m.radius_km),
+    day: typeof m.day === "string" ? m.day : null,
+    pressure_alpha: num(m.pressure_alpha),
+  };
+}
+
+const dailyEntry = (d: unknown) =>
+  object(d) && isoDate(d.date) && numeric(d.precip_mm) && finite(d.radar_share) &&
+  numeric(d.tmin_c) && numeric(d.tmax_c) && typeof d.forecast === "boolean";
+const rain26Entry = (r: unknown) =>
+  r === null ||
+  (object(r) && finite(r.sum_mm) && isoDate(r.window_start) && isoDate(r.window_end) && numeric(r.normal_mm) &&
+    numeric(r.pct) && nullableString(r.normal_source) && finite(r.normal_cells));
+const warningEntry = (w: unknown) =>
+  object(w) && typeof w.type === "string" && strings(w.dates) && w.dates.every(isoDate);
 
 function isConditionsDay(value: unknown): value is ConditionsDay {
   const d = value as Record<string, unknown> | null;
@@ -238,7 +265,11 @@ export function parseConditions(raw: unknown, day: string | undefined): Conditio
     typeof c.summary !== "string" ||
     !Array.isArray(c.rains) ||
     !Array.isArray(c.days) ||
-    !c.days.every(isConditionsDay)
+    !c.days.every(isConditionsDay) ||
+    !(c.daily === undefined || (Array.isArray(c.daily) && c.daily.every(dailyEntry))) ||
+    !(c.rain26 === undefined || rain26Entry(c.rain26)) ||
+    !(c.warnings === undefined || (Array.isArray(c.warnings) && c.warnings.every(warningEntry))) ||
+    !(c.lookback_days === undefined || finite(c.lookback_days))
   )
     throw new Error("Plik conditions.json jest niepoprawny. Uruchom synchronizację danych.");
   return c as unknown as ConditionsTimeline;

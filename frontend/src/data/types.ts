@@ -46,6 +46,10 @@ export type Score = {
   // wszystkich wydzielen (rowniez poza maska); brak w migawkach sprzed tej zmiany.
   M?: number | null;
   pct_CWB26?: number | null;
+  // Nowy frontend: powody odrzucenia przez filtry modelu (pusta lista w masce); brak w starszych eksportach.
+  mask_reason?: string[];
+  s_host_source?: string | null;
+  s_host_package_date?: string | null;
 };
 
 export type StandFeature = Feature<
@@ -137,6 +141,9 @@ export type StandDetail = {
   // Faza UI.2/UI.3: skladniki siedliska i nazwa nadlesnictwa (brak w plikach sprzed UI).
   habitat?: HabitatCard | null;
   forest_district?: string | null;
+  // Nowy frontend: typ siedliskowy i wiek uzyty w modelu; brak w starszych eksportach.
+  site_type?: SiteType | null;
+  age_years?: number | null;
 };
 
 export type HabitatCard = {
@@ -225,6 +232,11 @@ export type ConditionsTimeline = {
   rains: ConditionsRain[];
   summary: string;
   days: ConditionsDay[];
+  // Nowy frontend (panel pogody); brak w starszych eksportach.
+  lookback_days?: number;
+  daily?: DailyWeather[];
+  rain26?: Rain26 | null;
+  warnings?: WeatherWarning[];
 };
 
 export type TripMeta = {
@@ -235,4 +247,44 @@ export type TripMeta = {
   lat: number;
   lon: number;
   saved_at: string;
+};
+
+export type SiteType = { code: string; label: string };
+export type DailyWeather = {
+  date: string;
+  precip_mm: number | null;
+  radar_share: number;
+  tmin_c: number | null;
+  tmax_c: number | null;
+  forecast: boolean;
+};
+export type Rain26 = {
+  sum_mm: number;
+  window_start: string;
+  window_end: string;
+  normal_mm: number | null;
+  pct: number | null;
+  normal_source: string | null;
+  normal_cells: number;
+};
+export type WeatherWarning = { type: string; dates: string[] };
+export type Manifest = {
+  lat: number | null;
+  lon: number | null;
+  radius_km: number | null;
+  day: string | null;
+  pressure_alpha: number | null;
+};
+export type Analysis = {
+  basePath: string;
+  day: string;
+  scores: Score[];
+  scoreById: Map<string, Score>;
+  features: Map<string, StandFeature>;
+  // Wydzielenia w masce z wynikiem, uszeregowane jak dotad (presja wlaczona).
+  entries: StandView[];
+  regions: Region[];
+  regionsNoPressure: Region[] | null;
+  conditions: ConditionsTimeline | null;
+  manifest: Manifest;
 };
