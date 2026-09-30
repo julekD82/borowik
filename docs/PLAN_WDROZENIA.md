@@ -326,7 +326,7 @@ Na archiwum z 2.2 (≥ 30 dni): błąd prognozy opadu, temperatur i końcowego F
 
 ### 2.8 Dane z Bielefeld (opcjonalne)
 
-Zenodo, DOI 10.5281/zenodo.17881359, CC BY 4.0. Aktualne F jest najpewniej zbudowane na wynikach tej pracy, więc to **wyłącznie kalibracja kształtu funkcji** (liniowy opad vs sigmoida percentyla, okna), nie walidacja. Jeden las bukowy w Niemczech. Każda zmiana F wynikająca z tej analizy musi dodatkowo nie pogorszyć wyniku 2.5 w żadnym z dwóch teł.
+Zenodo, DOI 10.5281/zenodo.20591123 (V1.2, 08.06.2026; wersja pierwsza 10.5281/zenodo.17881359 — te same liczby owocników, inna pogoda), CC BY 4.0. **Status: zrealizowane 30.09.2026** — reguły `docs/WALIDACJA_BIELEFELD.md`, raport `docs/RAPORT_BIELEFELD.md` (wagi opadu: „nierozstrzygnięte”, bez zmiany F), dane trwałe `dane_walidacyjne/bielefeld/`. Aktualne F jest najpewniej zbudowane na wynikach tej pracy, więc to **wyłącznie kalibracja kształtu funkcji** (liniowy opad vs sigmoida percentyla, okna), nie walidacja. Jeden las bukowy w Niemczech. Każda zmiana F wynikająca z tej analizy musi dodatkowo nie pogorszyć wyniku 2.5 w żadnym z dwóch teł.
 
 ---
 
