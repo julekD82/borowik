@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import queue
+import socket
 import subprocess
 import sys
 import threading
@@ -35,7 +36,8 @@ PYTHON_EXE = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 CONFIG_PATH = Path(__file__).resolve().parent / "launcher_config.json"
 DEV_URL = "http://127.0.0.1:5173"
 
-DEFAULT_CONFIG = {"lat": "53.1509", "lon": "16.7382", "radius_km": "25", "place": ""}
+DEFAULT_CONFIG = {"lat": "53.1509", "lon": "16.7382", "radius_km": "25", "place": "", "lan": False}
+DEV_PORT = 5173
 
 
 def load_config() -> dict:
@@ -49,15 +51,28 @@ def load_config() -> dict:
 
 
 def save_config(values: dict) -> None:
+    # Scalanie z zapisanym plikiem: kazde miejsce zapisu ustawia tylko swoje klucze (np. "lan").
     try:
-        CONFIG_PATH.write_text(json.dumps(values, ensure_ascii=False, indent=2), encoding="utf-8")
+        CONFIG_PATH.write_text(
+            json.dumps({**load_config(), **values}, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:
         pass
 
 
-def server_is_up() -> bool:
+def lan_ip() -> str | None:
+    """Adres IPv4 tego komputera w sieci lokalnej (UDP connect nic nie wysyla), albo None bez sieci."""
     try:
-        urllib.request.urlopen(DEV_URL, timeout=1)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+        return None if ip.startswith("127.") else ip
+    except OSError:
+        return None
+
+
+def server_is_up(url: str = DEV_URL) -> bool:
+    try:
+        urllib.request.urlopen(url, timeout=1)
         return True
     except Exception:
         return False
@@ -71,6 +86,7 @@ class LauncherApp:
         self.log_queue: queue.Queue[str] = queue.Queue()
         self.dev_process: subprocess.Popen | None = None
         self.worker_running = False
+        self.lan_requested = False
 
         config = load_config()
 
@@ -94,6 +110,12 @@ class LauncherApp:
         ttk.Entry(form, textvariable=self.place_var, width=30).grid(
             row=2, column=1, columnspan=3, sticky="w", padx=5, pady=(6, 0)
         )
+
+        self.lan_var = tk.BooleanVar(value=bool(config.get("lan")))
+        ttk.Checkbutton(
+            form, text="Udostepnij w sieci lokalnej (inne komputery i telefony)", variable=self.lan_var,
+            command=lambda: save_config({"lan": self.lan_var.get()}),
+        ).grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         buttons = ttk.Frame(root, padding=(10, 0))
         buttons.pack(fill="x")
@@ -177,6 +199,7 @@ class LauncherApp:
             "place": self.place_var.get().strip(),
         })
         self.worker_running = True
+        self.lan_requested = self.lan_var.get()
         self.set_buttons_enabled(False)
         threading.Thread(target=self.run_full_pipeline, args=(lat, lon, radius), daemon=True).start()
 
@@ -185,6 +208,7 @@ class LauncherApp:
             messagebox.showinfo("Info", "Poprzednie zadanie jeszcze trwa.")
             return
         self.worker_running = True
+        self.lan_requested = self.lan_var.get()
         self.set_buttons_enabled(False)
         threading.Thread(target=self.run_preview_only, daemon=True).start()
 
@@ -316,14 +340,20 @@ class LauncherApp:
             self.set_buttons_enabled(True)
 
     def ensure_dev_server_and_open(self) -> None:
+        lan = self.lan_requested
+        ip = lan_ip() if lan else None
         if server_is_up():
             self.log("Serwer juz dziala.")
+            if lan and ip and not server_is_up(f"http://{ip}:{DEV_PORT}"):
+                self.log("Uwaga: serwer dziala tylko lokalnie. Kliknij 'Zatrzymaj serwer' (albo zamknij "
+                         "proces Vite, jesli byl uruchomiony poza launcherem) i uruchom ponownie.")
         else:
             self.set_status("Startuje serwer frontendu...")
-            self.log("$ npm.cmd run dev")
+            script = "dev:lan" if lan else "dev"
+            self.log(f"$ npm.cmd run {script}")
             try:
                 self.dev_process = subprocess.Popen(
-                    ["npm.cmd", "run", "dev"], cwd=str(FRONTEND_DIR),
+                    ["npm.cmd", "run", script], cwd=str(FRONTEND_DIR),
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
@@ -339,6 +369,12 @@ class LauncherApp:
             else:
                 self.set_status("Serwer nie odpowiedzial w czasie - zobacz log.")
                 return
+        if lan:
+            if ip:
+                self.log(f"Adres w sieci lokalnej: http://{ip}:{DEV_PORT}  (bez hasla - tylko zaufana siec).")
+                self.log("Gdy inny komputer sie nie laczy: zezwol Node.js w Zaporze Windows dla sieci prywatnej.")
+            else:
+                self.log("Nie wykryto adresu w sieci lokalnej (brak polaczenia?).")
         self.set_status(f"Otwieram {DEV_URL}")
         webbrowser.open(DEV_URL)
         self.set_status("Gotowe.")
