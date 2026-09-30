@@ -1,0 +1,18 @@
+.app { display: grid; grid-template-rows: 48px minmax(0, 1fr); height: 100vh; height: 100dvh; }
+.topbar { display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--green-800); font-weight: 700; font-size: 16px; text-decoration: none; }
+.brand .icon { width: 22px; height: 22px; }
+.topbar-context { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.workspace { display: grid; grid-template-columns: 400px minmax(0, 1fr); min-height: 0; }
+.sidebar { display: flex; flex-direction: column; gap: 14px; padding: 12px; overflow-y: auto; background: var(--surface); border-right: 1px solid var(--line); min-height: 0; }
+.map-area { position: relative; min-height: 0; }
+.mobile-tabs { display: none; }
+@media (max-width: 799px) {
+  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar-context { display: none; }
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .mobile-tabs { display: flex; gap: 4px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .workspace[data-pane="list"] .map-area { display: none; }
+  .workspace[data-pane="map"] .sidebar { display: none; }
+  .sidebar { border-right: 0; }
+}
