@@ -23,16 +23,16 @@
 
 ```mermaid
 flowchart LR
-    subgraph Źródła
-        BDL[Bank Danych o Lasach<br/>WFS + paczki taksacyjne]
-        IMGW[IMGW-PIB<br/>radar RainGRS]
-        OM[Open-Meteo<br/>pogoda i prognoza]
-        OSM[OpenStreetMap<br/>drogi, parkingi, miejscowości]
-        GDOS[GDOŚ, zakazy wstępu]
+    subgraph zrodla ["Źródła danych"]
+        BDL["Bank Danych o Lasach<br/>WFS + paczki taksacyjne"]
+        IMGW["IMGW-PIB<br/>radar RainGRS"]
+        OM["Open-Meteo<br/>pogoda i prognoza"]
+        OSM["OpenStreetMap<br/>drogi, parkingi, miejscowości"]
+        GDOS["GDOŚ, zakazy wstępu"]
     end
-    Źródła --> P["pipeline/ (Python)<br/>python -m pipeline.prepare_trip"]
+    zrodla --> P["pipeline/ (Python)<br/>python -m pipeline.prepare_trip"]
     P --> O["notebooks/output/<br/>JSON + GeoJSON"]
-    O -->|npm run sync-data| F["frontend/ (Preact + MapLibre)<br/>http://127.0.0.1:5173"]
+    O -->|npm run sync-data| F["frontend/ (Preact + MapLibre)<br/>127.0.0.1:5173"]
 ```
 
 Obliczenia wykonuje Python. Frontend tylko czyta przygotowane pliki i nie ma własnego serwera API. Wynik wydzielenia to:
@@ -81,7 +81,7 @@ Podaj współrzędne punktu startowego, promień i nazwę miejsca, a potem klikn
 ### Z wiersza poleceń
 
 ```powershell
-# 1. Analiza (pierwsze uruchomienie dla nowego obszaru trwa kilka-kilkanaście minut, kolejne korzystają z cache)
+# 1. Analiza (pierwsze uruchomienie dla nowego obszaru pobiera dane i trwa dłużej; kolejne korzystają z cache/)
 uv run python -m pipeline.prepare_trip --lat 50.53 --lon 18.61 --radius-km 20
 
 # 2. Skopiowanie wyników do frontendu i start serwera
@@ -127,8 +127,6 @@ cd frontend
 npm test                     # testy frontendu (Vitest)
 npm run build                # kontrola typów TypeScript + build produkcyjny
 ```
-
-Testy nie wymagają internetu: zapytania do usług zewnętrznych są w nich zastąpione atrapami.
 
 ## Struktura repozytorium
 
