@@ -1,5 +1,14 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-10-01 — aktualne (42): okres klimatologii 1991–2020 vs 1996–2025 — eksploracyjnie, bez zmiany modelu
+
+Pytanie właściciela: czy uzupełnić klimatologię o ostatnie lata. `notebooks/18_klimatologia_okres.py` (E-OBS lokalnie; produkcja liczy z ERA5, więc to kierunek i skala), wynik `notebooks/output/walidacja/18_klimatologia_okres.json`:
+- **Test 2.5** (zamrożony zbiór, F bez G_season; wariant 1991–2020 odtwarza oryginalne rangi co do 1e-16): średnia ranga tło a 0,5285 → 0,5309 (różnica +0,0024, CI −0,0016…0,0069, n 476), tło b 0,5270 → 0,5294 (+0,0024, CI −0,0049…0,0095, n 269) — bez różnicy.
+- **Poziom F w sezonach 2021–2025** (15.08–10.11, komórki w 20 km): Zawadzkie średnio ΔF −0,001 (p10…p90 −0,015…0,014), 2,3% dni z |ΔF| > 0,05; okolice Piły ΔF +0,006 (−0,029…0,05), 12,5% dni. Mediana CWB26 na 1.10: −6,1 → −5,8 mm (Zawadzkie), −9,3 → −10,3 mm (Piła) — ostatnie lata nie są tu wyraźnie suchsze. Kolejność komórek tego samego dnia: Spearman F mediana 0,98 / 0,97.
+- **Norma opadu w panelu** (26 dni, 1.10): 45,9 → 45,1 mm (Zawadzkie), 33,6 → 32,2 mm (Piła).
+
+Wniosek: zmiana okresu prawie nic nie zmienia (ani trafności w 2.5, ani poziomu F, ani normy w panelu), a wymaga ponownego pobrania klimatologii ERA5 dla każdego punktu. Okres 1991–2020 zostaje, chyba że właściciel zdecyduje inaczej.
+
 ## 2026-10-01 — aktualne (41): mniej zapytań przy pierwszej analizie obszaru (bez zmiany danych); gałąź `telefon-top5`
 
 - **OSM:** przy modelu presji `access_points` jedno zapytanie Overpass na kafel zamiast dwóch (`pipeline/access_data.py::fetch_osm_combined`, `combined_osm_fetcher`, wywołane z `prepare_trip` przez `fetch_cached_osm`). Suma obu dotychczasowych zapytań, wynik dzielony filtrami `select_model_elements` (`pipeline/osm.py`) i `select_access_elements`, które odwzorowują warunki każdego zapytania; od razu zapisywany jest też kafel `access_tiles/osm/...`, więc krok „Dostęp OSM” czyta go z cache. Test równoważności z atrapą wykonującą zapytania: `tests/test_osm_combined.py`. Sprawdzone na żywo (kafel E330000N560000, okolice Piły): identyczne zbiory obiektów we wszystkich 5 zestawach co w cache ze starych zapytań.
