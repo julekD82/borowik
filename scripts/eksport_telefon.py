@@ -2,7 +2,9 @@
 
 Uzycie:
   python scripts/eksport_telefon.py [--nazwa "Zawadzkie"] [--migawka <id z trips/index.json>]
-                                    [--telefon-dir KATALOG] [--max-mb 10]
+                                    [--telefon-dir KATALOG]
+
+Do pliku trafia tylko najlepsze 5% wydzielen (wg R), 5 rejonow i parkingi.
 
 Wynik: <telefon_dir>/borowik_<obszar>_<data>.kmz (telefon_dir z local_config.json, domyslnie
 dane_telefon/ obok niego). Opis formatu: pipeline/phone_kmz.py, instrukcja: docs/TELEFON.md."""
@@ -16,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 from launcher.trip_archive import read_index, slugify  # noqa: E402
 from pipeline.local_config import resolve_telefon_dir  # noqa: E402
-from pipeline.phone_kmz import CLASS_LABELS, DEFAULT_MAX_BYTES, export_kmz, load_source  # noqa: E402
+from pipeline.phone_kmz import export_kmz, load_source  # noqa: E402
 
 MB = 1024 * 1024
 
@@ -43,7 +45,6 @@ def main(argv=None) -> int:
     parser.add_argument("--migawka", help="id zapisanej migawki (frontend/public/data/trips/<id>); brak = biezaca analiza")
     parser.add_argument("--telefon-dir", help="katalog wyjsciowy (domyslnie telefon_dir z local_config.json)")
     parser.add_argument("--data-dir", default=str(ROOT / "frontend" / "public" / "data"))
-    parser.add_argument("--max-mb", type=float, default=DEFAULT_MAX_BYTES / MB)
     args = parser.parse_args(argv)
 
     data_dir = pathlib.Path(args.data_dir)
@@ -64,23 +65,17 @@ def main(argv=None) -> int:
     path = out_dir / f"borowik_{slugify(area)}_{day}.kmz"
 
     print(f"Zrodlo: {'migawka ' + args.migawka if args.migawka else 'biezaca analiza'} ({day}), obszar: {area}")
-    print("Upraszczam geometrie (ok. 3 m) i buduje KMZ...")
+    print("Wybieram najlepsze 5% wydzielen, upraszczam ich geometrie (ok. 3 m) i buduje KMZ...")
     try:
-        result = export_kmz(source, path, max_bytes=int(args.max_mb * MB), title=f"Borowik · {area} · {day}")
+        result = export_kmz(source, path, title=f"Borowik · {area} · {day}")
     except (ValueError, OSError) as exc:
         print(f"BLAD: {exc}")
         return 1
 
     print(f"Zapisano: {result.path}")
-    print(f"Wydzielenia w masce: {result.stand_count}; rejony: {result.region_count}; parkingi: {result.parking_count}"
-          + ("" if result.has_no_pressure else "; zestaw 'bez presji' pominiety (stara migawka bez R_bez_presji)"))
-    if result.dropped_rest:
-        print(f"Rozmiar KMZ: {_fmt_mb(result.first_size_bytes)} - powyzej limitu {args.max_mb:g} MB, "
-              f"wiec pominieto klase '{CLASS_LABELS[4]}'.")
-        print(f"Rozmiar KMZ po pominieciu klasy: {_fmt_mb(result.size_bytes)}"
-              + ("" if result.size_bytes <= args.max_mb * MB else f" - NADAL powyzej limitu {args.max_mb:g} MB"))
-    else:
-        print(f"Rozmiar KMZ: {_fmt_mb(result.size_bytes)}")
+    print(f"Wydzielenia w masce: {result.stand_count}; w pliku (najlepsze 5%): {result.exported_count}; "
+          f"rejony: {result.region_count}; parkingi: {result.parking_count}")
+    print(f"Rozmiar KMZ: {_fmt_mb(result.size_bytes)}")
     return 0
 
 

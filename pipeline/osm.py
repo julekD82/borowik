@@ -16,22 +16,38 @@ def _bbox_2180_to_4326(bbox_2180: tuple) -> tuple:
     return (min(lats), min(lons), max(lats), max(lons))  # south, west, north, east
 
 
-def build_overpass_query(bbox_4326: tuple, profile: dict) -> str:
-    south, west, north, east = bbox_4326
-    bbox_str = f"{south},{west},{north},{east}"
+def model_overpass_statements(bbox_str: str, profile: dict) -> str:
     cfg = profile["osm"]
     highway_re = "|".join(cfg["routing_highway_types"])
     place_re = "|".join(cfg["place_types"])
     return (
-        f'[out:json][timeout:25];'
-        f'('
         f'node["amenity"="{cfg["parking_amenity"]}"]({bbox_str});'
         f'way["amenity"="{cfg["parking_amenity"]}"]({bbox_str});'
         f'way["highway"~"^({highway_re})$"]({bbox_str});'
         f'node["place"~"^({place_re})$"]({bbox_str});'
-        f');'
-        f'out geom;'
     )
+
+
+def build_overpass_query(bbox_4326: tuple, profile: dict) -> str:
+    south, west, north, east = bbox_4326
+    bbox_str = f"{south},{west},{north},{east}"
+    return f'[out:json][timeout:25];({model_overpass_statements(bbox_str, profile)});out geom;'
+
+
+def select_model_elements(elements: list[dict], profile: dict) -> list[dict]:
+    """Elementy, ktore zwrociloby build_overpass_query -- do podzialu wyniku polaczonego zapytania
+    (pipeline.access_data.fetch_osm_combined)."""
+    cfg = profile["osm"]
+
+    def wanted(el):
+        tags, kind = el.get("tags", {}), el.get("type")
+        if kind in ("node", "way") and tags.get("amenity") == cfg["parking_amenity"]:
+            return True
+        if kind == "way" and tags.get("highway") in cfg["routing_highway_types"]:
+            return True
+        return kind == "node" and tags.get("place") in cfg["place_types"]
+
+    return [el for el in elements if wanted(el)]
 
 
 def _element_representative_point(element: dict):

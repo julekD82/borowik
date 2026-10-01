@@ -25,7 +25,7 @@ import pandas as pd
 import requests
 from shapely.geometry import LineString, Point, shape
 
-from pipeline.osm import _bbox_2180_to_4326
+from pipeline.osm import _bbox_2180_to_4326, model_overpass_statements, parse_osm_elements, select_model_elements
 from pipeline.tiles import wfs_bbox_param
 
 BDL_ARCGIS_BASE = "https://mapserver.bdl.lasy.gov.pl/arcgis/services"
@@ -130,21 +130,37 @@ def fetch_bdl_fire_roads(bbox, get=None) -> gpd.GeoDataFrame:
 # --- OSM -------------------------------------------------------------------
 
 _ROAD_TAG_COLUMNS = ("surface", "tracktype", "access", "motor_vehicle", "bicycle", "name", "ref")
+# service bez parking_aisle/driveway/alley: nie miejskie zaulki, tylko drogi dojazdowe
+SERVICE_EXCLUDED = ("parking_aisle", "driveway", "alley", "drive-through")
+
+
+def access_overpass_statements(bbox_str: str, cfg: dict) -> str:
+    osm = cfg["osm"]
+    highway_re = "|".join(osm["highway_types"])
+    barrier_re = "|".join(osm["barrier_types"])
+    return (
+        f'way["highway"~"^({highway_re})$"]["service"!~"^({"|".join(SERVICE_EXCLUDED)})$"]({bbox_str});'
+        f'node["barrier"~"^({barrier_re})$"]({bbox_str});'
+    )
 
 
 def build_access_overpass_query(bbox_4326: tuple, cfg: dict) -> str:
     south, west, north, east = bbox_4326
     bbox_str = f"{south},{west},{north},{east}"
+    return f'[out:json][timeout:60];({access_overpass_statements(bbox_str, cfg)});out geom;'
+
+
+def select_access_elements(elements: list[dict], cfg: dict) -> list[dict]:
+    """Elementy, ktore zwrociloby build_access_overpass_query (podzial wyniku polaczonego zapytania)."""
     osm = cfg["osm"]
-    highway_re = "|".join(osm["highway_types"])
-    barrier_re = "|".join(osm["barrier_types"])
-    return (
-        f'[out:json][timeout:60];('
-        # service bez parking_aisle/driveway/alley: nie miejskie zaulki, tylko drogi dojazdowe
-        f'way["highway"~"^({highway_re})$"]["service"!~"^(parking_aisle|driveway|alley|drive-through)$"]({bbox_str});'
-        f'node["barrier"~"^({barrier_re})$"]({bbox_str});'
-        f');out geom;'
-    )
+
+    def wanted(el):
+        tags = el.get("tags", {})
+        if el.get("type") == "way":
+            return tags.get("highway") in osm["highway_types"] and tags.get("service") not in SERVICE_EXCLUDED
+        return el.get("type") == "node" and tags.get("barrier") in osm["barrier_types"]
+
+    return [el for el in elements if wanted(el)]
 
 
 def parse_access_osm_elements(elements: list[dict]) -> dict:
@@ -178,6 +194,21 @@ def fetch_access_osm(bbox_2180: tuple, cfg: dict, call_api) -> dict:
     return {name: gdf.to_crs("EPSG:2180") for name, gdf in frames.items()}
 
 
+def fetch_osm_combined(bbox_2180: tuple, profile: dict, cfg: dict, call_api) -> tuple[dict, dict]:
+    """Jedno zapytanie Overpass zamiast dwoch (pipeline.osm.fetch_osm_features + fetch_access_osm):
+    suma obu zapytan, wynik dzielony filtrami odwzorowujacymi kazde z nich -- te same dane, polowa
+    zapytan do serwera publicznego (limity Overpass to najdluzsza czesc pierwszej analizy obszaru)."""
+    south, west, north, east = _bbox_2180_to_4326(bbox_2180)
+    bbox_str = f"{south},{west},{north},{east}"
+    query = (f'[out:json][timeout:90];({model_overpass_statements(bbox_str, profile)}'
+             f'{access_overpass_statements(bbox_str, cfg)});out geom;')
+    elements = call_api(query).get("elements", [])
+    model = parse_osm_elements(select_model_elements(elements, profile))
+    access = parse_access_osm_elements(select_access_elements(elements, cfg))
+    return ({n: g.to_crs("EPSG:2180") for n, g in model.items()},
+            {n: g.to_crs("EPSG:2180") for n, g in access.items()})
+
+
 # --- cache kafli -------------------------------------------------------------
 
 TILE_M = 10000
@@ -187,18 +218,37 @@ def _tile_name(bbox) -> str:
     return f"E{bbox[1]}N{bbox[0]}S{TILE_M}"
 
 
+def _write_tile_frames(tile_dir: Path, frames: dict) -> None:
+    tile_dir.mkdir(parents=True, exist_ok=True)
+    for name, frame in frames.items():
+        temp = tile_dir / f"{name}.tmp.parquet"
+        frame.to_parquet(temp)
+        temp.replace(tile_dir / f"{name}.parquet")
+
+
 def _cached_tile_frames(tile_dir: Path, names: tuple, fetch):
     """(frames, from_cache). Zapis atomowy; brak pliku = kafel niepobrany.
     Pusty wynik tez jest zapisywany (to poprawna odpowiedz, nie blad)."""
     if all((tile_dir / f"{n}.parquet").exists() for n in names):
         return {n: gpd.read_parquet(tile_dir / f"{n}.parquet") for n in names}, True
     frames = fetch()
-    tile_dir.mkdir(parents=True, exist_ok=True)
-    for name, frame in frames.items():
-        temp = tile_dir / f"{name}.tmp.parquet"
-        frame.to_parquet(temp)
-        temp.replace(tile_dir / f"{name}.parquet")
+    _write_tile_frames(tile_dir, frames)
     return frames, False
+
+
+def access_osm_tile_dir(cache_dir, cfg: dict, bbox) -> Path:
+    osm_key = hashlib.sha256(repr((cfg["osm"], "v1")).encode("utf-8")).hexdigest()[:16]
+    return Path(cache_dir) / "access_tiles" / "osm" / osm_key / _tile_name(bbox)
+
+
+def combined_osm_fetcher(cache_dir, cfg: dict, call_api, fetch=None):
+    """Fetcher dla pipeline.search_area.fetch_cached_osm: jedno zapytanie na kafel, ktore od razu
+    zapisuje tez kafel warstw dostepu (load_access_sources czyta go potem z cache)."""
+    def fetch_tile(bbox, profile):
+        model, access = (fetch or fetch_osm_combined)(bbox, profile, cfg, call_api)
+        _write_tile_frames(access_osm_tile_dir(cache_dir, cfg, bbox), access)
+        return model
+    return fetch_tile
 
 
 def _merge(frames: list, crs="EPSG:2180") -> gpd.GeoDataFrame:
@@ -221,7 +271,6 @@ def load_access_sources(tiles, cache_dir, cfg: dict, osm_call_api, bdl_get=None)
     OSM dalsze pobieranie OSM jest wstrzymane (jak fetch_cached_osm -- nie
     zasypujemy serwera publicznego)."""
     root = Path(cache_dir) / "access_tiles"
-    osm_key = hashlib.sha256(repr((cfg["osm"], "v1")).encode("utf-8")).hexdigest()[:16]
     parkings, fire, roads, gates = [], [], [], []
     failed = {"bdl": [], "osm": []}
     cache_hits = {"bdl": 0, "osm": 0}
@@ -241,7 +290,7 @@ def load_access_sources(tiles, cache_dir, cfg: dict, osm_call_api, bdl_get=None)
         except Exception as exc:
             print(f"Dostep BDL {index}/{len(tiles)}: BLAD ({exc}) -- kafel pominiety", flush=True)
             failed["bdl"].append(bbox)
-        osm_dir = root / "osm" / osm_key / name
+        osm_dir = access_osm_tile_dir(cache_dir, cfg, bbox)
         cached = all((osm_dir / f"{n}.parquet").exists() for n in ("roads", "gates"))
         if not cached and osm_give_up:
             print(f"Dostep OSM {index}/{len(tiles)}: pominiety (wczesniejszy blad)", flush=True)

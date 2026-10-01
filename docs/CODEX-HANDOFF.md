@@ -1,5 +1,27 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-10-01 — aktualne (42): okres klimatologii 1991–2020 vs 1996–2025 — eksploracyjnie, bez zmiany modelu
+
+Pytanie właściciela: czy uzupełnić klimatologię o ostatnie lata. `notebooks/18_klimatologia_okres.py` (E-OBS lokalnie; produkcja liczy z ERA5, więc to kierunek i skala), wynik `notebooks/output/walidacja/18_klimatologia_okres.json`:
+- **Test 2.5** (zamrożony zbiór, F bez G_season; wariant 1991–2020 odtwarza oryginalne rangi co do 1e-16): średnia ranga tło a 0,5285 → 0,5309 (różnica +0,0024, CI −0,0016…0,0069, n 476), tło b 0,5270 → 0,5294 (+0,0024, CI −0,0049…0,0095, n 269) — bez różnicy.
+- **Poziom F w sezonach 2021–2025** (15.08–10.11, komórki w 20 km): Zawadzkie średnio ΔF −0,001 (p10…p90 −0,015…0,014), 2,3% dni z |ΔF| > 0,05; okolice Piły ΔF +0,006 (−0,029…0,05), 12,5% dni. Mediana CWB26 na 1.10: −6,1 → −5,8 mm (Zawadzkie), −9,3 → −10,3 mm (Piła) — ostatnie lata nie są tu wyraźnie suchsze. Kolejność komórek tego samego dnia: Spearman F mediana 0,98 / 0,97.
+- **Norma opadu w panelu** (26 dni, 1.10): 45,9 → 45,1 mm (Zawadzkie), 33,6 → 32,2 mm (Piła).
+
+Wniosek: zmiana okresu prawie nic nie zmienia (ani trafności w 2.5, ani poziomu F, ani normy w panelu), a wymaga ponownego pobrania klimatologii ERA5 dla każdego punktu. Okres 1991–2020 zostaje, chyba że właściciel zdecyduje inaczej.
+
+## 2026-10-01 — aktualne (41): mniej zapytań przy pierwszej analizie obszaru (bez zmiany danych); gałąź `telefon-top5`
+
+- **OSM:** przy modelu presji `access_points` jedno zapytanie Overpass na kafel zamiast dwóch (`pipeline/access_data.py::fetch_osm_combined`, `combined_osm_fetcher`, wywołane z `prepare_trip` przez `fetch_cached_osm`). Suma obu dotychczasowych zapytań, wynik dzielony filtrami `select_model_elements` (`pipeline/osm.py`) i `select_access_elements`, które odwzorowują warunki każdego zapytania; od razu zapisywany jest też kafel `access_tiles/osm/...`, więc krok „Dostęp OSM” czyta go z cache. Test równoważności z atrapą wykonującą zapytania: `tests/test_osm_combined.py`. Sprawdzone na żywo (kafel E330000N560000, okolice Piły): identyczne zbiory obiektów we wszystkich 5 zestawach co w cache ze starych zapytań.
+- **Pogoda:** brakujący wpis cache prognozy krótszej (np. `fd1`) jest wycinany z dłuższej (`fd7`) pobranej tego samego dnia dla tego samego punktu i `past_days` (`pipeline/weather.py::_seed_from_longer_forecast`) — wcześniej dwa zapytania Open-Meteo dla 144 punktów. Na 288 punktach z 1.10.2026 dni wspólne fd7/fd1 identyczne (różnica 0 we wszystkich polach).
+
+## 2026-10-01 — aktualne (40): serwer deweloperski nie pada przy zapisie migawki; gałąź `telefon-top5`
+
+`npm run dev:lan` padał na Windows z `EBUSY: resource busy or locked, watch …/public/data/trips/<id>/scores.json`, gdy launcher zapisywał migawkę („Zapisz do listy”): obserwator plików Vite (chokidar) próbował śledzić plik zablokowany w trakcie kopiowania, a nieobsłużony błąd kończył proces. Teraz `frontend/scripts/data-files-plugin.mjs` (podpięty w `vite.config.ts`): obserwator pomija `**/public/data/**`, a `/data/…` serwuje własny middleware prosto z dysku (JSON/GeoJSON, brak pliku = 404, bez wychodzenia poza katalog danych — `dev:lan` jest widoczny w sieci). Samo zignorowanie katalogu nie wystarczało: Vite serwuje pliki z `public/` tylko z listy uzupełnianej przez obserwator, więc nowa migawka byłaby dostępna dopiero po restarcie. Testy: `frontend/scripts/data-files-plugin.test.mjs`.
+
+## 2026-10-01 — aktualne (39): KMZ na telefon tylko z najlepszymi 5% wydzieleń; gałąź `telefon-top5`
+
+Decyzja właściciela: pełny KMZ (4 klasy + ukryty zestaw „bez presji”, ok. 28,7 tys. wielokątów dla Zawadzkie 20 km) importował się na telefonie ok. 20 min i zawieszał aplikację. Teraz `pipeline/phone_kmz.py` eksportuje tylko klasę 1 (najlepsze 5% wśród wydzieleń w masce, wg R z presją — te same co w aplikacji), jeden folder „Najlepsze 5% wydzieleń” w cyjanie, plus rejony i parkingi; bez zestawu „bez presji” (wybór właściciela) i bez limitu `--max-mb`/pomijania klasy 4. Geometrie upraszczane tylko dla eksportowanych wydzieleń. Zawadzkie 20 km: 718 wielokątów, KMZ 0,06 MB (KML 0,36 MB), eksport 1,6 s. Percentyl liczony teraz z wydzieleń w masce z geometrią przed uproszczeniem (wcześniej wydzielenia z pustą geometrią po uproszczeniu wypadały z puli). **Otwarte:** nowa wersja nie była otwierana na telefonie.
+
 ## 2026-10-01 — aktualne (38): nowy frontend (Preact); gałąź `nowy-frontend`
 
 Spec: `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`, plan: `docs/superpowers/plans/2026-10-01-borowik-nowy-frontend.md`, raport z listą kontrolną „stare pole → nowe miejsce”, zrzutami i pytaniami: `docs/RAPORT_NOWY_FRONTEND.md`. **Model, ranking, R/H/F/P, α bez zmian** — eksport dostał tylko nowe pola.
