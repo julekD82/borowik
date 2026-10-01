@@ -1,26 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  fruitingClass,
-  joinData,
-  joinRegions,
-  topExplanations,
-  navigationUrl,
-  distanceLabel,
-  zakazNote,
-  parseData,
-  isStandaloneTarget,
-  MIN_STANDALONE_AREA_HA,
-  standStructureLabel,
-  densityLabel,
-  neighborsSummary,
-  parseTrips,
-  formatTripLabel,
-  parseConditions,
-  dayLabel,
-  loadData,
-} from "./model";
-import { readSaved, saveRegion } from "./storage";
-import type { Score, Stands, Region, StandDetail, TripMeta } from "./model";
+import { describe, expect, it } from "vitest";
+import { parseAccessCollection, parseConditions, parseData, parseTrips } from "../data/parse";
+import type { Region, Score, StandDetail, Stands, TripMeta } from "../data/types";
+import { ACCESS_LAYERS, pointTypeLabel, roadKindLabel, surfaceLabel, topPointSummary } from "./access";
+import { distanceLabel, navigationUrl } from "./format";
+import { densityLabel, distanceMethod, formatTripLabel, fruitingClass, neighborsSummary, standStructureLabel, zakazNote } from "./labels";
+import { isStandaloneTarget, joinData, joinRegions, MIN_STANDALONE_AREA_HA } from "./ranking";
+import { dayLabel, uncertaintyLabel } from "./weather";
 
 describe("stand detail labels", () => {
   it("expands stand structure codes, with or without diacritics", () => {
@@ -252,17 +237,6 @@ describe("data and classification", () => {
     ).toThrow();
     expect(() => parseData(scores, stands, "not an array")).toThrow();
   });
-  it("selects strongest explanations without mutating input", () => {
-    const items = [0.1, -0.7, 0.5].map((contribution) => ({
-      factor: "host",
-      text: "tekst",
-      contribution,
-    }));
-    expect(topExplanations(items).map((x) => x.contribution)).toEqual([
-      -0.7, 0.5,
-    ]);
-    expect(items[0].contribution).toBe(0.1);
-  });
   it("uses latitude before longitude in navigation and validates coordinates", () => {
     expect(navigationUrl([16.7, 53.1])).toBe(
       "https://www.google.com/maps?q=53.1,16.7",
@@ -435,43 +409,6 @@ describe("data and classification", () => {
   });
 });
 
-describe("saved regions", () => {
-  const memory = () => {
-    const data = new Map<string, string>();
-    return {
-      getItem: (k: string) => data.get(k) ?? null,
-      setItem: (k: string, v: string) => {
-        data.set(k, v);
-      },
-    };
-  };
-  it("round-trips a summary, updates the same place, keeps different locations with reused ids", () => {
-    const store = memory();
-    const item = {
-      key: "one",
-      title: "Rejon 1",
-      day: "2026-09-24",
-      point: [16.7, 53.1] as [number, number],
-      reasons: ["Las"],
-      conditions: "Dobre",
-      savedAt: "2026-09-24T10:00:00Z",
-    };
-    saveRegion(store, item);
-    saveRegion(store, { ...item, title: "Nowa nazwa" });
-    saveRegion(store, { ...item, key: "two", point: [18, 50] });
-    expect(readSaved(store)).toHaveLength(2);
-    expect(readSaved(store).find((r) => r.key === "one")?.title).toBe(
-      "Nowa nazwa",
-    );
-  });
-  it("handles corrupt storage without crashing", () => {
-    expect(readSaved({ getItem: () => "{broken" })).toEqual([]);
-    expect(
-      readSaved({ getItem: () => '{"version":1,"regions":[{}]}' }),
-    ).toEqual([]);
-  });
-});
-
 const trip = (overrides: Partial<TripMeta> = {}): TripMeta => ({
   id: "bedziemysl-2026-09-26",
   name: "Będziemyśl",
@@ -538,52 +475,6 @@ describe("conditions timeline", () => {
   });
 });
 
-describe("loadData against a dev-server SPA fallback for missing optional files", () => {
-  // Review finding (Critical #1): Vite's dev-server html-fallback middleware
-  // answers a GET for a genuinely missing file (any missing file, not just
-  // conditions.json -- e.g. a saved trip made before regions/details/
-  // conditions existed) with 200 text/html (index.html), not 404. A naive
-  // `response.ok` check then treats that as "the file exists" and .json()
-  // throws, turning an optional, normally-absent file into a fatal load
-  // error for the WHOLE map, not just its own section.
-  function jsonResponse(body: unknown) {
-    return {
-      ok: true,
-      headers: new Headers({ "content-type": "application/json; charset=utf-8" }),
-      json: async () => body,
-    } as unknown as Response;
-  }
-  function htmlFallbackResponse() {
-    return {
-      ok: true,
-      headers: new Headers({ "content-type": "text/html" }),
-      json: async () => {
-        throw new SyntaxError("Unexpected token '<'");
-      },
-    } as unknown as Response;
-  }
-  const scoresBody = [score("A", 40), score("B", 30)];
-
-  it("treats a 200 text/html response for regions/details/conditions as absent, not a fatal error", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: unknown) => {
-        const url = String(input);
-        if (url.includes("scores.json")) return jsonResponse(scoresBody);
-        if (url.includes("stands.geojson")) return jsonResponse(stands);
-        // regions.json / details.json / conditions.json: genuinely absent,
-        // but the dev server answers as if they were present.
-        return htmlFallbackResponse();
-      }),
-    );
-    const data = await loadData();
-    expect(data.regions).toEqual([]);
-    expect(data.details).toEqual([]);
-    expect(data.conditions).toBeNull();
-    vi.unstubAllGlobals();
-  });
-});
-
 describe("zakazNote", () => {
   it("returns a discrete notice for nie_sprawdzono and blad", () => {
     expect(zakazNote("nie_sprawdzono")).toContain("nie sprawdzono");
@@ -600,16 +491,6 @@ describe("zakazNote", () => {
 });
 
 // Faza 3.5: warstwy punktow dostepu i karta wydzielenia.
-import {
-  ACCESS_LAYERS,
-  accessCardSummary,
-  distanceMethod as distanceMethodF3,
-  parseAccessCollection,
-  pointTypeLabel,
-  roadKindLabel,
-  surfaceLabel,
-  topPointSummary,
-} from "./model";
 
 describe("access layers (Faza 3.5)", () => {
   it("offers a legend toggle for parkings, entrances, roads, fire roads, settlements and P", () => {
@@ -626,21 +507,6 @@ describe("access layers (Faza 3.5)", () => {
     expect(() => parseAccessCollection({ type: "Feature" }, "x.json")).toThrow(/x\.json/);
     expect(() => parseAccessCollection("nope", "x.json")).toThrow();
   });
-  it("summarises the card as nearest parking / entrance / paved forest road", () => {
-    const text = accessCardSummary({
-      d_parking_m: 854,
-      d_entrance_m: 402,
-      d_hard_forest_road_m: null,
-      top_point_id: "pk-bdl-1",
-      top_point_type: "parking",
-      top_point_source: "bdl",
-      top_point_name: "Leśna",
-    });
-    expect(text).toContain("najbliższy parking 850 m");
-    expect(text).toContain("wjazd lub szlaban 400 m");
-    expect(text).toContain("utwardzony dukt brak w pobliżu");
-    expect(accessCardSummary(null)).toBe("");
-  });
   it("names the top contributing point, or says no point reaches the stand", () => {
     const base = {
       d_parking_m: 1, d_entrance_m: 1, d_hard_forest_road_m: 1,
@@ -655,46 +521,18 @@ describe("access layers (Faza 3.5)", () => {
     expect(surfaceLabel("zzz")).toBe("nieznana");
     expect(roadKindLabel("closed")).toBe("zamknięta droga leśna");
     expect(roadKindLabel("public")).toBe("droga publiczna");
-    expect(distanceMethodF3("access_points")).toContain("punktów dostępu");
+    expect(distanceMethod("access_points")).toContain("punktów dostępu");
   });
 });
 
 describe("attractivenessClass", () => {
   it("classifies from the exported number and tolerates absence", async () => {
-    const { attractivenessClass } = await import("./model");
+    const { attractivenessClass } = await import("./access");
     expect(attractivenessClass(0.05)).toBe("niska");
     expect(attractivenessClass(0.2)).toBe("średnia");
     expect(attractivenessClass(0.5)).toBe("wysoka");
     expect(attractivenessClass(null)).toBeNull();
     expect(attractivenessClass(undefined)).toBeNull();
-  });
-});
-
-describe("rankColorStops", () => {
-  it("pins the 6 colours to percentiles of R in this analysis, strictly increasing", async () => {
-    const { rankColorStops, RANK_COLORS } = await import("./model");
-    // dane skupione w 35-65, jak w prawdziwej analizie: stare stale progi 0/35/65/100 dawaly jeden zielony
-    const values = Array.from({ length: 200 }, (_, i) => 35 + (30 * i) / 199);
-    const stops = rankColorStops(values);
-    expect(stops.map((s) => s[1])).toEqual(RANK_COLORS);
-    for (let i = 1; i < stops.length; i++) expect(stops[i][0]).toBeGreaterThan(stops[i - 1][0]);
-    expect(stops[0][0]).toBeGreaterThanOrEqual(35);
-    expect(stops[5][0]).toBeLessThanOrEqual(65);
-    expect(stops[2][0]).toBeCloseTo(50, 0); // mediana
-  });
-  it("ignores zero (masked) and null values", async () => {
-    const { rankColorStops } = await import("./model");
-    const withJunk = [0, 0, null, undefined, NaN, ...Array.from({ length: 50 }, (_, i) => 40 + i)];
-    const clean = Array.from({ length: 50 }, (_, i) => 40 + i);
-    expect(rankColorStops(withJunk)).toEqual(rankColorStops(clean));
-  });
-  it("falls back to a fixed 0-100 scale for empty or constant data and never repeats a stop", async () => {
-    const { rankColorStops } = await import("./model");
-    for (const values of [[], [0, 0], [50], [50, 50, 50]]) {
-      const stops = rankColorStops(values);
-      expect(stops).toHaveLength(6);
-      for (let i = 1; i < stops.length; i++) expect(stops[i][0]).toBeGreaterThan(stops[i - 1][0]);
-    }
   });
 });
 
@@ -709,7 +547,7 @@ describe("regionAccessSummary", () => {
     top_point_name: id ? "Rytwiny 148h" : null,
   });
   it("shows min-max and median over ALL stands of the region, not one stand's distance", async () => {
-    const { regionAccessSummary } = await import("./model");
+    const { regionAccessSummary } = await import("./access");
     const s = regionAccessSummary([card(795, 400, 300), card(1485, 1000, 900), card(2095, 1890, 2250)])!;
     expect(s.distances).toContain("najbliższy parking od 800 m do 2100 m (mediana 1490 m)");
     expect(s.distances).toContain("wjazd lub szlaban od 400 m do 1890 m (mediana 1000 m)");
@@ -718,44 +556,17 @@ describe("regionAccessSummary", () => {
     expect(s.top).toContain("parking „Rytwiny 148h” (BDL)");
   });
   it("collapses equal values, skips nulls, and picks the most frequent top point", async () => {
-    const { regionAccessSummary } = await import("./model");
+    const { regionAccessSummary } = await import("./access");
     const s = regionAccessSummary([card(500, null, null, "a"), card(500, null, null, "b"), card(500, null, null, "b")])!;
     expect(s.distances).toContain("najbliższy parking 500 m ·");
     expect(s.distances).toContain("wjazd lub szlaban brak w pobliżu");
     expect(s.top).toContain("w 2 z 3 wydzieleń");
   });
   it("returns null without cards and says P = 0 when no stand has a top point", async () => {
-    const { regionAccessSummary } = await import("./model");
+    const { regionAccessSummary } = await import("./access");
     expect(regionAccessSummary([])).toBeNull();
     expect(regionAccessSummary([card(900, 900, 900, null)])!.top).toContain("P = 0");
   });
-});
-
-// ---- Faza 4.3-4.5 ----
-import {
-  uncertaintyLabel,
-  uncertaintyNote,
-  weatherComponentLines,
-  weatherCardLines,
-  localPhenomenaNote,
-  WEATHER_DISCLAIMER,
-} from "./model";
-import type { WeatherCard, ConditionsDay } from "./model";
-
-const weatherCard = (over: Partial<WeatherCard> = {}): WeatherCard => ({
-  p26_mm: 61.2,
-  cwb26_mm: 22.5,
-  cwb26_typical_mm: 18,
-  pct_cwb26: 0.62,
-  tmean20_c: 12.4,
-  temp_optimum_c: 13,
-  tmin3_c: 3.1,
-  frost: "brak",
-  frost_date: null,
-  F: 0.66,
-  forecast_days: 1,
-  forecast_window_share: 0,
-  ...over,
 });
 
 describe("Faza 4: oznaczenia niepewności prognozy", () => {
@@ -764,48 +575,10 @@ describe("Faza 4: oznaczenia niepewności prognozy", () => {
     expect(uncertaintyLabel(undefined)).toBeNull();
     expect(uncertaintyLabel("uncertain")).toBe("prognoza niepewna");
     expect(uncertaintyLabel("indicative")).toBe("orientacyjnie");
-    expect(uncertaintyNote("uncertain")).toMatch(/niedokładna/);
-    expect(uncertaintyNote("ok")).toBeNull();
-  });
-});
-
-describe("Faza 4: składniki pogody", () => {
-  it("podaje opad, typowy bilans z percentylem i temperaturę z optimum", () => {
-    const lines = weatherCardLines(weatherCard());
-    expect(lines[0]).toBe("Opad z ostatnich 26 dni: 61 mm");
-    expect(lines[1]).toContain("23 mm, typowo o tej porze 18 mm (percentyl 62)");
-    expect(lines[2]).toBe("Średnia temperatura 20 dni: 12,4 °C (optimum ok. 13 °C)");
-    expect(lines).toContain("Przymrozek w ostatnich 3 dobach: nie");
-    expect(lines).toContain("Ocena pogody F: 0,66");
-  });
-
-  it("przymrozek: tak, z siłą, minimum i datą", () => {
-    const lines = weatherCardLines(weatherCard({ frost: "silny", tmin3_c: -3, frost_date: "2026-09-28" }));
-    expect(lines.some((l) => l === "Przymrozek w ostatnich 3 dobach: tak (silny, min -3,0 °C, 28.09)")).toBe(true);
-  });
-
-  it("udział prognozy w oknie pokazuje dopiero przy wyjeździe za co najmniej 4 dni", () => {
-    expect(weatherCardLines(weatherCard({ forecast_days: 4, forecast_window_share: 0.2 })).join("\n")).not.toMatch(/prognozy, nie z obserwacji/);
-    const four = weatherCardLines(weatherCard({ forecast_days: 5, forecast_window_share: 0.2 }));
-    expect(four.join("\n")).toContain("Wyjazd za 4 dni: ok. 20% oceny opadu pochodzi z prognozy");
-  });
-
-  it("pomija brakujące składniki zamiast pisać NaN", () => {
-    const lines = weatherComponentLines({ cwb26_mm: null, cwb26_typical_mm: null, pct_cwb26: null, tmean20_c: null, temp_optimum_c: null });
-    expect(lines).toEqual([]);
-    expect(WEATHER_DISCLAIMER).toContain("nie została potwierdzona");
   });
 });
 
 describe("Faza 4.4: lokalne zjawiska w panelu", () => {
-  const day = (over: Partial<ConditionsDay>): ConditionsDay => ({ date: "2026-09-29", F: 0.5, level: 2, forecast: false, ...over });
-  it("pokazuje udział lasu z przymrozkiem i silnym opadem tylko gdy > 0", () => {
-    expect(localPhenomenaNote(day({}))).toBeNull();
-    expect(localPhenomenaNote(day({ frost_area_share: 0, heavy_rain_area_share: 0 }))).toBeNull();
-    expect(localPhenomenaNote(day({ frost_area_share: 0.124, heavy_rain_area_share: 0.3 }))).toBe(
-      "przymrozek na 12% lasu, silny opad na 30% lasu",
-    );
-  });
   it("parseConditions przyjmuje dni z nowymi polami i bez nich", () => {
     const base = { day: "2026-09-27", generated_for: "2026-09-27", horizon_days: 7, pulse_min_mm: 15, rains: [], summary: "x" };
     expect(() => parseConditions({ ...base, days: [{ date: "2026-09-27", F: 0.8, level: 3, forecast: false }] }, "2026-09-27")).not.toThrow();
@@ -818,14 +591,3 @@ describe("Faza 4.4: lokalne zjawiska w panelu", () => {
   });
 });
 
-import { wfsOnlyBanner } from "./model";
-describe("Plan 1.3: baner składu tylko z WFS", () => {
-  it("pokazuje się dopiero powyżej 20% i podaje odsetek", () => {
-    expect(wfsOnlyBanner(0.2)).toBeNull();
-    expect(wfsOnlyBanner(0.05)).toBeNull();
-    expect(wfsOnlyBanner(null)).toBeNull();
-    expect(wfsOnlyBanner(undefined)).toBeNull();
-    expect(wfsOnlyBanner(1)).toContain("100%");
-    expect(wfsOnlyBanner(0.211)).toContain("21%");
-  });
-});

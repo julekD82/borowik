@@ -85,8 +85,8 @@ export async function loadBackground(analysis: Analysis): Promise<Background> {
 // index.json is optional and, unlike scores/stands/regions/details, is
 // appended to incrementally by the launcher over time -- a single bad
 // entry (or a missing/corrupted file) means "fewer saved trips to show",
-// never a load failure for the live analysis. Same tolerant pattern as
-// storage.ts's readSaved, not parseData's throw-on-invalid pattern.
+// never a load failure for the live analysis. Tolerant pattern, not
+// parseData's throw-on-invalid pattern.
 export async function loadTrips(): Promise<TripMeta[]> {
   try {
     const response = await fetch(

@@ -103,7 +103,7 @@ Każda poprawka, z wyjątkiem CSS dla telefonu, ma test napisany przed zmianą (
 ## Testy
 
 - `pytest`: 902 passed.
-- `vitest`: 219 passed (15 plików).
+- `vitest`: 219 passed (15 plików). Po usunięciu starego interfejsu i testów usuniętych funkcji: 196 passed.
 - `tsc --noEmit`: bez błędów.
 - `npm run build`: bez błędów. Ostrzeżenie o dużym pakiecie (MapLibre) jak wcześniej.
 

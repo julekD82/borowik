@@ -11,7 +11,7 @@ import { standCentroid } from "./geometry";
 // putting it in the profile would misleadingly imply it does, and would
 // need a new export field wired through just to carry a value the backend
 // itself never uses. This is the one place it's defined; isStandaloneTarget
-// is the one place it's applied (main.ts's visibleEntries).
+// is the one place it's applied (state/store.ts's visibleStands).
 export const MIN_STANDALONE_AREA_HA = 0.5;
 
 export function isStandaloneTarget(score: Score): boolean {
