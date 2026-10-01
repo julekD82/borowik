@@ -9,7 +9,31 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export async function syncData(source, target) {
+// Windows: rename na plik otwarty przez inny proces (przegladarka/serwer Vite czytajacy
+// duzy stands.geojson, antywirus skanujacy swiezy plik) konczy sie chwilowym EPERM/EACCES/EBUSY.
+const RETRYABLE = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RETRY_DELAYS_MS = [100, 200, 400, 800, 1600, 2000, 2000, 2000];
+
+export async function renameWithRetry(
+  from,
+  to,
+  {
+    delays = RETRY_DELAYS_MS,
+    renameFn = rename,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  } = {},
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await renameFn(from, to);
+    } catch (error) {
+      if (!RETRYABLE.has(error?.code) || attempt >= delays.length) throw error;
+      await sleep(delays[attempt]);
+    }
+  }
+}
+
+export async function syncData(source, target, renameOptions = {}) {
   const files = await readdir(source);
   const days = files
     .map((name) => /^scores_(\d{4}-\d{2}-\d{2})\.json$/.exec(name)?.[1])
@@ -256,8 +280,24 @@ export async function syncData(source, target) {
       allContents[i],
       "utf8",
     );
-  for (const name of targets)
-    await rename(path.join(target, `${name}.tmp`), path.join(target, name));
+  const replaced = [];
+  for (const name of targets) {
+    try {
+      await renameWithRetry(
+        path.join(target, `${name}.tmp`),
+        path.join(target, name),
+        renameOptions,
+      );
+    } catch (error) {
+      const state = replaced.length
+        ? ` Już podmienione: ${replaced.join(", ")} -- dane w public/data są NIESPÓJNE; uruchom synchronizację ponownie (jeśli błąd wraca, zamknij kartę z mapą).`
+        : " Poprzednie dane w public/data są nietknięte.";
+      throw new Error(
+        `Nie można podmienić ${name} (${error?.code ?? error?.message}).${state}`,
+      );
+    }
+    replaced.push(name);
+  }
   if (regions === null)
     // No same-day regions file -- drop any regions.json left over from a
     // previous sync, so the toggle doesn't show a different day's regions

@@ -293,3 +293,37 @@ it("removes stale access layers from a previous sync when the new day has none",
   expect(result.forestRoads).toBe(0);
   await expect(readFile(path.join(target, "forest_roads.json"), "utf8")).rejects.toThrow();
 });
+it("retries a rename blocked by another process (Windows EPERM) and then succeeds", async () => {
+  const { renameWithRetry } = await import("./sync-data.mjs");
+  const calls = [];
+  const sleeps = [];
+  const renameFn = async (from, to) => {
+    calls.push([from, to]);
+    if (calls.length < 3) throw Object.assign(new Error("locked"), { code: "EPERM" });
+  };
+  await renameWithRetry("a.tmp", "a", { renameFn, delays: [1, 2, 3], sleep: async (ms) => sleeps.push(ms) });
+  expect(calls).toHaveLength(3);
+  expect(sleeps).toEqual([1, 2]);
+});
+it("does not retry other rename errors and gives up after the last delay", async () => {
+  const { renameWithRetry } = await import("./sync-data.mjs");
+  let n = 0;
+  const missing = async () => { n++; throw Object.assign(new Error("missing"), { code: "ENOENT" }); };
+  await expect(renameWithRetry("a.tmp", "a", { renameFn: missing, sleep: async () => {} })).rejects.toThrow("missing");
+  expect(n).toBe(1);
+  n = 0;
+  const locked = async () => { n++; throw Object.assign(new Error("locked"), { code: "EBUSY" }); };
+  await expect(renameWithRetry("a.tmp", "a", { renameFn: locked, delays: [1, 1], sleep: async () => {} })).rejects.toThrow("locked");
+  expect(n).toBe(3);
+});
+it("reports a mixed public bundle when a later file stays locked", async () => {
+  const { source, target } = await fixture();
+  const { rename } = await import("node:fs/promises");
+  const renameFn = async (from, to) => {
+    if (to.endsWith("stands.geojson")) throw Object.assign(new Error("locked"), { code: "EPERM" });
+    return rename(from, to);
+  };
+  await expect(syncData(source, target, { renameFn, delays: [1], sleep: async () => {} })).rejects.toThrow(
+    /stands\.geojson \(EPERM\).*scores\.json.*NIESPÓJNE/,
+  );
+});
