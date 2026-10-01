@@ -1,5 +1,9 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-10-01 — aktualne (39): KMZ na telefon tylko z najlepszymi 5% wydzieleń; gałąź `telefon-top5`
+
+Decyzja właściciela: pełny KMZ (4 klasy + ukryty zestaw „bez presji”, ok. 28,7 tys. wielokątów dla Zawadzkie 20 km) importował się na telefonie ok. 20 min i zawieszał aplikację. Teraz `pipeline/phone_kmz.py` eksportuje tylko klasę 1 (najlepsze 5% wśród wydzieleń w masce, wg R z presją — te same co w aplikacji), jeden folder „Najlepsze 5% wydzieleń” w cyjanie, plus rejony i parkingi; bez zestawu „bez presji” (wybór właściciela) i bez limitu `--max-mb`/pomijania klasy 4. Geometrie upraszczane tylko dla eksportowanych wydzieleń. Zawadzkie 20 km: 718 wielokątów, KMZ 0,06 MB (KML 0,36 MB), eksport 1,6 s. Percentyl liczony teraz z wydzieleń w masce z geometrią przed uproszczeniem (wcześniej wydzielenia z pustą geometrią po uproszczeniu wypadały z puli). **Otwarte:** nowa wersja nie była otwierana na telefonie.
+
 ## 2026-10-01 — aktualne (38): nowy frontend (Preact); gałąź `nowy-frontend`
 
 Spec: `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`, plan: `docs/superpowers/plans/2026-10-01-borowik-nowy-frontend.md`, raport z listą kontrolną „stare pole → nowe miejsce”, zrzutami i pytaniami: `docs/RAPORT_NOWY_FRONTEND.md`. **Model, ranking, R/H/F/P, α bez zmian** — eksport dostał tylko nowe pola.

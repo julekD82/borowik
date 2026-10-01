@@ -1,15 +1,17 @@
 # Mapa na telefon (KMZ): Locus Map i Guru Maps
 
-Eksport zamienia wynik analizy w jeden plik **KMZ** z kolorowymi wydzieleniami, 5 najlepszymi rejonami i parkingami. Otwierasz go w aplikacji do map offline i idziesz do lasu bez internetu.
+Eksport zamienia wynik analizy w jeden plik **KMZ** z najlepszymi 5% wydzieleń, 5 najlepszymi rejonami i parkingami. Otwierasz go w aplikacji do map offline i idziesz do lasu bez internetu.
 
-**Uwaga o stanie sprawdzenia:** plik jest poprawnym KML/KMZ (testy parsują go i sprawdzają kolory, foldery i współrzędne), ale nie był jeszcze otwierany na telefonie. Nazwy menu poniżej opisują typowe wersje aplikacji i mogą się różnić. Przed pierwszym wyjazdem otwórz plik w domu i obejrzyj mapę.
+**Uwaga o stanie sprawdzenia:** plik jest poprawnym KML/KMZ (testy parsują go i sprawdzają kolor, foldery i współrzędne). Poprzednia, pełna wersja (wszystkie wydzielenia) importowała się na telefonie ok. 20 minut i zawieszała aplikację. Obecna wersja (tylko najlepsze 5%) nie była jeszcze otwierana na telefonie. Nazwy menu poniżej opisują typowe wersje aplikacji i mogą się różnić. Przed pierwszym wyjazdem otwórz plik w domu i obejrzyj mapę.
 
 ## 1. Wygenerowanie pliku
 
 - W launcherze: wybierz **Źródło** (bieżąca analiza albo zapisana migawka) i kliknij **Eksport na telefon**. Dla bieżącej analizy nazwa pliku bierze się z pola „Nazwa miejsca”.
 - Z wiersza poleceń: `python scripts/eksport_telefon.py [--nazwa "Zawadzkie"] [--migawka <id>]`.
 
-Plik trafia do katalogu `telefon_dir` z `local_config.json` (domyślnie `dane_telefon/` obok tego pliku, poza repozytorium) i nazywa się `borowik_<obszar>_<data>.kmz`, gdzie data to dzień analizy. Skrypt wypisuje rozmiar; cel to poniżej 10 MB. Jeśli plik byłby większy, pomija klasę „4 · pozostałe” i podaje rozmiar ponownie. Dla przykładowej analizy Zawadzkie (20 km, 14 347 wydzieleń w masce) KMZ ma 2,3 MB.
+Plik trafia do katalogu `telefon_dir` z `local_config.json` (domyślnie `dane_telefon/` obok tego pliku, poza repozytorium) i nazywa się `borowik_<obszar>_<data>.kmz`, gdzie data to dzień analizy. Skrypt wypisuje liczbę wydzieleń w masce, liczbę wydzieleń w pliku i rozmiar. Dla przykładowej analizy Zawadzkie (20 km, 14 347 wydzieleń w masce) plik ma 718 wydzieleń i 0,06 MB.
+
+Wcześniej plik zawierał wszystkie wydzielenia w czterech klasach i drugi zestaw „bez presji” (ok. 28 tys. wielokątów, 2,3 MB). Import na telefonie trwał ok. 20 minut, a aplikacja zawieszała się po wczytaniu. Teraz zostaje tylko to, po co się jedzie.
 
 ### Synchronizacja z telefonem
 
@@ -23,24 +25,19 @@ Ustaw `telefon_dir` na folder synchronizowany z chmurą, np. w `local_config.jso
 
 ## 2. Co jest w pliku
 
-Foldery działają jak legenda; włączasz i wyłączasz je w menedżerze punktów/zakładek aplikacji.
+Foldery włączasz i wyłączasz w menedżerze punktów/zakładek aplikacji.
 
-| Folder | Kolor | Co obejmuje |
+| Folder | Wygląd | Co obejmuje |
 |---|---|---|
-| **Wynik R** → „1 · najlepsze 5%” | cyjan | wydzielenia z najwyższym R |
-| „2 · 5–20%” | zielony | |
-| „3 · 20–50%” | żółty | |
-| „4 · pozostałe” | szary, półprzezroczysty | reszta |
-| **Bez presji (domyślnie ukryte)** → te same cztery klasy z prefiksem „Bez presji · ” | jak wyżej | klasy liczone z `R_bez_presji` |
+| **Najlepsze 5% wydzieleń** | cyjan, półprzezroczysty | wydzielenia z najwyższym R (z presją, jak domyślnie w aplikacji) |
 | **Rejony (5 najlepszych)** | punkty | „Rejon 1 · Łaziska” itd. (kolejność jak w aplikacji, wg rankingu rejonu) |
 | **Parkingi** | punkty | tylko parkingi (bez wejść i bram) |
 
-- **Percentyl liczony jest w tej analizie**, wśród wydzieleń, które przeszły maskę. Kolor „cyjan” oznacza „najlepsze 5% w tym obszarze i dniu”, a nie stałą wartość R. Plików z różnych analiz nie porównuj kolorami; porównuj liczby w opisie.
-- Wydzielenia poza maską (m.in. za młode drzewostany, nie las) są pominięte.
-- Napis na wydzieleniu to `R <liczba>`. Po dotknięciu zobaczysz opis: numer wydzielenia, R, R bez presji, H, F, P.
+- **Percentyl liczony jest w tej analizie**, wśród wydzieleń, które przeszły maskę: to te same wydzielenia, które w aplikacji mają klasę „najlepsze 5%” (przy włączonej presji). Plików z różnych analiz nie porównuj kolorami; porównuj liczby w opisie.
+- Wydzielenia poza maską i pozostałe 95% wydzieleń w masce nie trafiają do pliku. Pełny obraz (wszystkie klasy, wariant bez presji, wilgotność) jest w aplikacji w przeglądarce.
+- Napis na wydzieleniu to `R <liczba>`. Po dotknięciu zobaczysz opis: numer wydzielenia, R, R bez presji (jeśli jest), H, F, P.
 - Geometrie są uproszczone (tolerancja ok. 3 m) i zapisane w WGS84.
-- Zestaw „Bez presji” jest oznaczony jako ukryty. Jeśli aplikacja ignoruje ten znacznik i pokazuje go od razu, wyłącz folder ręcznie. Starsze migawki nie mają `R_bez_presji`, `access_points.json` ani nazw miejscowości, więc odpowiednie foldery są pomijane albo rejony nazywają się tylko „Rejon N”.
-- Jeśli telefon zwalnia (kilkanaście tysięcy wielokątów to dużo), wyłącz folder „4 · pozostałe”, który zawiera połowę wydzieleń.
+- Starsze migawki nie mają `access_points.json` ani nazw miejscowości, więc folder parkingów jest pomijany, a rejony nazywają się tylko „Rejon N”.
 
 ## 3. Android: Locus Map
 

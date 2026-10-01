@@ -1,4 +1,4 @@
-"""Eksport 'na telefon' (KMZ): klasy percentylowe, kolory, foldery, liczba obiektow, WGS84."""
+"""Eksport 'na telefon' (KMZ): tylko najlepsze 5% wydzielen, kolor, foldery, liczba obiektow, WGS84."""
 import io
 import json
 import xml.etree.ElementTree as ET
@@ -8,8 +8,8 @@ import pytest
 
 from pipeline import phone_kmz
 from pipeline.phone_kmz import (
-    CLASS_COLORS,
-    CLASS_LABELS,
+    TOP_COLOR,
+    TOP_LABEL,
     build_kml,
     classify_by_percentile,
     export_kmz,
@@ -95,77 +95,64 @@ def test_classify_is_independent_of_input_order():
     assert classes[values.index(1.0)] == 4
 
 
-# --- kolory ------------------------------------------------------------------
+# --- kolor ------------------------------------------------------------------
 
-def test_class_colors_cyan_green_yellow_semi_transparent_grey():
-    # KML: aabbggrr
-    assert CLASS_COLORS[1].startswith("99") and CLASS_COLORS[1][2:] == "ffe500"    # cyjan  #00E5FF
-    assert CLASS_COLORS[2].startswith("99") and CLASS_COLORS[2][2:] == "40cc2e"    # zielony #2ECC40
-    assert CLASS_COLORS[3].startswith("99") and CLASS_COLORS[3][2:] == "00d6ff"    # zolty  #FFD600
-    assert CLASS_COLORS[4][2:] == "9e9e9e" and int(CLASS_COLORS[4][:2], 16) < 0x99  # szary, polprzezroczysty
+def test_top_color_is_semi_transparent_cyan():
+    assert TOP_COLOR.startswith("99") and TOP_COLOR[2:] == "ffe500"  # cyjan #00E5FF (KML: aabbggrr)
 
 
-def test_each_class_has_matching_polystyle_with_thin_outline():
+def test_single_style_with_cyan_fill_and_thin_outline():
     root = _parse(build_kml(_dataset()))
     styles = {s.get("id"): s for s in root.iter("{%s}Style" % NS["k"])}
-    for cls in (1, 2, 3, 4):
-        style = styles[f"klasa{cls}"]
-        assert style.find("k:PolyStyle/k:color", NS).text == CLASS_COLORS[cls]
-        assert style.find("k:PolyStyle/k:fill", NS).text == "1"
-        assert float(style.find("k:LineStyle/k:width", NS).text) <= 1.0
+    assert set(styles) == {"najlepsze"}
+    assert styles["najlepsze"].find("k:PolyStyle/k:color", NS).text == TOP_COLOR
+    assert styles["najlepsze"].find("k:PolyStyle/k:fill", NS).text == "1"
+    assert float(styles["najlepsze"].find("k:LineStyle/k:width", NS).text) <= 1.0
 
 
-def test_placemark_uses_style_of_its_percentile_class():
-    root = _parse(build_kml(_dataset()))
-    top = _folder(root, "1 · najlepsze 5%")
-    styles = {p.find("k:styleUrl", NS).text for p in top.iter("{%s}Placemark" % NS["k"])}
-    assert styles == {"#klasa1"}
-    rest = _folder(root, "4 · pozostałe")
-    assert {p.find("k:styleUrl", NS).text for p in rest.iter("{%s}Placemark" % NS["k"])} == {"#klasa4"}
+# --- tylko najlepsze 5% (telefon nie udzwignal 28 tys. wielokatow) ------------
+
+def _polygon_marks(root):
+    return [p for p in root.iter("{%s}Placemark" % NS["k"]) if p.find(".//k:Polygon", NS) is not None]
 
 
-# --- foldery i liczba obiektow -----------------------------------------------
-
-def test_folder_names_work_as_legend():
-    assert CLASS_LABELS == {1: "1 · najlepsze 5%", 2: "2 · 5–20%", 3: "3 · 20–50%", 4: "4 · pozostałe"}
-    names = _folder_names(_parse(build_kml(_dataset())))
-    for label in CLASS_LABELS.values():
-        assert label in names
+def _descriptions(marks):
+    return " ".join(p.find("k:description", NS).text for p in marks)
 
 
-def test_counts_per_class_follow_percentiles_of_masked_stands():
+def test_only_the_best_5_percent_of_masked_stands_are_exported():
     root = _parse(build_kml(_dataset(n=100)))
-    counts = {c: len(list(_folder(root, CLASS_LABELS[c]).iter("{%s}Placemark" % NS["k"]))) for c in CLASS_LABELS}
-    assert counts == {1: 5, 2: 15, 3: 30, 4: 50}
+    marks = list(_folder(root, TOP_LABEL).iter("{%s}Placemark" % NS["k"]))
+    assert len(marks) == 5 and len(_polygon_marks(root)) == 5
+    assert {p.find("k:styleUrl", NS).text for p in marks} == {"#najlepsze"}
+    text = _descriptions(marks)
+    assert all(f"s{i} " in text for i in range(5)) and "s5 " not in text
 
 
 def test_stands_outside_mask_are_omitted_and_do_not_shift_percentiles():
     masked_out = set(range(0, 100, 2))  # polowa poza maska (w tym najlepsze wg R)
     root = _parse(build_kml(_dataset(n=100, masked_out=masked_out)))
-    counts = [len(list(_folder(root, CLASS_LABELS[c]).iter("{%s}Placemark" % NS["k"]))) for c in (1, 2, 3, 4)]
-    assert counts == [3, 7, 15, 25]  # percentyle liczone tylko z 50 wydzielen w masce
-    descriptions = " ".join(p.find("k:description", NS).text for p in root.iter("{%s}Placemark" % NS["k"])
-                            if p.find("k:description", NS) is not None)
-    assert "s0 " not in descriptions and "s2 " not in descriptions  # parzyste poza maska
+    marks = _polygon_marks(root)
+    assert len(marks) == 3  # najlepsze 5% liczone tylko z 50 wydzielen w masce
+    text = _descriptions(marks)
+    assert "s0 " not in text and "s2 " not in text  # parzyste poza maska
+    assert all(f"s{i} " in text for i in (1, 3, 5))
 
 
-def test_no_pressure_set_is_hidden_and_ranked_by_its_own_score():
-    root = _parse(build_kml(_dataset(n=100)))
-    parent = _folder(root, "Bez presji (domyślnie ukryte)")
-    assert parent.find("k:visibility", NS).text == "0"
-    top = next(f for f in parent.findall("k:Folder", NS) if f.find("k:name", NS).text == "Bez presji · 1 · najlepsze 5%")
-    text = " ".join(p.find("k:description", NS).text for p in top.iter("{%s}Placemark" % NS["k"]))
-    # R_bez_presji jest najwyzsze dla najwiekszych i (s95..s99), a nie dla s0..s4 jak w R
-    for i in range(95, 100):
-        assert f"s{i} " in text
-    assert "s0 " not in text
-    main = _folder(root, "Wynik R")
-    assert main.find("k:visibility", NS) is None or main.find("k:visibility", NS).text == "1"
+def test_no_pressure_set_is_not_exported():
+    for data in (_dataset(n=100), _dataset(n=100, with_no_pressure=False)):
+        root = _parse(build_kml(data))
+        assert not any("Bez presji" in n for n in _folder_names(root))
+        assert len(_polygon_marks(root)) == 5
 
 
-def test_no_pressure_folders_absent_for_old_snapshot_without_r_bez_presji():
-    root = _parse(build_kml(_dataset(with_no_pressure=False)))
-    assert not any("Bez presji" in n for n in _folder_names(root))
+def test_only_exported_stands_are_simplified(monkeypatch):
+    # Upraszczanie geometrii jest drogie: robimy je tylko dla wydzielen, ktore trafia do pliku.
+    calls = []
+    original = phone_kmz.simplify_geometry
+    monkeypatch.setattr(phone_kmz, "simplify_geometry", lambda g: calls.append(1) or original(g))
+    build_kml(_dataset(n=100))
+    assert len(calls) == 5
 
 
 def test_regions_folder_has_five_best_ranked_points_visible():
@@ -196,13 +183,6 @@ def test_optional_folders_omitted_when_data_missing():
     assert "Parkingi" not in names and "Rejony (5 najlepszych)" not in names
 
 
-def test_drop_rest_class_removes_only_class_4_in_both_sets():
-    root = _parse(build_kml(_dataset(), drop_rest=True))
-    names = _folder_names(root)
-    assert "4 · pozostałe" not in names and "Bez presji · 4 · pozostałe" not in names
-    assert "1 · najlepsze 5%" in names and "Bez presji · 1 · najlepsze 5%" in names
-
-
 # --- geometria: WGS84 i uproszczenie ------------------------------------------
 
 def test_all_coordinates_are_wgs84_inside_analysis_area():
@@ -214,7 +194,7 @@ def test_all_coordinates_are_wgs84_inside_analysis_area():
             assert abs(lat - CENTER_LAT) < RADIUS_KM / 111.0 * 1.05
             assert abs(lon - CENTER_LON) < RADIUS_KM / (111.0 * 0.635) * 1.05
             checked += 1
-    assert checked > 100
+    assert checked > 20
 
 
 def test_build_rejects_projected_coordinates():
@@ -267,23 +247,8 @@ def test_export_writes_valid_kmz_with_doc_kml(tmp_path):
         assert z.namelist() == ["doc.kml"]
         root = ET.fromstring(z.read("doc.kml"))
     assert root.tag == "{%s}kml" % NS["k"]
-    assert result.dropped_rest is False and result.stand_count == 100
-
-
-def test_export_drops_rest_class_when_over_limit_and_reports_both_sizes(tmp_path):
-    result = export_kmz(_dataset(), tmp_path / "a.kmz", max_bytes=1)
-    assert result.dropped_rest is True
-    assert result.first_size_bytes > 1 and result.size_bytes < result.first_size_bytes
-    with zipfile.ZipFile(result.path) as z:
-        names = _folder_names(ET.fromstring(z.read("doc.kml")))
-    assert "4 · pozostałe" not in names
-
-
-def test_export_keeps_rest_class_when_under_limit(tmp_path):
-    result = export_kmz(_dataset(), tmp_path / "a.kmz")
-    assert result.dropped_rest is False and result.first_size_bytes == result.size_bytes
-    with zipfile.ZipFile(result.path) as z:
-        assert "4 · pozostałe" in _folder_names(ET.fromstring(z.read("doc.kml")))
+    assert result.stand_count == 100 and result.exported_count == 5
+    assert result.region_count == 5 and result.parking_count == 3
 
 
 # --- wczytywanie zrodla ------------------------------------------------------

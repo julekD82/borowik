@@ -76,10 +76,10 @@ def test_missing_current_analysis_returns_error(tmp_path, capsys):
     assert "scores.json" in capsys.readouterr().out
 
 
-def test_size_over_limit_reports_both_sizes(tmp_path, capsys):
+def test_reports_masked_and_exported_counts_and_size(tmp_path, capsys):
     script = _load_script()
     data_dir, out = tmp_path / "data", tmp_path / "telefon"
     _write_source(data_dir, _dataset())
-    script.main(["--data-dir", str(data_dir), "--telefon-dir", str(out), "--nazwa", "x", "--max-mb", "0.000001"])
+    assert script.main(["--data-dir", str(data_dir), "--telefon-dir", str(out), "--nazwa", "x"]) == 0
     text = capsys.readouterr().out
-    assert "pozostałe" in text and text.count("MB") >= 2
+    assert "Wydzielenia w masce: 100" in text and "w pliku (najlepsze 5%): 5" in text and "MB" in text
