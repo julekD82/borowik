@@ -3,7 +3,7 @@ import pytest
 
 from pipeline.habitat import (
     load_profile, host_affinity, score_host, score_host_composition,
-    score_site, score_age, compute_habitat, passes_mask, blend_host_with_lower_storeys,
+    score_site, score_age, compute_habitat, passes_mask, blend_host_with_lower_storeys, mask_reasons,
 )
 
 PROFILE = load_profile("profiles/boletus_edulis.yaml")
@@ -56,9 +56,11 @@ def test_score_age_masks_young_stands():
 
 
 def _curve_profile():
+    """Mechanika krzywej na jawnym progu maski 12 lat (stary domyslny), niezaleznie od progu w profilu."""
     import copy
     p = copy.deepcopy(PROFILE)
     p["habitat"] = {"age_mode": "curve"}
+    p["age_breakpoints"]["mask_below"] = 12
     return p
 
 
@@ -76,10 +78,10 @@ def test_compute_habitat_combines_weighted_geometric_mean():
     row = {"species_cd": "SO", "part_cd": 10, "site_type": "BMSW", "spec_age": 60}
     assert compute_habitat(row, PROFILE) == pytest.approx(1.0)
 
-    row2 = {"species_cd": "DB", "part_cd": 10, "site_type": "LSW", "spec_age": 27}
+    row2 = {"species_cd": "DB", "part_cd": 10, "site_type": "LSW", "spec_age": 40}
     s_host = score_host("DB", 10, PROFILE)
     s_site, _ = score_site("LSW", PROFILE)
-    s_age = score_age(27, PROFILE)
+    s_age = score_age(40, PROFILE)
     expected = s_host ** 0.40 * s_site ** 0.35 * s_age ** 0.25
     assert compute_habitat(row2, PROFILE) == pytest.approx(expected)
 
@@ -191,18 +193,31 @@ def test_passes_mask_rejects_non_stand_area_type():
 
 
 def _neutral_profile():
+    """Mechanika trybu neutral na jawnym progu maski 12 lat, niezaleznie od progu w profilu."""
     import copy
     p = copy.deepcopy(PROFILE)
     p["habitat"] = {"age_mode": "neutral"}
+    p["age_breakpoints"]["mask_below"] = 12
     return p
 
 
 def test_default_profile_age_mode_is_neutral():
     # Decyzja wlasciciela po walidacji Fazy 2: neutral jest domyslny.
     assert PROFILE["habitat"]["age_mode"] == "neutral"
-    assert score_age(15, PROFILE) == 1.0
+    assert score_age(40, PROFILE) == 1.0
     assert score_age(150, PROFILE) == 1.0
-    assert score_age(5, PROFILE) is None  # maska < 12 lat bez zmian
+    assert score_age(5, PROFILE) is None
+
+
+def test_default_profile_age_mask_is_35_years():
+    # Decyzja wlasciciela 01.10.2026 po wyjezdzie (Rejon 1 Laziska, mlode drzewostany):
+    # maska wieku od 35 lat (wczesniej 12), zmiana oparta na zalozeniu, nie na danych.
+    assert PROFILE["age_breakpoints"]["mask_below"] == 35
+    assert score_age(34, PROFILE) is None
+    assert score_age(35, PROFILE) == 1.0
+    row = {"area_type": "D-STAN", "species_cd": "SO", "part_cd": 10, "site_type": "BMSW"}
+    assert mask_reasons({**row, "spec_age": 23}, PROFILE) == ["too_young"]
+    assert passes_mask({**row, "spec_age": 35}, PROFILE)
 
 
 def test_curve_mode_remains_available_and_unchanged():
@@ -235,7 +250,7 @@ def test_missing_habitat_section_defaults_to_neutral():
     import copy
     p = copy.deepcopy(PROFILE)
     p.pop("habitat")
-    assert score_age(15, p) == 1.0
+    assert score_age(50, p) == 1.0
 
 
 import pytest

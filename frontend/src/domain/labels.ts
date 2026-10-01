@@ -140,7 +140,8 @@ export function regionName(region: Region, position: number): string {
 const MASK_REASON_TEXT: Record<string, string> = {
   not_dstan: "to nie drzewostan (np. zrąb, łąka, droga)",
   no_age: "brak wieku drzewostanu w danych",
-  too_young: "za młody drzewostan (młodnik)",
+  // Prog z profilu (age_breakpoints.mask_below): 35 lat od 01.10.2026, wczesniej 12.
+  too_young: "za młody drzewostan (poniżej progu wieku, obecnie 35 lat)",
   excluded_species: "gatunek wykluczający (np. olsza, jesion) stanowi co najmniej 80%",
   gdos: "rezerwat przyrody lub park narodowy (GDOŚ)",
   zakaz: "okresowy zakaz wstępu do lasu",

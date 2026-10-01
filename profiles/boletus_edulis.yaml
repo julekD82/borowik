@@ -100,7 +100,13 @@ unknown_site_score: 0.5
 unknown_site_moisture_cls: 1
 
 age_breakpoints:
-  mask_below: 12
+  # Maska wieku: drzewostan mlodszy niz mask_below lat odpada z rankingu (na mapie szary,
+  # powod "too_young"). 35 lat od decyzji wlasciciela 01.10.2026 po wyjezdzie (Rejon 1
+  # "Laziska", migawka zawadzkie-01-10: mediana wieku 23 lata, prawie brak grzybow) --
+  # zmiana OPARTA NA ZALOZENIU i jednej wizycie, NIE potwierdzona danymi (GBIF w 2.4 nie
+  # pokazal slabszych mlodych drzewostanow); docs/RAPORT_FAZA_2.md, "Decyzje po walidacji" p. 3.
+  # Poprzednie zachowanie: mask_below: 12.
+  mask_below: 35
   segments:
     - {from: 12, to: 20, value_from: 0.3, value_to: 0.6}
     - {from: 20, to: 35, value_from: 0.6, value_to: 1.0}
