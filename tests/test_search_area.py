@@ -301,6 +301,11 @@ def configure_sources(monkeypatch):
         return {name:gpd.GeoDataFrame(geometry=[],crs=2180) for name in ['parking','roads','places']}
     monkeypatch.setattr(trip, 'fetch_protected_areas', gdos)
     monkeypatch.setattr(trip, 'fetch_osm_features', osm)
+    # Jedno zapytanie Overpass na kafel (model presji access_points): czesc modelowa deleguje do
+    # podmienionego fetch_osm_features (w chwili wywolania -- testy podmieniaja go tez pozniej).
+    monkeypatch.setattr(trip, 'fetch_osm_combined', lambda bbox, profile, cfg, call_api: (
+        trip.fetch_osm_features(bbox, profile), {'roads': gpd.GeoDataFrame(geometry=[], crs=2180),
+                                                 'gates': gpd.GeoDataFrame(geometry=[], crs=2180)}))
     monkeypatch.setattr(trip, 'check_periodic_ban', lambda *a: False)
     # Faza 3: zrodla punktow dostepu (BDL ArcGIS + Overpass) tez bez sieci
     monkeypatch.setattr(trip, '_default_bdl_get', lambda *a: {'features': []})

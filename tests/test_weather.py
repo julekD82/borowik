@@ -493,3 +493,54 @@ def test_fetch_climatology_raw_mixing_cached_and_fresh_points_keeps_datetime_dty
     fetch_climatology_raw(points[:1], 1991, 2020, api, tmp_path)
     result = fetch_climatology_raw(points, 1991, 2020, api, tmp_path)
     assert isinstance(result["date"].dtype, pd.DatetimeTZDtype)
+
+
+def _window_payload(past_days, forecast_days, offset=0.0):
+    """Jak odpowiedz Open-Meteo: past_days dni wstecz + forecast_days od dzis, kazdy dzien inny."""
+    n = past_days + forecast_days
+    dates = pd.date_range("2026-09-01", periods=n, freq="D")
+    return {
+        "date": dates,
+        "precipitation_mm": [offset + i * 0.5 for i in range(n)],
+        "tmean_c": [10.0 + i for i in range(n)],
+        "tmin_c": [5.0 + i for i in range(n)],
+        "tmax_c": [15.0 + i for i in range(n)],
+        "et0_mm": [1.0 + i * 0.1 for i in range(n)],
+        "soil_moisture": [0.2 + i * 0.01 for i in range(n)],
+    }
+
+
+def test_shorter_forecast_is_cut_from_the_longer_one_fetched_earlier_the_same_day(tmp_path):
+    # prepare_trip pobiera najpierw 7 dni prognozy (os czasu warunkow), potem run_poc 1 dzien dla tych
+    # samych punktow. Dni wspolne sa identyczne (sprawdzone na 288 punktach 1.10.2026), wiec drugie
+    # zapytanie (i limit Open-Meteo) jest zbedne.
+    calls = []
+
+    def fake_call_api(points, past_days, forecast_days=1):
+        calls.append(forecast_days)
+        return [_window_payload(past_days, forecast_days, offset=i) for i in range(len(points))]
+
+    points = [(50.5, 18.6), (50.55, 18.65)]
+    long = fetch_weather_raw(points, past_days=4, forecast_days=7, call_api=fake_call_api, cache_dir=tmp_path)
+    short = fetch_weather_raw(points, past_days=4, forecast_days=1, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert calls == [7]
+    for lat, lon in points:
+        a = long[(long["lat"] == lat) & (long["lon"] == lon)].reset_index(drop=True)
+        b = short[(short["lat"] == lat) & (short["lon"] == lon)].reset_index(drop=True)
+        assert len(b) == 4 + 1
+        pd.testing.assert_frame_equal(b, a.iloc[: len(b)])
+
+
+def test_longer_forecast_with_another_past_window_is_not_reused(tmp_path):
+    calls = []
+
+    def fake_call_api(points, past_days, forecast_days=1):
+        calls.append((past_days, forecast_days))
+        return [_window_payload(past_days, forecast_days) for _ in points]
+
+    points = [(50.5, 18.6)]
+    fetch_weather_raw(points, past_days=4, forecast_days=7, call_api=fake_call_api, cache_dir=tmp_path)
+    fetch_weather_raw(points, past_days=92, forecast_days=1, call_api=fake_call_api, cache_dir=tmp_path)
+
+    assert calls == [(4, 7), (92, 1)]

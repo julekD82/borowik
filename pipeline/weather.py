@@ -218,6 +218,31 @@ def _default_open_meteo_call(points: list[tuple[float, float]], past_days: int,
     return results
 
 
+def _seed_from_longer_forecast(points, cache_dir: Path, today: str, past_days: int, forecast_days: int) -> None:
+    """Brakujacy wpis cache (dzis, past_days, forecast_days) wycina z dluzszej prognozy pobranej dzis dla
+    tego samego punktu i tego samego past_days: Open-Meteo zwraca ciagla serie, a dni wspolne sa
+    identyczne (sprawdzone na 288 punktach 1.10.2026: roznica 0 we wszystkich polach). prepare_trip
+    pobiera najpierw 7 dni (os czasu warunkow), potem run_poc 1 dzien -- drugie zapytanie bylo zbedne."""
+    rows = past_days + forecast_days
+    for lat, lon in points:
+        target = _point_cache_path(cache_dir, lat, lon, f"{today}_fd{forecast_days}_pd{past_days}_v1")
+        if target.exists():
+            continue
+        longer = []
+        for path in cache_dir.glob(f"{lat:.6f}_{lon:.6f}_{today}_fd*_pd{past_days}_v1.parquet"):
+            fd = int(path.name.split("_fd")[1].split("_")[0])
+            if fd > forecast_days:
+                longer.append((fd, path))
+        if not longer:
+            continue
+        frame = pd.read_parquet(min(longer)[1])
+        if len(frame) < rows:
+            continue
+        temp = target.with_suffix(".tmp.parquet")
+        frame.iloc[:rows].reset_index(drop=True).to_parquet(temp)
+        temp.replace(target)
+
+
 def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92,
                         forecast_days: int = 1, call_api=None,
                         cache_dir: Path | None = None) -> pd.DataFrame:
@@ -235,6 +260,8 @@ def fetch_weather_raw(points: list[tuple[float, float]], past_days: int = 92,
         # it if this row shape ever changes incompatibly, so an old file
         # is never misread as the new shape -- old files are never deleted
         # for this, just no longer matched by the new key.
+        _seed_from_longer_forecast(points, Path(cache_dir) / "weather_points", date.today().isoformat(),
+                                   past_days, forecast_days)
         results = _fetch_with_point_cache(
             points, Path(cache_dir) / "weather_points",
             f"{date.today().isoformat()}_fd{forecast_days}_pd{past_days}_v1",

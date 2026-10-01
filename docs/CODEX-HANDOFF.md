@@ -1,5 +1,10 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-10-01 — aktualne (41): mniej zapytań przy pierwszej analizie obszaru (bez zmiany danych); gałąź `telefon-top5`
+
+- **OSM:** przy modelu presji `access_points` jedno zapytanie Overpass na kafel zamiast dwóch (`pipeline/access_data.py::fetch_osm_combined`, `combined_osm_fetcher`, wywołane z `prepare_trip` przez `fetch_cached_osm`). Suma obu dotychczasowych zapytań, wynik dzielony filtrami `select_model_elements` (`pipeline/osm.py`) i `select_access_elements`, które odwzorowują warunki każdego zapytania; od razu zapisywany jest też kafel `access_tiles/osm/...`, więc krok „Dostęp OSM” czyta go z cache. Test równoważności z atrapą wykonującą zapytania: `tests/test_osm_combined.py`. Sprawdzone na żywo (kafel E330000N560000, okolice Piły): identyczne zbiory obiektów we wszystkich 5 zestawach co w cache ze starych zapytań.
+- **Pogoda:** brakujący wpis cache prognozy krótszej (np. `fd1`) jest wycinany z dłuższej (`fd7`) pobranej tego samego dnia dla tego samego punktu i `past_days` (`pipeline/weather.py::_seed_from_longer_forecast`) — wcześniej dwa zapytania Open-Meteo dla 144 punktów. Na 288 punktach z 1.10.2026 dni wspólne fd7/fd1 identyczne (różnica 0 we wszystkich polach).
+
 ## 2026-10-01 — aktualne (40): serwer deweloperski nie pada przy zapisie migawki; gałąź `telefon-top5`
 
 `npm run dev:lan` padał na Windows z `EBUSY: resource busy or locked, watch …/public/data/trips/<id>/scores.json`, gdy launcher zapisywał migawkę („Zapisz do listy”): obserwator plików Vite (chokidar) próbował śledzić plik zablokowany w trakcie kopiowania, a nieobsłużony błąd kończył proces. Teraz `frontend/scripts/data-files-plugin.mjs` (podpięty w `vite.config.ts`): obserwator pomija `**/public/data/**`, a `/data/…` serwuje własny middleware prosto z dysku (JSON/GeoJSON, brak pliku = 404, bez wychodzenia poza katalog danych — `dev:lan` jest widoczny w sieci). Samo zignorowanie katalogu nie wystarczało: Vite serwuje pliki z `public/` tylko z listy uzupełnianej przez obserwator, więc nowa migawka byłaby dostępna dopiero po restarcie. Testy: `frontend/scripts/data-files-plugin.test.mjs`.

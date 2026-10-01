@@ -16,7 +16,7 @@ import requests
 from openmeteo_requests.Client import OpenMeteoRequestsError
 from pyproj import Transformer
 
-from pipeline.access_data import load_access_sources, _default_bdl_get
+from pipeline.access_data import combined_osm_fetcher, fetch_osm_combined, load_access_sources, _default_bdl_get
 from pipeline.access_export import write_access_points_geojson, write_forest_roads_geojson
 from pipeline.access_points import build_access_set
 from pipeline.access_pressure import build_access_model, distance_to_forest
@@ -762,9 +762,13 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         print(f"Warunki: {timeline['summary']}", flush=True)
 
     gdos_gdf, gdos_failed_tiles = fetch_cached_gdos(tiles, cache_dir, _gdos_call_api)
-    osm_features, osm_failed_tiles = fetch_cached_osm(
-        tiles, cache_dir, profile, functools.partial(fetch_osm_features, call_api=_osm_call_api),
-    )
+    osm_fetcher = functools.partial(fetch_osm_features, call_api=_osm_call_api)
+    if profile["pressure"].get("model", "gravity") == "access_points":
+        # Jedno zapytanie Overpass na kafel: od razu zapisuje tez kafel warstw dostepu, ktory
+        # _build_access_model nizej czyta z cache (wczesniej drugie zapytanie o te same drogi).
+        osm_fetcher = combined_osm_fetcher(cache_dir, profile["pressure"]["access_points"], _osm_call_api,
+                                           fetch=fetch_osm_combined)
+    osm_features, osm_failed_tiles = fetch_cached_osm(tiles, cache_dir, profile, osm_fetcher)
     if gdos_failed_tiles:
         print(
             f"UWAGA: dane GDOS niedostepne dla {len(gdos_failed_tiles)}/{len(tiles)} kafli -- "
