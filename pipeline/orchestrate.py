@@ -224,7 +224,7 @@ def run_poc(layer: str, bbox_2180: tuple, profile: dict,
     age_used_values = []
     age_update_missing_year_count = 0
     for _, row in stands.iterrows():
-        # Correction touches both the mask (age < 12 lat) and S_age below,
+        # Correction touches both the mask (age < age_breakpoints.mask_below) and S_age below,
         # so it must happen before passes_mask, not just before score_age --
         # a copy() here is cheap next to the per-row weather/BDL work already
         # done in this loop.

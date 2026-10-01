@@ -58,7 +58,7 @@ describe("karta wydzielenia", () => {
     S.details.value = new Map();
     const { container } = render(<StandCard standId="C" />);
     expect(screen.getByText("Nie spełnia filtrów modelu")).toBeTruthy();
-    expect(screen.getByText("za młody drzewostan (młodnik)")).toBeTruthy();
+    expect(screen.getByText("za młody drzewostan (poniżej progu wieku, obecnie 35 lat)")).toBeTruthy();
     expect(container.querySelector(".bars")).toBeNull();
     expect(screen.getByText("Brak szczegółów dla tego wydzielenia.")).toBeTruthy();
   });

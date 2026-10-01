@@ -50,7 +50,7 @@ describe("pasek rejonu i opisy pod paskami", () => {
 describe("etykiety", () => {
   it("powody spoza filtrów", () => {
     expect(maskReasonTexts(["too_young", "gdos"])).toEqual([
-      "za młody drzewostan (młodnik)",
+      "za młody drzewostan (poniżej progu wieku, obecnie 35 lat)",
       "rezerwat przyrody lub park narodowy (GDOŚ)",
     ]);
     expect(maskReasonTexts([])).toEqual(["powód nieznany w tej analizie"]);

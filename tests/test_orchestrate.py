@@ -590,8 +590,8 @@ def test_run_poc_stand_precip_daily_none_reproduces_pre_1_5_behaviour():
 # --- Plan 1.6.2: age shifted to the analysis year -----------------------
 
 def fake_bdl_fetcher_young_stand_old_description(layer, bbox):
-    # A-1 was 9 years old (below age_breakpoints.mask_below=12) as of its
-    # 2020 description -- by target_date 2026 it should be 15, old enough to
+    # A-1 was 30 years old (below age_breakpoints.mask_below=35) as of its
+    # 2020 description -- by target_date 2026 it should be 36, old enough to
     # pass the mask, IF the correction is wired end-to-end (not just unit-
     # tested on pipeline.age_update.update_age in isolation).
     return gpd.GeoDataFrame({
@@ -601,7 +601,7 @@ def fake_bdl_fetcher_young_stand_old_description(layer, bbox):
         "site_type": ["BMSW", "BS"],
         "species_cd": ["SO", "SO"],
         "part_cd": [10, 10],
-        "spec_age": [9, 60],
+        "spec_age": [30, 60],
         "geometry": [box(380100, 486100, 380200, 486200), box(380300, 486300, 380400, 486400)],
     }, crs="EPSG:2180")
 

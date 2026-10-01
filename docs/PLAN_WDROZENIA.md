@@ -416,6 +416,16 @@ Parametry startowe (propozycja właściciela):
 
 **Strava:** heatmapa wyłącznie do ręcznego oglądania; automatyczne użycie niedozwolone.
 
+### 3.7 (pomysł, NIE wdrożone) Drogi leśne udostępnione do ruchu publicznego jako „parking liniowy”
+
+Zgłoszenie z wyjazdu 01.10.2026 (Rejon 1 Łaziska): przez las biegła droga leśna udostępniona do ruchu, ludzie zatrzymywali się autami w środku lasu. W modelu takie drogi są „zamknięte” (OSM: `highway=track` bez tagów dostępu), a nawet droga publiczna tworzy tylko punkty wjazdu (granica lasu, odgałęzienia duktów) — brak presji wzdłuż drogi. Decyzja właściciela: odłożone, bo nie ma prostego sposobu wyznaczania takich dróg; „parking liniowy” uznany za dobry pomysł.
+
+Co ustalono (do wykorzystania później):
+- BDL nie ma warstwy dróg udostępnionych (jedyna drogowa: dojazdy pożarowe, `WFS_BDL_dojazdy_pozarowe`); OSM zwykle nie ma informacji o udostępnieniu.
+- Nadleśnictwa publikują wykazy w zarządzeniach (PDF). Zawadzkie: zarządzenie nr 34/2021, załącznik 1 „Wykaz dróg udostępnionych” (15 dróg; kolumny: nazwa / **nr dojazdu pożarowego**, nr inwentarzowy, leśnictwo, opis trasy, **oddziały**, długość, nawierzchnia), załącznik 3 mapa poglądowa — https://zawadzkie.katowice.lasy.gov.pl/regulamin-korzystania-z-drog-lesnych.
+- Dopasowanie po numerze dojazdu (w granicach nadleśnictwa — numery powtarzają się między nadleśnictwami) i oddziałach działa dla 12/15 pozycji Zawadzkiego. Pułapki: nieczytelne numery w PDF (droga z wyjazdu, poz. 13 „Łaziska / 88”, to dojazd **8B** = OSM „Dojazd pożarowy 8B”, ok. 5,5 km, wykaz 5,43 km), oddziały numerowane w obrębie (powtarzają się w nadleśnictwie), każdy odcinek dojazdu w danych BDL występuje 3 razy (deduplikacja geometrii).
+- Wymaga ręcznego przepisania wykazu dla każdego nadleśnictwa → plik danych (nadleśnictwo, nr dojazdu, oddziały, źródło), nowy rodzaj źródła presji wzdłuż drogi (punkty co ~300 m z własną, nieskalibrowaną wagą), za flagą w profilu.
+
 ---
 
 ## Faza 4 — pogoda: przejrzystość, spójność i oszczędność API
