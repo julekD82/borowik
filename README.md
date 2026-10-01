@@ -52,25 +52,42 @@ Wszystkie wagi i progi są w [`profiles/boletus_edulis.yaml`](profiles/boletus_e
 
 ## Wymagania
 
-- **Python 3.12+** i [uv](https://docs.astral.sh/uv/)
-- **Node.js 22.12+** (sprawdzone na Node 24)
+- [**Git**](https://git-scm.com/download/win)
+- [**uv**](https://docs.astral.sh/uv/), menedżer Pythona. Sam pobierze Pythona 3.12, jeśli go nie ma.
+- [**Node.js**](https://nodejs.org/) 22.12+ (sprawdzone na Node 24)
 - Dostęp do internetu (wszystkie dane są pobierane z publicznych usług i zapisywane w `cache/`)
 - Windows 10/11 dla launchera. Pipeline i frontend są międzyplatformowe, ale polecenia poniżej podano dla PowerShell.
 
 ## Instalacja
 
+**1. Zainstaluj uv** (jednorazowo), w PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Potem **zamknij i otwórz terminal na nowo**, żeby był widoczny w PATH. Sprawdź instalację: `uv --version`.
+
+**2. Pobierz repozytorium i zainstaluj zależności.** Wszystkie polecenia uruchamiaj z katalogu głównego `borowik`, chyba że opis mówi inaczej:
+
 ```powershell
 git clone https://github.com/julekD82/borowik.git
 cd borowik
-uv sync                      # tworzy .venv z zależnościami Pythona
+uv sync                      # tworzy .venv: Python 3.12 i zależności
 cd frontend
 npm ci                       # zależności frontendu
 cd ..
 ```
 
+Po `uv sync` musi istnieć plik `.venv\Scripts\pythonw.exe`. Jeśli go nie ma, launcher się nie uruchomi (komunikat „System nie może odnaleźć określonej ścieżki”). Wtedy sprawdź, czy `uv sync` zakończyło się bez błędu.
+
+Ostrzeżenia `npm warn allow-scripts` i `vulnerabilities` po `npm ci` nie przeszkadzają w działaniu aplikacji.
+
 ## Uruchomienie
 
 ### Launcher (Windows)
+
+Z katalogu głównego repozytorium (nie z `frontend`):
 
 ```powershell
 .venv\Scripts\pythonw.exe launcher\launcher.pyw
