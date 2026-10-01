@@ -179,7 +179,7 @@ export function parseData(
   return { entries: joinData(scores, stands), scores, stands, regions, regionsNoPressure, details };
 }
 
-const siteType = (x: unknown) =>
+const codeLabel = (x: unknown) =>
   x === undefined || x === null || (object(x) && typeof x.code === "string" && typeof x.label === "string");
 
 export function parseDetails(rawDetails: unknown, day: string | undefined, knownIds: Set<string>): StandDetail[] {
@@ -208,7 +208,8 @@ export function parseDetails(rawDetails: unknown, day: string | undefined, known
         (d.access === undefined || d.access === null || object(d.access)) &&
         (d.habitat === undefined || d.habitat === null || object(d.habitat)) &&
         (d.forest_district === undefined || nullableString(d.forest_district)) &&
-        siteType(d.site_type) &&
+        codeLabel(d.site_type) &&
+        codeLabel(d.dominant_species) &&
         (d.age_years === undefined || numeric(d.age_years)),
     )
   )

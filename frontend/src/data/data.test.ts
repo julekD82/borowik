@@ -42,6 +42,11 @@ describe("parseDetails", () => {
     delete old.age_years;
     expect(parseDetails([old], DAY, ids)).toHaveLength(1);
   });
+  it("gatunek panujący z WFS: kod i nazwa albo brak; zły kształt odrzucony", () => {
+    const [d] = parseDetails([makeDetail("A", { dominant_species: { code: "SO", label: "sosna zwyczajna" } })], DAY, ids);
+    expect(d.dominant_species?.label).toBe("sosna zwyczajna");
+    expect(() => parseDetails([makeDetail("A", { dominant_species: { code: 1 } as never })], DAY, ids)).toThrow();
+  });
   it("odrzuca zły typ siedliska, obce wydzielenie i inną datę", () => {
     expect(() => parseDetails([makeDetail("A", { site_type: { code: 1 } as never })], DAY, ids)).toThrow();
     expect(() => parseDetails([makeDetail("B")], DAY, ids)).toThrow();

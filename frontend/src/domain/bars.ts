@@ -1,7 +1,7 @@
 import type { Score, StandDetail, StandView } from "../data/types";
 import { pressureTop } from "./access";
 import { finite, formatValue, pl } from "./format";
-import { fruitingClass, speciesShort, yearsLabel } from "./labels";
+import { dominantSpeciesShort, fruitingClass, speciesShort, yearsLabel } from "./labels";
 
 export type BarKey = "habitat" | "weather" | "calm";
 
@@ -75,7 +75,7 @@ export function barNotes(score: Score, detail: StandDetail | null | undefined, p
   const notes: BarNotes = {};
   const age = detail?.age_years;
   const habitat = [
-    speciesShort(detail?.drzew_species ?? []),
+    speciesShort(detail?.drzew_species ?? []) ?? dominantSpeciesShort(detail?.dominant_species),
     detail?.site_type?.label ?? null,
     finite(age) ? yearsLabel(age) : null,
   ].filter((x): x is string => !!x);

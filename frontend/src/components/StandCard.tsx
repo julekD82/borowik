@@ -21,6 +21,9 @@ function TreeSection({ detail }: { detail: DetailState }) {
     return <section><h3>Drzewostan</h3><p class="muted">Brak szczegółów dla tego wydzielenia.</p></section>;
   const rows: [string, string][] = [];
   if (detail.drzew_species.length) rows.push(["Skład", detail.drzew_species.map((s) => `${s.name} (${s.share})`).join(", ")]);
+  else if (detail.dominant_species) rows.push(["Skład", `${detail.dominant_species.label} — gatunek panujący (opis WFS, bez udziałów)`]);
+  else if (detail.dominant_species === null) rows.push(["Skład", "brak danych (brak paczki BDL i opisu WFS)"]);
+  else rows.push(["Skład", "brak paczki BDL"]); // starszy eksport: gatunek panujacy nie byl zapisywany
   if (finite(detail.age_years)) rows.push(["Wiek", yearsLabel(detail.age_years)]);
   if (detail.site_type) rows.push(["Siedlisko", `${detail.site_type.label} (${detail.site_type.code})`]);
   if (detail.soil_type) rows.push(["Gleba", detail.soil_type]);

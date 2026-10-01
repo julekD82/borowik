@@ -51,3 +51,13 @@ def rain26_pool(store, cells, doy: int, years=CLIM_YEARS, half_width: int = DOY_
         near = np.minimum(diff, 365 - diff) <= half_width
         values.append(sums[in_years & near].dropna().to_numpy())
     return np.concatenate(values) if values else np.array([])
+
+
+def local_rain26_pool(cache_dir, cells, doy: int) -> np.ndarray | None:
+    """rain26_pool z lokalnego cache E-OBS; blad odczytu = None (panel bez normy, analiza idzie dalej)."""
+    from pipeline.eobs import EobsStore
+    try:
+        return rain26_pool(EobsStore(cache_dir), cells, doy)
+    except Exception as exc:  # np. obciety .npz (zipfile.BadZipFile) -- norma to tylko prezentacja
+        print(f"UWAGA: norma opadu z E-OBS pominieta ({exc}).", flush=True)
+        return None

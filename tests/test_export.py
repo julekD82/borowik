@@ -512,3 +512,32 @@ def test_details_record_carries_site_type_and_age():
     )
     assert record["site_type"] == {"code": "BMSW", "label": "BMSW"}
     assert record["age_years"] == 64
+
+
+def test_details_record_carries_wfs_dominant_species_with_dictionary_name():
+    # Wydzielenie bez paczki BDL: jedyny sklad to gatunek panujacy z WFS -- karta musi go pokazac.
+    record = build_details_record(
+        "AA-1@2026", "AA-1", "DRZEW", None, "2026-09-25", {}, {}, {"tree_species": {"SO": "sosna zwyczajna"}}, {},
+        dominant_species="SO",
+    )
+    assert record["drzew_species"] == []
+    assert record["dominant_species"] == {"code": "SO", "label": "sosna zwyczajna"}
+    assert build_details_record("AA-1@2026", "AA-1", None, None, "2026-09-25", {}, {}, {}, {},
+                                dominant_species="XX")["dominant_species"] == {"code": "XX", "label": "XX"}
+    assert build_details_record("AA-1@2026", "AA-1", None, None, "2026-09-25", {}, {}, {}, {},
+                                dominant_species=float("nan"))["dominant_species"] is None
+
+
+def test_write_details_json_takes_dominant_species_from_the_wfs_column(tmp_path):
+    stands = gpd.GeoDataFrame({
+        "stand_id": ["AA-1@2026", "BB-2@2026"],
+        "adr_for": ["AA-1", "BB-2"],
+        "species_cd": ["SO", None],
+    }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
+    out_path = write_details_json(
+        stands, {}, {}, {"tree_species": {"SO": "sosna zwyczajna"}}, day="2026-09-25",
+        out_path=tmp_path / "details.json", tie_break_index={},
+    )
+    data = {r["stand_id"]: r for r in json.loads(out_path.read_text(encoding="utf-8"))}
+    assert data["AA-1@2026"]["dominant_species"] == {"code": "SO", "label": "sosna zwyczajna"}
+    assert data["BB-2@2026"]["dominant_species"] is None

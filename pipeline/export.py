@@ -105,6 +105,14 @@ def site_type_entry(code, dictionaries: dict) -> dict | None:
     return {"code": code, "label": dictionaries.get("site_type", {}).get(code, code)}
 
 
+def dominant_species_entry(code, dictionaries: dict) -> dict | None:
+    """Gatunek panujacy z WFS (kod + nazwa ze slownika BDL) -- jedyny sklad wydzielenia bez paczki BDL."""
+    if not isinstance(code, str) or not code.strip():
+        return None
+    code = code.strip()
+    return {"code": code, "label": dictionaries.get("tree_species", {}).get(code, code)}
+
+
 def age_years_int(value) -> int | None:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return None
@@ -179,7 +187,7 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
                            tie_break_index: dict, extra_features_index: dict | None = None,
                            access: dict | None = None, weather: dict | None = None,
                            habitat: dict | None = None, forest_district: str | None = None,
-                           site_type=None, age_years=None) -> dict:
+                           site_type=None, age_years=None, dominant_species=None) -> dict:
     """One card's worth of plan 2.1 step B3 detail (spec §5.3 pkt 3):
     species composition, density, understory, soil type -- from a BDL
     package when `adr_for` is covered by one (fields null/empty
@@ -216,6 +224,8 @@ def build_details_record(stand_id: str, adr_for: str, stand_stru, prot_categ, da
         # Nowy frontend: typ siedliskowy (kod + nazwa) i wiek uzyty w modelu -- prezentacja.
         "site_type": site_type_entry(site_type, dictionaries),
         "age_years": age_years_int(age_years),
+        # Gatunek panujacy z WFS: sklad, gdy wydzielenie nie ma paczki BDL (drzew_species puste).
+        "dominant_species": dominant_species_entry(dominant_species, dictionaries),
         "drzew_species": _species_entries(details.drzew_species, dictionaries) if details else [],
         "density": (
             dictionaries.get("density", {}).get(details.density_cd, details.density_cd)
@@ -276,6 +286,7 @@ def write_details_json(stands: gpd.GeoDataFrame, package_details_index: dict, ne
             forest_district=forest_district_name(row.get("nazwa")),
             site_type=row.get("site_type"),
             age_years=row.get("age_years"),
+            dominant_species=row.get("species_cd"),
         )
         for _, row in stands.iterrows()
     ]

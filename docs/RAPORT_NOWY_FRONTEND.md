@@ -32,9 +32,10 @@ Gałąź: `nowy-frontend`.
 | `scores_*.json` | `mask_reason` | lista kodów: `not_dstan`, `no_age`, `too_young`, `excluded_species`, `gdos`, `zakaz` (pusta w masce) |
 | `details_*.json` | `site_type` | `{code, label}` ze słownika BDL |
 | `details_*.json` | `age_years` | wiek drzewostanu (liczba całkowita) |
+| `details_*.json` | `dominant_species` | gatunek panujący z WFS `{code, label}` — skład wydzielenia bez paczki BDL (dodane po końcowym przeglądzie; w danych pojawi się po następnym przeliczeniu analizy) |
 | `conditions_*.json` | `lookback_days`, `daily` | 35 dni wstecz + prognoza: opad (radar/model/prognoza), temperatury |
 | `conditions_*.json` | `rain26` | suma 26 dni, norma E-OBS 1991–2020 (±15 dni roku, komórki w promieniu), percentyl |
-| `conditions_*.json` | `warnings` | przymrozek, upał z suszą, ulewa (z datami) |
+| `conditions_*.json` | `warnings` | przymrozek, upał z suszą (z datami) |
 
 Starsze migawki bez tych pól wczytują się normalnie (tryb zgodności).
 
@@ -102,8 +103,8 @@ Każda poprawka, z wyjątkiem CSS dla telefonu, ma test napisany przed zmianą (
 
 ## Testy
 
-- `pytest`: 902 passed.
-- `vitest`: 219 passed (15 plików). Po usunięciu starego interfejsu i testów usuniętych funkcji: 196 passed.
+- `pytest`: 902 passed (po poprawkach z końcowego przeglądu: 906).
+- `vitest`: 219 passed (15 plików). Po usunięciu starego interfejsu i testów usuniętych funkcji: 196 passed. Po poprawkach z końcowego przeglądu: 199 passed.
 - `tsc --noEmit`: bez błędów.
 - `npm run build`: bez błędów. Ostrzeżenie o dużym pakiecie (MapLibre) jak wcześniej.
 
@@ -123,6 +124,8 @@ Zrzutów widoku telefonu nie ma. W trakcie tej części rozszerzenie Chrome się
 - **Pierwsze rysowanie mapy trwa kilka sekund** po wczytaniu lub zmianie analizy, bo MapLibre kafelkuje ok. 23 MB geometrii (19 297 wielokątów). Strona w tym czasie odpowiada.
 - **Zmiana trybu mapy** (Wynik ↔ Wilgotność) przy dużym przybliżeniu przerysowuje kafelki stopniowo: pełny obraz nawet po ponad 12 s. Wątek główny nie jest blokowany (brak długich zadań), ale przez chwilę część mapy ma stare kolory.
   - Możliwa poprawka na później: kafle wektorowe zamiast jednego GeoJSON albo przełączanie trybu przez stan obiektu, jak przy presji.
+  - Tańszy wariant (propozycja z końcowego przeglądu): dwie warstwy wypełnienia, Wynik i Wilgotność, ze stałą przezroczystością, przełączaną 0/1, bez ponownego układania kafli.
+  - Podobnie obrys wybranego wydzielenia (dziś filtr warstwy, w przeglądarce pojawiał się z kilkusekundowym opóźnieniem) można przenieść na stan obiektu.
 - **`details.json` ma ok. 45 MB.** Parsowanie w przeglądarce trwa ok. 0,3 s. Plik wczytuje się w tle po liście i mapie.
 
 ## Decyzje doprecyzowane w trakcie
@@ -136,3 +139,15 @@ Zrzutów widoku telefonu nie ma. W trakcie tej części rozszerzenie Chrome się
 1. **Baner „skład tylko z WFS”.** Nowy interfejs go nie ma; źródło składu widać w karcie wydzielenia. Przywrócić baner dla analiz bez paczki BDL?
 2. **Domyślne warstwy dostępu.** W widoku całego obszaru setki punktów parkingów i wjazdów zasłaniają klasy wydzieleń (zrzut z rozwiniętą pogodą). Czy domyślnie wyłączyć punkty i drogi (włączać je dopiero przy karcie lub przybliżeniu)? Wybór użytkownika i tak jest zapamiętywany.
 3. **Wydajność mapy.** Czy czas pierwszego rysowania i zmiany trybu (kilka–kilkanaście sekund przy 20 km) jest do przyjęcia, czy warto zaplanować kafle wektorowe?
+
+## Poprawki po końcowym przeglądzie gałęzi
+
+Każda z testem napisanym przed zmianą (RED → GREEN):
+
+1. **Wydzielenia bez paczki BDL nie pokazywały gatunku drzewa.** Eksport ma nowe pole `details.dominant_species` (gatunek panujący z WFS, nazwa ze słownika BDL).
+   - Karta pokazuje „Skład: sosna zwyczajna — gatunek panujący (opis WFS, bez udziałów)”, a pasek Siedlisko — „sosna (gatunek panujący)”.
+   - Bez paczki i bez opisu WFS: „brak danych”. W starszych eksportach (bez pola): „brak paczki BDL”.
+   - Bieżące dane pokażą gatunek dopiero po ponownym przeliczeniu analizy (`prepare_trip`).
+2. **„Wróć” przewijało panel na górę i gubiło miejsce na liście.** Teraz pozycja jest zapamiętana dla każdego widoku. Powrót wraca na swoje miejsce, a nowa karta, inna zakładka albo klik na mapie zaczynają od góry.
+3. **Uszkodzony plik E-OBS przerywał całą analizę.** Na przykład obcięty `.npz` po przerwanej konwersji rzucał `BadZipFile`. Teraz norma jest pomijana z ostrzeżeniem, a analiza idzie dalej (`pipeline/rain_normal.py::local_rain26_pool`).
+

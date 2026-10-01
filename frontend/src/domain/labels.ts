@@ -173,6 +173,11 @@ export function speciesShort(species: SpeciesShare[], max = 3): string | null {
   return list.length ? list.map((x) => `${x.name} ${x.share}%`).join(", ") : null;
 }
 
+/** Gatunek panujacy z WFS w skrocie ("sosna (gatunek panujący)"), gdy nie ma skladu z paczki BDL. */
+export function dominantSpeciesShort(entry: { label: string } | null | undefined): string | null {
+  return entry ? `${entry.label.split(" ")[0]} (gatunek panujący)` : null;
+}
+
 export function formatDateLong(day?: string | null): string {
   if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return "—";
   return new Date(`${day}T12:00:00`).toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" });

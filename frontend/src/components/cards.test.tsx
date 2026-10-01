@@ -30,6 +30,24 @@ describe("karta wydzielenia", () => {
     expect(container.textContent).toContain("leśnictwo 3 · oddział 96 · pododdział a");
     expect(screen.getByRole("link", { name: /Nawiguj/ }).getAttribute("href")).toMatch(/^https:\/\/www\.google\.com\/maps\?q=/);
   });
+  it("bez paczki BDL: skład to gatunek panujący z WFS, a bez niego jawny brak danych", () => {
+    S.analysis.value = makeAnalysis({ scores: [makeScore("A"), makeScore("B")] });
+    S.details.value = new Map([
+      ["A", makeDetail("A", { drzew_species: [], dominant_species: { code: "SO", label: "sosna zwyczajna" } })],
+      ["B", makeDetail("B", { drzew_species: [], dominant_species: null })],
+    ]);
+    const { container, unmount } = render(<StandCard standId="A" />);
+    expect(container.textContent).toContain("sosna zwyczajna — gatunek panujący (opis WFS, bez udziałów)");
+    expect(screen.getByText("sosna (gatunek panujący) · Bór mieszany świeży · 64 lata")).toBeTruthy();
+    unmount();
+    const other = render(<StandCard standId="B" />);
+    expect(other.container.textContent).toContain("brak danych (brak paczki BDL i opisu WFS)");
+    other.unmount();
+    // Starszy eksport bez pola dominant_species: nie twierdzimy, że opisu WFS nie było.
+    S.details.value = new Map([["B", makeDetail("B", { drzew_species: [] })]]);
+    const old = render(<StandCard standId="B" />);
+    expect(old.container.textContent).toContain("Składbrak paczki BDL");
+  });
   it("szczegóły jeszcze się wczytują", () => {
     S.analysis.value = makeAnalysis({ scores: [makeScore(ID)] });
     render(<StandCard standId={ID} />);
@@ -106,6 +124,20 @@ describe("panel boczny", () => {
     const aside = container.querySelector("aside")!;
     aside.scrollTop = 500;
     act(() => S.openRegion("region_1", "list"));
+    expect(aside.scrollTop).toBe(0);
+  });
+  it("„Wróć” przywraca miejsce na liście; nowy widok (karta, inna zakładka) zaczyna od góry", () => {
+    S.analysis.value = makeAnalysis({ scores: [makeScore("A")], regions: [makeRegion("region_1", 70, ["A"])] });
+    S.load.value = { status: "ready" };
+    const { container } = render(<Sidebar />);
+    const aside = container.querySelector("aside")!;
+    aside.scrollTop = 500;
+    fireEvent.scroll(aside);
+    act(() => S.openRegion("region_1", "list"));
+    expect(aside.scrollTop).toBe(0);
+    act(() => S.back());
+    expect(aside.scrollTop).toBe(500);
+    act(() => S.setTab("stands"));
     expect(aside.scrollTop).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "preact/hooks";
-import { load, tab, top } from "../state/store";
+import { load, tab, top, type PanelView } from "../state/store";
 import { PressureToggle } from "./PressureToggle";
 import { RegionCard } from "./RegionCard";
 import { RegionList } from "./RegionList";
@@ -20,12 +20,19 @@ export function Sidebar() {
   const state = load.value;
   const view = top.value;
   const panel = useRef<HTMLElement>(null);
-  // Nowy widok stosu (rejon, wydzielenie, powrot do listy) zaczyna sie od gory panelu.
+  // Przewiniecie zapamietane dla kazdego widoku stosu: „Wroc” (ten sam obiekt widoku) wraca
+  // na swoje miejsce, nowy widok (karta, inna zakladka, klik na mapie) zaczyna od gory.
+  const scrolled = useRef(new WeakMap<PanelView, number>());
   useEffect(() => {
-    if (panel.current) panel.current.scrollTop = 0;
+    if (panel.current) panel.current.scrollTop = scrolled.current.get(view) ?? 0;
   }, [view]);
   return (
-    <aside ref={panel} class="sidebar" aria-label="Panel analizy">
+    <aside
+      ref={panel}
+      class="sidebar"
+      aria-label="Panel analizy"
+      onScroll={(event) => scrolled.current.set(top.peek(), (event.currentTarget as HTMLElement).scrollTop)}
+    >
       {state.status === "loading" ? (
         <LoadingState />
       ) : state.status === "error" ? (

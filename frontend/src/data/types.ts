@@ -143,6 +143,8 @@ export type StandDetail = {
   forest_district?: string | null;
   // Nowy frontend: typ siedliskowy i wiek uzyty w modelu; brak w starszych eksportach.
   site_type?: SiteType | null;
+  // Gatunek panujacy z WFS (kod + nazwa): jedyny sklad wydzielenia bez paczki BDL; brak w starszych eksportach.
+  dominant_species?: SiteType | null;
   age_years?: number | null;
 };
 
