@@ -7,6 +7,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
+import { pipeline } from "node:stream";
 
 const TYPES = {
   ".json": "application/json; charset=utf-8",
@@ -19,7 +20,7 @@ function notFound(res) {
 }
 
 /** Middleware (connect): pliki spod `prefix` z katalogu `dataDir`; brak pliku = 404, reszta zapytan dalej. */
-export function serveDataFiles(dataDir, prefix = "/data/") {
+export function serveDataFiles(dataDir, prefix = "/data/", { openStream = createReadStream } = {}) {
   const root = path.resolve(dataDir);
   return async (req, res, next) => {
     const url = (req.url ?? "").split("?")[0];
@@ -40,9 +41,10 @@ export function serveDataFiles(dataDir, prefix = "/data/") {
     res.setHeader("Content-Length", info.size);
     res.setHeader("Cache-Control", "no-cache");
     if (req.method === "HEAD") return res.end();
-    createReadStream(file)
-      .on("error", () => res.destroy())
-      .pipe(res);
+    // pipeline, nie pipe: przy przerwanym pobieraniu (przeladowanie strony, telefon w trybie LAN traci
+    // zasieg) pipe zostawial plik otwarty na zawsze, a na Windows otwarty plik blokuje jego podmiane
+    // przez sync-data (EPERM). pipeline zamyka plik przy bledzie lub zamknieciu polaczenia.
+    pipeline(openStream(file), res, () => {});
   };
 }
 
