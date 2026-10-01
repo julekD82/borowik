@@ -180,6 +180,35 @@ def forest_district_code(adr_for: str) -> str:
     return "-".join(parts[:2]) if len(parts) >= 2 else adr_for
 
 
+def area_package_message(stands: pd.DataFrame, package_index: dict, max_listed: int = 5) -> str:
+    """Komunikat o pokryciu OBSZARU analizy paczkami BDL. `load_packages` wczytuje caly katalog
+    (np. 9 paczek RDLP Katowice), wiec sama liczba wydzielen w indeksie nic nie mowi o obszarze --
+    w Wielkopolsce dawala "45565 wydzielen z pelnym skladem" przy 0 trafieniach. Nadlesnictwa bez
+    paczki podane kodem RDLP-nadl. (jak w nazwach katalogow BDL_<rdlp>_<nadl>_...), od najwiekszej
+    liczby wydzielen. Liczone tylko drzewostany (area_type D-STAN, jesli kolumna jest): luki, drogi
+    itp. nie maja skladu w zadnym zrodle i i tak odpadaja w masce."""
+    if "area_type" in stands.columns:
+        stands = stands[stands["area_type"] == "D-STAN"]
+    adr = stands["adr_for"].astype(str)
+    covered = adr.isin(package_index.keys())
+    dir_districts = {forest_district_code(k) for k in package_index}
+    msg = (f"Paczki BDL: {int(covered.sum())}/{len(adr)} drzewostanow obszaru ma pelny sklad gatunkowy "
+           f"(w katalogu: {len(package_index)} wydzielen z {len(dir_districts)} nadlesnictw).")
+    uncovered = adr[~covered].map(forest_district_code)
+    in_dir = uncovered.isin(dir_districts)
+    missing = uncovered[~in_dir].value_counts()
+    if len(missing):
+        listed = missing.head(max_listed)
+        parts = ", ".join(f"{code} ({n})" for code, n in listed.items())
+        more = f" i {len(missing) - len(listed)} innych" if len(missing) > len(listed) else ""
+        hint = ", ".join(f"BDL_{code.replace('-', '_')}_*" for code in listed.index)
+        msg += f" Bez paczki: nadlesnictwa {parts}{more} -- sklad z WFS; brakujace paczki: {hint}."
+    if in_dir.any():
+        msg += (f" {int(in_dir.sum())} drzewostanow z nadlesnictw, ktore maja paczke, nie ma w niej skladu "
+                "-- tez sklad z WFS.")
+    return msg
+
+
 def coverage_report(stands: pd.DataFrame, package_index: dict) -> list[dict]:
     """Plan 1.3 "raport pokrycia": for every forest district (nadlesnictwo)
     with at least one mask-passing stand in the search radius, how many of

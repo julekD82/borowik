@@ -296,3 +296,48 @@ def test_coverage_report_groups_by_district_and_sorts_worst_first():
 def test_coverage_report_returns_empty_list_when_nothing_passes_the_mask():
     stands = pd.DataFrame({"adr_for": ["AA-1"], "mask": [False]})
     assert coverage_report(stands, {}) == []
+
+
+def test_area_package_message_counts_area_not_whole_directory():
+    from pipeline.bdl_packages import area_package_message
+    index = {f"02-09-1-01-{i}": object() for i in range(100)} | {"02-10-1-01-1": object()}
+    stands = pd.DataFrame({"adr_for": ["02-09-1-01-1", "02-09-1-01-2", "13-05-1-01-1", "13-05-1-01-2", "13-07-1-01-1"]})
+    msg = area_package_message(stands, index)
+    assert "2/5 drzewostanow obszaru" in msg
+    assert "w katalogu: 101 wydzielen z 2 nadlesnictw" in msg
+    assert "13-05 (2), 13-07 (1)" in msg and "BDL_13_05_*" in msg
+
+
+def test_area_package_message_when_area_has_no_package():
+    from pipeline.bdl_packages import area_package_message
+    index = {"02-09-1-01-1": object()}
+    stands = pd.DataFrame({"adr_for": ["13-05-1-01-1"] * 3 + ["14-02-1-01-1"]})
+    msg = area_package_message(stands, index)
+    assert msg.startswith("Paczki BDL: 0/4 drzewostanow obszaru")
+    assert "13-05 (3), 14-02 (1)" in msg
+
+
+def test_area_package_message_full_coverage_lists_nothing_missing_and_limits_list():
+    from pipeline.bdl_packages import area_package_message
+    stands = pd.DataFrame({"adr_for": ["02-09-1-01-1"]})
+    assert "Bez paczki" not in area_package_message(stands, {"02-09-1-01-1": object()})
+    many = pd.DataFrame({"adr_for": [f"{10 + i}-01-1-01-1" for i in range(8)]})
+    msg = area_package_message(many, {"02-09-1-01-1": object()})
+    assert msg.count("(1)") == 5 and "i 3 innych" in msg
+
+
+def test_area_package_message_separates_districts_whose_package_lacks_some_stands():
+    from pipeline.bdl_packages import area_package_message
+    index = {"02-14-1-01-1": object()}
+    stands = pd.DataFrame({"adr_for": ["02-14-1-01-1", "02-14-1-01-2", "02-40-1-01-1"]})
+    msg = area_package_message(stands, index)
+    assert "nadlesnictwa 02-40 (1)" in msg and "BDL_02_14_*" not in msg
+    assert "1 drzewostanow z nadlesnictw, ktore maja paczke" in msg
+
+
+def test_area_package_message_counts_only_dstan_when_area_type_known():
+    from pipeline.bdl_packages import area_package_message
+    stands = pd.DataFrame({"adr_for": ["02-09-1-01-1", "02-09-1-01-2", "02-09-1-01-3"],
+                           "area_type": ["D-STAN", "D-STAN", "DROGA"]})
+    msg = area_package_message(stands, {"02-09-1-01-1": object()})
+    assert "1/2 drzewostanow" in msg and "1 drzewostanow z nadlesnictw" in msg

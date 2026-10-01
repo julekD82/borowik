@@ -24,7 +24,7 @@ from pipeline.bdl import fetch_bdl
 from pipeline.bdl_dictionaries import load_dictionaries
 from pipeline.bdl_extra_features import load_extra_features, ExtraStandFeatures
 from pipeline.bdl_package_details import load_package_details
-from pipeline.bdl_packages import load_packages, coverage_report
+from pipeline.bdl_packages import area_package_message, load_packages, coverage_report
 from pipeline.conditions_timeline import build_conditions_timeline
 from pipeline.rain_normal import eobs_cells_in_radius, local_rain26_pool
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
@@ -590,7 +590,7 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
     # S_host, same as before this step existed.
     package_index = load_packages(bdl_packages_dir)
     if package_index:
-        print(f"Paczki BDL: {len(package_index)} wydzielen z pelnym skladem gatunkowym.", flush=True)
+        print(area_package_message(stands, package_index), flush=True)
 
     # Spacing scales with radius_km so total point count (API cost) stays
     # roughly constant across the whole 10-50km range instead of growing
