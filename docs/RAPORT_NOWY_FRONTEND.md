@@ -151,3 +151,7 @@ Każda z testem napisanym przed zmianą (RED → GREEN):
 2. **„Wróć” przewijało panel na górę i gubiło miejsce na liście.** Teraz pozycja jest zapamiętana dla każdego widoku. Powrót wraca na swoje miejsce, a nowa karta, inna zakładka albo klik na mapie zaczynają od góry.
 3. **Uszkodzony plik E-OBS przerywał całą analizę.** Na przykład obcięty `.npz` po przerwanej konwersji rzucał `BadZipFile`. Teraz norma jest pomijana z ostrzeżeniem, a analiza idzie dalej (`pipeline/rain_normal.py::local_rain26_pool`).
 
+## Zmiana po uwadze właściciela
+
+Białe kontury wydzieleń przysłaniały klasy w widoku całego obszaru. Teraz pojawiają się dopiero po przybliżeniu: przy zoomie 12 są niewidoczne, między 12 a 14 stopniowo się pojawiają, od 14 są w pełni widoczne (`standLineOpacity` w `frontend/src/map/layers.ts`). Obrys wybranego wydzielenia i kontury rejonów są widoczne zawsze.
+

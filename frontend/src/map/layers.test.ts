@@ -1,6 +1,7 @@
+import { expression, latest } from "@maplibre/maplibre-gl-style-spec";
 import { describe, expect, it } from "vitest";
 import {
-  CLASS_COLORS, buildStandCollection, changedStates, moistureFillColor, regionOutlineOpacity, scoreFillColor,
+  CLASS_COLORS, buildStandCollection, changedStates, moistureFillColor, regionOutlineOpacity, scoreFillColor, standLineOpacity,
 } from "./layers";
 import { squareFeature } from "../test-fixtures";
 
@@ -33,5 +34,14 @@ describe("warstwy mapy", () => {
     const expr = JSON.stringify(moistureFillColor());
     expect(expr).toContain("interpolate");
     expect(expr).toContain("#cfd2c6");
+  });
+  it("kontury wydzieleń: niewidoczne w widoku całego obszaru, pełne po przybliżeniu na las", () => {
+    const e = expression.createPropertyExpression(standLineOpacity() as never, latest.paint_line["line-opacity"] as never);
+    if (e.result !== "success") throw new Error("niepoprawne wyrażenie MapLibre");
+    const at = (zoom: number) => e.value.evaluate({ zoom } as never);
+    expect([10, 12].map(at)).toEqual([0, 0]);
+    expect(at(13)).toBeGreaterThan(0);
+    expect(at(13)).toBeLessThan(1);
+    expect([14, 16].map(at)).toEqual([1, 1]);
   });
 });

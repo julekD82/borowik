@@ -67,5 +67,8 @@ export const moistureFillColor = (): Expr =>
 export const moistureFillOpacity = (): Expr => ["case", inMask, 0.8, 0.35] as unknown as Expr;
 export const lineColor = (): Expr => ["case", inMask, "#fffef5", OUTSIDE_LINE_COLOR] as unknown as Expr;
 export const lineWidth = (): Expr => ["case", inMask, 0.7, 0.5] as unknown as Expr;
+// Kontury wydzielen dopiero po przyblizeniu na las: w widoku calego obszaru (zoom ok. 10)
+// tysiace bialych linii przyslanialy klasy; od 12 do 14 stopniowo sie pojawiaja.
+export const standLineOpacity = (): Expr => ["interpolate", ["linear"], ["zoom"], 12, 0, 14, 1] as unknown as Expr;
 export const regionOutlineOpacity = (): Expr =>
   ["case", [">", ["coalesce", ["feature-state", "region"], 0], 0], 0.85, 0] as unknown as Expr;

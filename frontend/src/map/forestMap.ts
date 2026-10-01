@@ -7,7 +7,7 @@ import { vertices } from "../domain/geometry";
 import type { RegionMarker, StandMapProps } from "../state/store";
 import {
   buildStandCollection, changedStates, lineColor, lineWidth, moistureFillColor, moistureFillOpacity, regionOutlineOpacity,
-  scoreFillColor, scoreFillOpacity, type StandState,
+  scoreFillColor, scoreFillOpacity, standLineOpacity, type StandState,
 } from "./layers";
 
 export type MapHandlers = {
@@ -96,7 +96,7 @@ export class ForestMap {
       type: "geojson", data: this.collection, attribution: "Bank Danych o Lasach", promoteId: "stand_id",
     });
     this.map.addLayer({ id: "stand-fill", type: "fill", source: "stands", paint: { "fill-color": scoreFillColor(), "fill-opacity": scoreFillOpacity() } });
-    this.map.addLayer({ id: "stand-line", type: "line", source: "stands", paint: { "line-color": lineColor(), "line-width": lineWidth() } });
+    this.map.addLayer({ id: "stand-line", type: "line", source: "stands", paint: { "line-color": lineColor(), "line-width": lineWidth(), "line-opacity": standLineOpacity() } });
     this.map.addLayer({
       id: "region-outline", type: "line", source: "stands",
       paint: { "line-color": "#234b3d", "line-width": 1.6, "line-opacity": regionOutlineOpacity() },
