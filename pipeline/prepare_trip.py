@@ -26,6 +26,7 @@ from pipeline.bdl_extra_features import load_extra_features, ExtraStandFeatures
 from pipeline.bdl_package_details import load_package_details
 from pipeline.bdl_packages import load_packages, coverage_report
 from pipeline.conditions_timeline import build_conditions_timeline
+from pipeline.rain_normal import eobs_cells_in_radius, local_rain26_pool
 from pipeline.entrances import compute_forest_boundary, find_entrance_points, classify_entrances
 from pipeline.export import (
     write_scores_json, export_stand_geometries, export_stand_geometries_geojson,
@@ -743,10 +744,17 @@ def run_trip_preparation(lat: float, lon: float, day: str, radius_km: float,
         all_clim_points = make_grid(bbox, spacing_m=climatology_grid_spacing_m)
         conditions_clim = climatology_fetcher(all_clim_points, 1991, 2020)  # cached from run_poc's own fetch
         point_clim_cells = _nearest_climatology_cell(conditions_points, all_clim_points, "EPSG:2180")
+        # Nowy frontend: norma sumy opadu z 26 dni z lokalnego E-OBS (cache/eobs). Brak albo
+        # uszkodzone pliki = panel bez normy, analiza idzie dalej.
+        eobs_cells = eobs_cells_in_radius(lat, lon, radius_km)
+        rain_pool = local_rain26_pool(cache_dir, eobs_cells, date.today().timetuple().tm_yday)
+        if rain_pool is None or not len(rain_pool):
+            print("UWAGA: brak lokalnych danych E-OBS -- panel pogody bez normy opadu.", flush=True)
         timeline = build_conditions_timeline(conditions_daily, conditions_points, conditions_clim,
                                              conditions_clim_points, date.today(), profile, rain_scale=rain_scale,
                                              point_weights=conditions_point_weights(scored),
-                                             point_clim_cells=point_clim_cells)
+                                             point_clim_cells=point_clim_cells,
+                                             rain_normal_pool=rain_pool, rain_normal_cells=len(eobs_cells))
     except (ValueError, requests.RequestException, OpenMeteoRequestsError) as exc:
         print(f"UWAGA: warunki na kolejne dni pominiete ({exc}).", flush=True)
     else:

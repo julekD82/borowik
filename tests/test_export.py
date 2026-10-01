@@ -470,3 +470,74 @@ def test_write_diagnostics_switches_to_parquet_over_the_size_limit(tmp_path, mon
     df = pd.read_parquet(path)
     assert len(df) == 2
     assert set(df["stand_id"]) == {"A", "B"}
+
+
+from pipeline.export import age_years_int, mask_reason_list, site_type_entry
+
+
+def test_score_record_mask_reason_is_empty_for_a_masked_stand():
+    stands = _enriched_stands()
+    stands["mask_reasons"] = pd.Series([[], ["too_young"]], index=stands.index, dtype=object)
+    assert build_score_record(stands.iloc[0], day="2026-09-23")["mask_reason"] == []
+
+
+def test_score_record_mask_reason_combines_structural_gdos_and_zakaz():
+    stands = _enriched_stands()
+    stands["mask_reasons"] = pd.Series([[], ["too_young"]], index=stands.index, dtype=object)
+    stands.loc[1, "gdos_status"] = "blokada"
+    stands.loc[1, "zakaz_status"] = "zakaz"
+    assert build_score_record(stands.iloc[1], day="2026-09-23")["mask_reason"] == ["too_young", "gdos", "zakaz"]
+
+
+def test_mask_reason_list_without_the_column_uses_only_gdos_and_zakaz():
+    row = _enriched_stands().iloc[1]
+    assert mask_reason_list(row) == []
+
+
+def test_site_type_entry_and_age_years_int():
+    assert site_type_entry("BMSW", {"site_type": {"BMSW": "Bór mieszany świeży"}}) == {
+        "code": "BMSW", "label": "Bór mieszany świeży"}
+    assert site_type_entry("XYZ", {}) == {"code": "XYZ", "label": "XYZ"}
+    assert site_type_entry(float("nan"), {}) is None
+    assert site_type_entry(None, {}) is None
+    assert age_years_int(64.0) == 64
+    assert age_years_int(float("nan")) is None
+    assert age_years_int(None) is None
+
+
+def test_details_record_carries_site_type_and_age():
+    record = build_details_record(
+        "AA-1@2026", "AA-1", "DRZEW", None, "2026-09-25", {}, {}, _DICTIONARIES, {},
+        site_type="BMSW", age_years=64.4,
+    )
+    assert record["site_type"] == {"code": "BMSW", "label": "BMSW"}
+    assert record["age_years"] == 64
+
+
+def test_details_record_carries_wfs_dominant_species_with_dictionary_name():
+    # Wydzielenie bez paczki BDL: jedyny sklad to gatunek panujacy z WFS -- karta musi go pokazac.
+    record = build_details_record(
+        "AA-1@2026", "AA-1", "DRZEW", None, "2026-09-25", {}, {}, {"tree_species": {"SO": "sosna zwyczajna"}}, {},
+        dominant_species="SO",
+    )
+    assert record["drzew_species"] == []
+    assert record["dominant_species"] == {"code": "SO", "label": "sosna zwyczajna"}
+    assert build_details_record("AA-1@2026", "AA-1", None, None, "2026-09-25", {}, {}, {}, {},
+                                dominant_species="XX")["dominant_species"] == {"code": "XX", "label": "XX"}
+    assert build_details_record("AA-1@2026", "AA-1", None, None, "2026-09-25", {}, {}, {}, {},
+                                dominant_species=float("nan"))["dominant_species"] is None
+
+
+def test_write_details_json_takes_dominant_species_from_the_wfs_column(tmp_path):
+    stands = gpd.GeoDataFrame({
+        "stand_id": ["AA-1@2026", "BB-2@2026"],
+        "adr_for": ["AA-1", "BB-2"],
+        "species_cd": ["SO", None],
+    }, geometry=[box(0, 0, 1, 1), box(1, 1, 2, 2)], crs="EPSG:2180")
+    out_path = write_details_json(
+        stands, {}, {}, {"tree_species": {"SO": "sosna zwyczajna"}}, day="2026-09-25",
+        out_path=tmp_path / "details.json", tie_break_index={},
+    )
+    data = {r["stand_id"]: r for r in json.loads(out_path.read_text(encoding="utf-8"))}
+    assert data["AA-1@2026"]["dominant_species"] == {"code": "SO", "label": "sosna zwyczajna"}
+    assert data["BB-2@2026"]["dominant_species"] is None

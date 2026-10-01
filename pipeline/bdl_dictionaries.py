@@ -24,17 +24,31 @@ _DICTIONARY_SPECS = {
 }
 
 
+# Nowy frontend: nazwa typu siedliskowego na karcie wydzielenia. Opcjonalny -- paczka bez
+# tego pliku (albo testowa) dalej laduje pozostale slowniki.
+_OPTIONAL_DICTIONARY_SPECS = {
+    "site_type": ("f_site_type_dic.txt", "site_type_cd", "site_type_name"),
+}
+
+
+def _read_dictionary(path: Path, code_col: str, name_col: str) -> dict[str, str]:
+    df = pd.read_csv(path, sep="\t", dtype=str, encoding="utf-8")
+    # Dictionary codes carry the same raw Polish diacritics as
+    # f_storey_species's species_cd (e.g. "ŚW") -- normalize so lookups
+    # against already-normalized codes (pipeline.bdl_packages,
+    # pipeline.bdl.normalize_code) work without a second code form.
+    codes = df[code_col].str.strip().map(normalize_code)
+    names = df[name_col].str.strip()
+    return dict(zip(codes, names))
+
+
 def _load_dictionaries_from(package_dir: Path) -> dict[str, dict[str, str]]:
     dictionaries = {}
     for table_name, (filename, code_col, name_col) in _DICTIONARY_SPECS.items():
-        df = pd.read_csv(package_dir / filename, sep="\t", dtype=str, encoding="utf-8")
-        # Dictionary codes carry the same raw Polish diacritics as
-        # f_storey_species's species_cd (e.g. "ŚW") -- normalize so lookups
-        # against already-normalized codes (pipeline.bdl_packages,
-        # pipeline.bdl.normalize_code) work without a second code form.
-        codes = df[code_col].str.strip().map(normalize_code)
-        names = df[name_col].str.strip()
-        dictionaries[table_name] = dict(zip(codes, names))
+        dictionaries[table_name] = _read_dictionary(package_dir / filename, code_col, name_col)
+    for table_name, (filename, code_col, name_col) in _OPTIONAL_DICTIONARY_SPECS.items():
+        if (package_dir / filename).exists():
+            dictionaries[table_name] = _read_dictionary(package_dir / filename, code_col, name_col)
     return dictionaries
 
 

@@ -169,6 +169,9 @@ export async function syncData(source, target) {
     }
     if (!conditions || typeof conditions !== "object" || conditions.day !== day || !Array.isArray(conditions.days))
       throw new Error(`Niepoprawny format conditions_${day}.json.`);
+    // Nowy frontend: dzienny opad do panelu pogody (opcjonalny; stare eksporty go nie maja).
+    if (conditions.daily !== undefined && !Array.isArray(conditions.daily))
+      throw new Error(`Niepoprawny format conditions_${day}.json (pole daily).`);
   }
 
   // Plan wdrozenia 1.1: run_manifest_{day}.json is optional too (older

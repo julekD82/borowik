@@ -212,6 +212,16 @@ it("rejects a same-day conditions file from another day or malformed", async () 
   await expect(syncData(source, target)).rejects.toThrow();
 });
 
+it("accepts conditions with a daily array and rejects a malformed daily field", async () => {
+  const { source, target } = await fixture();
+  const withDaily = (daily) =>
+    JSON.stringify({ day: "2026-09-24", summary: "x", days: [], daily });
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), withDaily([{ date: "2026-09-24" }]));
+  expect((await syncData(source, target)).conditions).toBe(1);
+  await writeFile(path.join(source, "conditions_2026-09-24.json"), withDaily("zle"));
+  await expect(syncData(source, target)).rejects.toThrow("conditions");
+});
+
 it("removes a stale conditions.json from a previous sync when the new day has none", async () => {
   const { source, target } = await fixture();
   await writeFile(path.join(source, "conditions_2026-09-24.json"), conditionsFile());

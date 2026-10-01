@@ -1,36 +1,21 @@
 // Faza UI: przelacznik presji, paski wyniku, nazwy i fakty karty.
 import { describe, expect, it } from "vitest";
+import { parseData } from "../data/parse";
+import type { AccessCard, Region, Score, StandDetail, Stands } from "../data/types";
+import { keyFacts, pressureTop } from "./access";
+import { scoreBars } from "./bars";
+import { areaLabel, haversineKm, startDistanceLabel } from "./format";
+import { parseStandId, regionName, standName } from "./labels";
 import {
+  MOISTURE_LEGEND_NOTE,
   MOISTURE_LEGEND_TICKS,
-  MOISTURE_NOTE,
   MOISTURE_NO_DATA_COLOR,
   MOISTURE_STOPS,
-  areaLabel,
-  chooseColorMode,
   moistureAvailable,
   moistureColor,
   moistureTickLabel,
-  resolveColorMode,
-  togglePressureControls,
-  conditionBars,
-  effectiveR,
-  habitatComponents,
-  haversineKm,
-  joinData,
-  joinRegions,
-  keyFacts,
-  parseData,
-  parseStandId,
-  pressureSwitchAvailable,
-  pressureTop,
-  rankEntries,
-  regionName,
-  scoreBars,
-  standName,
-  startDistanceLabel,
-  weatherComponents,
-} from "./model";
-import type { AccessCard, ConditionsDay, Region, Score, StandDetail, Stands } from "./model";
+} from "./moisture";
+import { effectiveR, joinData, joinRegions, pressureSwitchAvailable, rankEntries } from "./ranking";
 
 const score = (id: string, r: number, rNoPressure: number | undefined, extra: Partial<Score> = {}): Score => ({
   stand_id: id,
@@ -177,29 +162,6 @@ describe("Faza UI.2: paski", () => {
     expect(bars.map((b) => b.value)).toEqual([null, null, null]);
     expect(bars.map((b) => b.word)).toEqual(["brak danych", "brak danych", "brak danych"]);
   });
-  it("składniki siedliska: wiek w trybie neutral „nie wpływa na wynik”", () => {
-    const rows = habitatComponents({ S_host: 1, S_site: 0.85, S_age: 1, age_mode: "neutral" });
-    expect(rows.map((r) => r.label)).toEqual(["Skład drzewostanu", "Typ siedliska", "Wiek drzewostanu"]);
-    expect(rows[0].value).toBe("1,00");
-    expect(rows[2].note).toBe("nie wpływa na wynik");
-    const curve = habitatComponents({ S_host: 1, S_site: 1, S_age: 0.6, age_mode: "curve" });
-    expect(curve[2].value).toBe("0,60");
-    expect(curve[2].note).toBeUndefined();
-    expect(habitatComponents(null)).toEqual([]);
-  });
-  it("składniki pogody: M, T, K_frost (jeśli eksport je ma)", () => {
-    const w = {
-      p26_mm: 80, cwb26_mm: 13, cwb26_typical_mm: -6, pct_cwb26: 0.78, tmean20_c: 13.5,
-      temp_optimum_c: 13, tmin3_c: 5, frost: "brak" as const, frost_date: null, F: 0.66,
-      M: 0.95, T: 0.98, K_frost: 1, forecast_days: 1, forecast_window_share: 0,
-    };
-    expect(weatherComponents(w).map((r) => [r.label, r.value])).toEqual([
-      ["Wilgotność", "0,95"],
-      ["Temperatura", "0,98"],
-      ["Przymrozek", "1,00"],
-    ]);
-    expect(weatherComponents({ ...w, M: undefined, T: undefined, K_frost: undefined })).toEqual([]);
-  });
   const card = (extra: Partial<AccessCard> = {}): AccessCard => ({
     d_parking_m: 2400,
     d_entrance_m: 2100,
@@ -270,67 +232,7 @@ describe("Faza UI.3: nazwy i fakty", () => {
   });
 });
 
-describe("Faza UI.3: słupki 7 dni", () => {
-  const day = (i: number, F: number, uncertainty?: "ok" | "uncertain" | "indicative"): ConditionsDay => ({
-    date: `2026-09-${String(29 + i).padStart(2, "0")}`.replace("2026-09-3", "2026-10-0"),
-    F, level: 2, forecast: i > 0, uncertainty,
-  });
-  it("wysokość słupka to F, z oznaczeniem niepewności", () => {
-    const bars = conditionBars([day(0, 0.66, "ok"), day(4, 0.4, "uncertain"), day(9, 1.4, "indicative")], (d) => d);
-    expect(bars.map((b) => b.value)).toEqual([0.66, 0.4, 1]);
-    expect(bars.map((b) => b.uncertainty)).toEqual(["ok", "uncertain", "indicative"]);
-    expect(bars[0].label).toBe("dziś");
-    expect(bars[1].title).toContain("prognoza niepewna");
-    expect(bars[2].title).toContain("orientacyjnie");
-  });
-});
-
 describe("tryby kolorowania mapy", () => {
-  const both = { pressure: true, moisture: true };
-  it("„Wynik” i „Wynik bez presji” ustawiają przełącznik presji (bez sprzecznych kontrolek)", () => {
-    expect(chooseColorMode({ pressure: true, colorMode: "score" }, "score_no_pressure", both)).toEqual({
-      pressure: false,
-      colorMode: "score_no_pressure",
-    });
-    expect(chooseColorMode({ pressure: false, colorMode: "score_no_pressure" }, "score", both)).toEqual({
-      pressure: true,
-      colorMode: "score",
-    });
-  });
-  it("przełącznik presji ustawia tryb mapy wynik / wynik bez presji", () => {
-    expect(togglePressureControls(false, { pressure: true })).toEqual({ pressure: false, colorMode: "score_no_pressure" });
-    expect(togglePressureControls(true, { pressure: true })).toEqual({ pressure: true, colorMode: "score" });
-    // wyłączenie presji w migawce bez danych bez presji nie ma skutku
-    expect(togglePressureControls(false, { pressure: false })).toEqual({ pressure: true, colorMode: "score" });
-  });
-  it("przełącznik presji wyprowadza mapę z trybu Wilgotność do trybu zgodnego z rankingiem", () => {
-    const fromMoisture = togglePressureControls(false, { pressure: true });
-    expect(fromMoisture.colorMode).toBe("score_no_pressure");
-  });
-  it("Wilgotność zmienia tylko kolory: presja (lista i rejony) zostaje w ostatnim trybie a/b", () => {
-    expect(chooseColorMode({ pressure: true, colorMode: "score" }, "moisture", both)).toEqual({
-      pressure: true,
-      colorMode: "moisture",
-    });
-    expect(chooseColorMode({ pressure: false, colorMode: "score_no_pressure" }, "moisture", both)).toEqual({
-      pressure: false,
-      colorMode: "moisture",
-    });
-  });
-  it("niedostępne tryby są odrzucane: brak M → bez Wilgotności, brak R_bez_presji → bez trybu bez presji", () => {
-    const state = { pressure: true, colorMode: "score" as const };
-    expect(chooseColorMode(state, "moisture", { pressure: true, moisture: false })).toBeNull();
-    expect(chooseColorMode(state, "score_no_pressure", { pressure: false, moisture: true })).toBeNull();
-    expect(chooseColorMode(state, "score", { pressure: false, moisture: false })).toEqual(state);
-  });
-  it("stan początkowy: zapamiętana Wilgotność tylko przy dostępnym M, inaczej tryb z przełącznika presji", () => {
-    expect(resolveColorMode("moisture", true, true)).toBe("moisture");
-    expect(resolveColorMode("moisture", true, false)).toBe("score"); // stara migawka bez M
-    expect(resolveColorMode("moisture", false, false)).toBe("score_no_pressure");
-    expect(resolveColorMode("score_no_pressure", true, true)).toBe("score"); // a/b idą za przełącznikiem
-    expect(resolveColorMode(null, false, true)).toBe("score_no_pressure");
-    expect(resolveColorMode("bzdura", true, true)).toBe("score");
-  });
   it("migawka bez M ma tryb Wilgotność niedostępny, z M (nawet tylko poza maską) dostępny", () => {
     expect(moistureAvailable([score("A", 1, 2)])).toBe(false);
     expect(moistureAvailable([score("A", 1, 2, { M: 0.4 })])).toBe(true);
@@ -364,9 +266,7 @@ describe("tryby kolorowania mapy", () => {
     expect(stops[stops.length - 1]).toBe(1);
     expect(stops).toEqual([...stops].sort((a, b) => a - b));
     expect(MOISTURE_LEGEND_TICKS).toEqual(stops);
-    expect(MOISTURE_NOTE).toBe(
-      "Bilans opad − parowanie z 26 dni względem typowego dla tej pory roku. To nie pomiar wilgotności gleby.",
-    );
+    expect(MOISTURE_LEGEND_NOTE).toContain("model");
     expect(MOISTURE_LEGEND_TICKS.map(moistureTickLabel)).toEqual(["0", "0,25", "0,50", "0,75", "1"]);
   });
 });
