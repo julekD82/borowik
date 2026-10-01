@@ -59,3 +59,37 @@ it("nie wychodzi poza katalog danych (dev:lan jest widoczny w sieci)", async () 
 it("obserwator plików Vite pomija katalog danych", () => {
   expect(dataFilesPlugin().config().server.watch.ignored).toContain("**/public/data/**");
 });
+
+it("zamyka plik, gdy klient przerwie pobieranie (inaczej Windows blokuje podmianę pliku przy synchronizacji)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "borowik-data-"));
+  const dataDir = path.join(root, "data");
+  await mkdir(dataDir);
+  await writeFile(path.join(dataDir, "scores.json"), Buffer.alloc(20 * 1024 * 1024, 32)); // za duży na bufory gniazda
+  const { createReadStream } = await import("node:fs");
+  const opened = [];
+  const handler = serveDataFiles(dataDir, "/data/", {
+    openStream: (file) => {
+      const s = createReadStream(file);
+      opened.push(s);
+      return s;
+    },
+  });
+  const srv = http.createServer((req, res) => handler(req, res, () => res.end()));
+  await new Promise((resolve) => srv.listen(0, "127.0.0.1", resolve));
+  cleanup.push(() => new Promise((resolve) => srv.close(resolve)), () => rm(root, { recursive: true, force: true }));
+  await new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${srv.address().port}/data/scores.json`, (res) => {
+      res.once("data", () => {
+        req.destroy(); // jak przeładowanie strony albo utrata zasięgu telefonu w trakcie pobierania
+        resolve();
+      });
+    });
+  });
+  expect(opened).toHaveLength(1);
+  const closed = await new Promise((resolve) => {
+    if (opened[0].closed) return resolve(true);
+    opened[0].once("close", () => resolve(true));
+    setTimeout(() => resolve(false), 2000);
+  });
+  expect(closed).toBe(true);
+});

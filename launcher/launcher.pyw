@@ -6,6 +6,7 @@ npm run sync-data i npm run dev, po czym otwiera przegladarke.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import socket
 import subprocess
@@ -35,6 +36,13 @@ FRONTEND_DIR = REPO_ROOT / "frontend"
 PYTHON_EXE = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 CONFIG_PATH = Path(__file__).resolve().parent / "launcher_config.json"
 DEV_URL = "http://127.0.0.1:5173"
+
+def child_process_kwargs() -> dict:
+    """Wyjscie procesow potomnych czytane jako UTF-8: Node (sync-data, Vite) pisze w UTF-8, a procesy
+    Pythona dostaja PYTHONIOENCODING=utf-8. Samo text=True dekodowalo w kodowaniu Windows (cp1250),
+    wiec polskie znaki z komunikatow byly krzaczkami ("moĹĽna")."""
+    return {"encoding": "utf-8", "errors": "replace", "env": {**os.environ, "PYTHONIOENCODING": "utf-8"}}
+
 
 DEFAULT_CONFIG = {"lat": "53.1509", "lon": "16.7382", "radius_km": "25", "place": "", "lan": False}
 DEV_PORT = 5173
@@ -299,7 +307,7 @@ class LauncherApp:
         try:
             process = subprocess.Popen(
                 cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=subprocess.CREATE_NO_WINDOW, **child_process_kwargs(),
             )
         except OSError as exc:
             self.log(f"Nie udalo sie odpalic: {exc}")
@@ -354,8 +362,8 @@ class LauncherApp:
             try:
                 self.dev_process = subprocess.Popen(
                     ["npm.cmd", "run", script], cwd=str(FRONTEND_DIR),
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    creationflags=subprocess.CREATE_NO_WINDOW, **child_process_kwargs(),
                 )
             except OSError as exc:
                 self.log(f"Nie udalo sie odpalic npm run dev: {exc}")
