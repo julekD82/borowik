@@ -2,7 +2,7 @@
 
 Dokument do analizy i planowania ulepszeń przez AI
 
-Stan przeglądu: 27 września 2026 roku. Wersja kodu: `a777fdaf9c072c73ac1e498d86f931650e075aaa`. Katalog projektu: `C:/Users/<uzytkownik>/Documents/Grzyby`. Autor opracowania: Codex na podstawie lokalnego kodu, konfiguracji, dokumentacji rozwoju i zapisanych wyników.
+Stan przeglądu: 27 września 2026 roku. Wersja kodu: `a777fdaf9c072c73ac1e498d86f931650e075aaa`. Katalog projektu: `C:/Users/julia/Documents/Grzyby`. Autor opracowania: Codex na podstawie lokalnego kodu, konfiguracji, dokumentacji rozwoju i zapisanych wyników.
 
 ## 1 Najważniejsze ustalenia
 
@@ -98,7 +98,7 @@ Godzina trafia do daty lokalnej odpowiadającej jej początkowi, czyli znaczniko
 
 ### 5.4 OSM
 
-Overpass dostarcza parkingi, geometrie dróg i punkty miejscowości z populacją. Uwzględnione klasy miejscowości: city, town, village i hamlet. Brak lub nienumeryczna populacja staje się zerem. Drogi podstawowej oceny dostępności to trunk, primary, secondary, tertiary, unclassified i residential. Sieć tras zawiera dodatkowo track. [S09]
+Overpass dostarcza parkingi, geometrie dróg i punkty miejscowości z populacją. Uwzględnione klasy miejscowości: city, town, village i hamlet. Brakująca populacja jest uzupełniana wartością klasy miejscowości; szczegóły w 9.1. Drogi podstawowej oceny dostępności to trunk, primary, secondary, tertiary, unclassified i residential. Sieć tras zawiera dodatkowo track. [S09]
 
 Same klasy dróg nie gwarantują nawierzchni, publicznej dostępności ani możliwości postoju. Parser nie zachowuje reguł `access`, `motor_vehicle`, barier czy `surface`. Presja opiera się zatem na wybranych typach dróg, a nie zweryfikowanej sieci legalnego dojazdu samochodem. Parking będący drogą/poligonem OSM jest upraszczany do punktu reprezentatywnego.
 
@@ -137,7 +137,7 @@ Cechy opadowe mają okno 26 dni, temperatury 20 i 5 dni, przymrozku 3 dni. Wynik
 
 ### 7.1 Maska
 
-Maska strukturalna jest prawdziwa, jeśli `area_type == D-STAN`, wiek nie jest `None` i nie jest mniejszy od 12, a gatunek z listy wykluczeń nie stanowi co najmniej 8/10 udziału. To dokładny sens warunków kodu; pełna walidacja NaN i typów wejściowych wymaga osobnej kontroli. [S01, S07]
+Maska strukturalna jest prawdziwa, jeśli `area_type == D-STAN`, wiek nie jest `None` i nie jest mniejszy od 35 (próg z profilu, wcześniej 12 — patrz 7.4), a gatunek z listy wykluczeń nie stanowi co najmniej 8/10 udziału. To dokładny sens warunków kodu; pełna walidacja NaN i typów wejściowych wymaga osobnej kontroli. [S01, S07]
 
 Lista gatunków wykluczających przy dominacji co najmniej 80%: OL, JS, KL, WZ, AK, JW, OL.S, WB, CZM.P, JB, CZM, KSZ, CZR, SL.A, GR, KL.PE, WZ.S. Wierzba WB ma małe niezerowe powinowactwo przy domieszce, a mimo to wyklucza przy dominacji. Maska nadal bazuje na polach WFS, nawet gdy S_host jest liczone z paczki.
 
@@ -195,7 +195,9 @@ Zero S_site daje H = 0, ale niekoniecznie `mask = false`. To wyjaśnia możliwo�
 
 Wiek a jest wyrażony w latach:
 
-`a < 12 lub a = None: S_age = brak, H = brak`
+`a < 35 lub a = None: S_age = brak, H = brak`
+
+Próg maski to `age_breakpoints.mask_below` z profilu: 35 lat od 01.10.2026, wcześniej 12. To decyzja właściciela po wyjeździe do młodych drzewostanów, oparta na założeniu, a nie na danych (`docs/RAPORT_FAZA_2.md`, „Decyzje po walidacji”, punkt 3). Przy progu 35 lat dwa poniższe przedziały 12–35 lat nie są używane; zostają w profilu na wypadek powrotu do progu 12.
 
 `12 ≤ a < 20: S_age = 0,3 + 0,3 × (a − 12) / 8`
 
@@ -315,23 +317,88 @@ Klasy F i F_loc: poniżej 0,20 „Słabe warunki”; od 0,20 do poniżej 0,45 �
 
 ### 9.1 Presja P
 
-Odległość przybliżona to minimum odległości centroidu do parkingu OSM lub geometrii wybranej drogi, pomnożone przez 1,3:
+Aktywny profil ustawia `pressure.model: access_points`. Presja trafia do wydzielenia wyłącznie przez **punkty dostępu** do lasu, a ludność jedynie „zasila” te punkty. Ludność dzielona jest między punkty modelem probabilistycznym Huffa w wariancie `population_split: two_stage`. Dawny model grawitacyjny od centroidu wydzielenia pozostaje w kodzie jako tryb porównawczy i awaryjny, opisany na końcu tego podrozdziału. Model użyty w danym przebiegu zapisuje manifest (`pressure_model_used`), a każde wydzielenie kolumnę `pressure_model`. Wszystkie parametry poniżej są hipotezą właściciela zapisaną w profilu (`pressure.access_points`) i są **nieskalibrowane**. [S09]
+
+**Punkty dostępu.** Typy punktów, w EPSG:2180:
+
+- `parking` — wszystkie parkingi i miejsca postoju z BDL oraz `amenity=parking` z OSM, jeśli leżą najwyżej 200 m od lasu; duplikaty w promieniu 100 m są usuwane, a pierwszeństwo ma BDL;
+- `entrance` — wjazd do lasu, rozpoznawany w trzech sytuacjach:
+  - droga publiczna przecina granicę lasu, a najwyżej 60 m od przecięcia zaczyna się dukt lub droga leśna;
+  - dukt przecina granicę lasu najwyżej 300 m od drogi publicznej;
+  - koniec duktu leży najwyżej 20 m od drogi publicznej;
+- `gate` — szlaban OSM na drodze leśnej, najwyżej 300 m od drogi publicznej; wjazdy i szlabany deduplikuje się w promieniu 150 m, a pierwszeństwo ma szlaban;
+- `road_fallback` — punkty co 500 m na drogach asfaltowych najwyżej 200 m od lasu, tworzone tylko w kaflach z co najmniej 1 km² lasu, w których nie znaleziono żadnego wjazdu ani szlabanu;
+- `settlement` — oczka siatki GUS 1 km z ludnością, których kwadrat sięga najwyżej 200 m od lasu; powstają tylko wtedy, gdy przebieg dostał plik siatki GUS.
+
+Drogi leśne, czyli zamknięte drogi OSM i dojazdy pożarowe BDL, dostają klasę nawierzchni i tworzą sieć korytarzy.
+
+**Źródło ludności.** Z plikiem siatki GUS NSP 2021 (`--population-grid-path`) punktami ludności są środki oczek 1 km. Bez niego kod bierze miejscowości OSM, a brakującą populację uzupełnia wartością klasy: hamlet 50, village 500, town 5000, city 50 000. Manifest zapisuje wtedy `population_source: osm_z_imputacja`. Ludność pochodzi z miejscowości w obrębie kafli przebiegu. Skupisko ludzi tuż poza nimi nie jest uwzględniane.
+
+**Jądro odległości.** Wszędzie używane jest to samo gładkie jądro bez twardego progu:
+
+`k(d; R) = max(0; 1 − (d/R)²)²`
+
+**Etap 1: sposób dotarcia.** Dla punktu ludności j w odległości d_las_j od lasu:
+
+`p_walk_j = 0,5 × max(0; 1 − d_las_j / 1,5 km)`
+
+Udział pieszy jest dzielony między osiedla przy lesie w zasięgu 1,5 km, proporcjonalnie do `w_t × k(d)`, bez opcji zewnętrznej. Gdy w zasięgu pieszym nie ma osiedla, ten udział przechodzi do „autem”. Reszta ludności, `1 − p_walk_j`, jedzie autem.
+
+**Etap 2: podział Huffa między punkty samochodowe.** Punktami samochodowymi są `parking`, `entrance`, `gate` i `road_fallback`. Udział punktu k w ludności punktu j:
+
+`u_jk = w_k × k(d_jk; 20 km) / [suma po k′ z (w_k′ × k(d_jk′; 20 km)) + c]`
+
+Wagi typów: parking 1,0, wjazd 0,6, szlaban 0,6, fallback 0,4. Opcja zewnętrzna c = 0,77 („nie jadę do tego lasu”) sprawia, że suma udziałów jednego punktu ludności jest mniejsza od 1. Przykład z komentarza profilu: jedyny parking w odległości 15 km dostaje 19,9% ludności oczka. Atrakcyjność punktu to liczba osób:
+
+`A_k = suma po j z (Pop_samochodem_j × u_jk)`
+
+W tym wariancie waga typu działa tylko w podziale, nie w sumie presji. `A_norm = A / (A + 500)` służy wyłącznie do klas atrakcyjności na mapie i nie wchodzi do P.
+
+**Korytarze dróg leśnych.** Atrakcyjność przenosi się z punktów dostępu po sieci dróg leśnych:
+
+`A_odcinek = max po k z [A_k × 0,5^(d_sieć,k / 3 km)] × mnożnik nawierzchni`
+
+Mnożniki nawierzchni: twarda 1,0, żwir i ubita 0,8, nieznana 0,5, gruntowa 0,3. Punkt jest dołączany do sieci, jeśli leży najwyżej 150 m od węzła. Wartość liczy jeden przebieg Dijkstry ze źródłem wspólnym dla wszystkich punktów. Każdy punkt ma przesunięcie startowe `λ × ln(skala / A_k)`, gdzie `λ = 3 km / ln 2`. Węzły to wierzchołki zaokrąglone do 1 m, a drogi przecinające się bez wspólnego wierzchołka nie są łączone. Wynikiem są próbki korytarza co około 100 m, w przebiegu z 30.09.2026 było ich 54 620. Drogi nieosiągalne z żadnego punktu dostają zero.
+
+**Presja wydzielenia.** Dla centroidu wydzielenia:
+
+`raw = suma po typach t i punktach k w zasięgu R_t z [A_k × k(d_k; R_t)] + 0,4 × max po próbkach korytarza w 300 m z [A_odcinek × k(d; 300 m)]`
+
+`P = 1 − exp(−raw / S)`, `S = 1997`
+
+Zasięgi oddziaływania R_t: parking 3 km, wjazd i szlaban 2,5 km, fallback i osiedle 1,5 km. Korytarz wchodzi jako jeden składnik, maksimum po próbkach, a nie suma. Dwie równoległe drogi obok siebie nie oznaczają więc dwa razy więcej rowerzystów.
+
+Od 30.09.2026 obowiązuje dolny próg presji od parkingu. Wydzielenie w zasięgu parkingu dostaje od niego co najmniej `700 × k(d; 3 km)` osób, liczone od najbliższego parkingu (maksimum, nie suma). Przy samym parkingu odpowiada to P ≈ 0,30.
+
+S dobrano tak, aby mediana P w przebiegu testowym Kieleczki była zbliżona do mediany modelu grawitacyjnego (0,373). Jest to kalibracja skali między modelami, a nie względem pomiarów ruchu.
+
+W eksporcie `details.json` każde wydzielenie ma w `access.pressure_contrib` wkład każdego typu punktu. Obok są odległości do najbliższego parkingu, wjazdu i utwardzonej drogi leśnej oraz punkt o największym wkładzie (`top_point_*`). Pole `d_park_m` w `scores.json` pozostaje przybliżeniem euklidesowym z modelu grawitacyjnego (`1,3 × min(d_parking, d_droga)`), a nie odległością do punktu dostępu.
+
+**Stan przebiegu z 30.09.2026 (Zawadzkie, r = 20 km).** Z manifestu:
+
+- 202 parkingi (97 BDL, 105 OSM), 1659 wjazdów i 107 szlabanów;
+- 0 punktów fallback i 0 osiedli, bo przebieg nie dostał siatki GUS;
+- ludność z OSM z imputacją.
+
+Etap pieszy nie miał więc dokąd kierować ludności, a cała ludność trafiła do podziału samochodowego. Ponowne wyliczenie offline z cache tych samych 23 kafli dało 557 miejscowości z 203 226 mieszkańcami i 397 883 par miejscowość–punkt w zasięgu 20 km. Odtworzone `A_norm` zgadzają się z eksportem: korelacja 1,0, średnia różnica bezwzględna 0,0004. Opcja zewnętrzna zatrzymała tylko około 0,6% ludności, bo prawie każda miejscowość ma w zasięgu wiele punktów. Przy gęstej sieci wejść parametr c ma więc niewielki wpływ.
+
+**Tryb grawitacyjny (porównawczy i awaryjny).** Używany przy `pressure.model: gravity` albo gdy przebieg nie ma żadnego punktu dostępu. W trybie `access_points` `P_gravity` i tak jest liczone i zapisywane do porównań.
 
 `d_park = 1,3 × min(d_parking, d_droga)`
 
-Dla miejscowości j z populacją Pop_j i odległością d_j w kilometrach:
+`Demand = suma j z [Pop_j / (1 + (d_j/10 km)²)]`
 
-`Demand = suma j z [Pop_j / (1 + (d_j/10)^2)]`
+`Demand_norm = Demand / (Demand + 90 000)` przy domyślnym `normalization: absolute`; przy `local` jest to `Demand / max(Demand w analizie)`
 
-`Demand_norm = Demand / max(Demand w bieżącej analizie)`
+`P = 1 − exp[−2 × Demand_norm × exp(−d_park/800 m)]`
 
-`P = 1 − exp[−2 × Demand_norm × exp(−d_park/800)]`
+Brak parkingów i dróg daje d_park = nieskończoność i P = 0. Tylko w tym trybie działa przeliczenie odległości sieciowej do wejść dla 25 najlepszych wydzieleń, opisane w 9.2.
 
-Przy zerowym maksimum Demand przyjmuje się Demand_norm = 0. Przy braku parkingów i dróg przyjmuje się efektywnie d_park = nieskończoność, więc P = 0. Brak danych nie ma zatem tego samego znaczenia co dowód małej liczby ludzi, choć liczba wynikowa może być identyczna. [S09]
-
-To nieskalibrowany model grawitacyjny dostępności. Nie wykorzystuje rzeczywistych liczników odwiedzających, śladów GPS, informacji o zebraniu grzybów ani natężenia ruchu rowerowego. Populacje i drogi są ograniczone do pobranego obszaru kafli. Duże skupisko ludzi tuż poza tym obszarem może nie zostać uwzględnione.
+Oba modele są nieskalibrowane. Nie wykorzystują rzeczywistych liczników odwiedzających, śladów GPS, informacji o zebranych grzybach ani natężenia ruchu rowerowego. Brak danych o punktach dostępu nie oznacza małej presji. Dlatego przebieg bez punktów przełącza się jawnie na model grawitacyjny, zamiast przyjąć P = 0.
 
 ### 9.2 Wejścia i sieć
+
+Ten podrozdział opisuje wejścia i przeliczenie odległości sieciowej używane tylko w trybie grawitacyjnym. W domyślnym trybie `access_points` przeliczenie dla 25 najlepszych nie jest wykonywane. Eksport ma wtedy `distance_method: access_points` i `entrance_status: not_evaluated`, a punkty wejścia wyznacza reguła z 9.1.
 
 Granica lasu powstaje z unii wszystkich D-STAN w szerszym kontekście pobranych kafli, z buforowaniem +40 m i następnie −40 m. Domknięcie ogranicza fałszywe wejścia na wąskich wewnętrznych przerwach. Przecięcia dróg z tą granicą są potencjalnymi wejściami. Odległość do parkingu najwyżej 50 m daje etykietę `confirmed`; pozostałe mają `potential`. „Confirmed” oznacza zgodność z geometrią parkingu OSM, nie wizytę terenową. [S09]
 
@@ -347,7 +414,7 @@ Tę metodę stosuje się do 25 najwyższych wyników przed przeliczeniem odległ
 
 Domyślne α = 0,3. API funkcji pozwala podać inne α, ale standardowy przebieg i aktualny interfejs nie oferują opisanego w dawnym projekcie suwaka 0–0,6. Nie należy przedstawiać suwaka jako wdrożonej funkcji.
 
-Przykład obliczeniowy: H = 0,8, F_loc = 0,75, P = 0,4 oraz α = 0,3 dają R = 52,8. To umowny wynik preferencji. Przy obecnym k = 2 i Demand_norm ≤ 1 maksymalne P wynosi około 0,865 przy odległości zero, więc maksymalna kara przy α = 0,3 wynosi około 26% wyniku biologicznego. W skali teoretycznej P = 1 kara wynosiłaby 30%.
+Przykład obliczeniowy: H = 0,8, F_loc = 0,75, P = 0,4 oraz α = 0,3 dają R = 52,8. To umowny wynik preferencji. W modelu punktów dostępu P = 1 − exp(−raw/S) zbliża się do 1 bez górnego ograniczenia raw, więc kara przy α = 0,3 dąży do 30% wyniku biologicznego. Wydzielenie przy samym parkingu ma z samego dolnego progu co najmniej około 9% kary (P ≈ 0,30). W trybie grawitacyjnym, przy k = 2 i Demand_norm < 1, P nie przekracza około 0,865, a kara około 26%.
 
 Wstępne pole `R` z `run_poc` nie zawiera jeszcze pełnego wzbogacenia. Eksport JSON pod nazwą `R` zapisuje końcowe `R_final`. Przy analizie notebooków trzeba rozróżniać te etapy.
 
@@ -676,7 +743,7 @@ Poniższe lokalizacje wskazują główne źródła ustaleń. Nazwa funkcji jest 
 - **S06** `pipeline/radar.py` — `sample_stack`, `radar_daily_at_points`, `merge_radar_into_daily`, `make_radar_weather_fetcher` i założenia czasowe.
 - **S07** `pipeline/habitat.py`, `pipeline/orchestrate.py` — maska, H, przypisanie punktów, percentyle, uruchomienie składowych.
 - **S08** `pipeline/scoring.py`, `pipeline/phenology.py` — M, T, przymrozek, F, F_loc, ranking i interpolacja sezonowa.
-- **S09** `pipeline/pressure.py`, `pipeline/osm.py`, `pipeline/entrances.py`, `pipeline/routing.py`, `pipeline/mvp.py` — P, wejścia, graf, top-N i R_final.
+- **S09** `pipeline/access_points.py`, `pipeline/access_pressure.py`, `pipeline/access_data.py`, `pipeline/population_grid.py`, `profiles/boletus_edulis.yaml` (`pressure.access_points`), `pipeline/pressure.py`, `pipeline/osm.py`, `pipeline/entrances.py`, `pipeline/routing.py`, `pipeline/mvp.py` — punkty dostępu, model Huffa, korytarze, P (oba tryby), wejścia, graf, top-N i R_final.
 - **S10** `pipeline/gdos.py`, `pipeline/zakazy.py`, `pipeline/confidence.py`, `pipeline/explain.py` — wykluczenia, pewność i uzasadnienia.
 - **S11** `pipeline/regions.py`, `pipeline/tie_break.py` — wybór rejonów, geometria i klucz remisów.
 - **S12** `pipeline/conditions_timeline.py` — `recent_rains`, `build_conditions_timeline`, rozdzielenie panelu od rankingu.

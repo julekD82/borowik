@@ -4,7 +4,7 @@ Lokalna, statyczna aplikacja według `docs/superpowers/specs/2026-09-24-borowik-
 
 ## Uruchomienie
 
-W katalogu głównym repo (`C:\Users\<uzytkownik>\Documents\Grzyby`):
+W katalogu głównym repo (`C:\Users\julia\Documents\Grzyby`):
 
 ```powershell
 # Nowa analiza — wymaga dostępu do źródeł danych. Nie jest potrzebna,
@@ -17,7 +17,7 @@ npm.cmd run sync-data
 npm.cmd run dev
 ```
 
-Otwórz adres podany przez Vite (domyślnie http://127.0.0.1:5173). Serwer nasłuchuje lokalnie. Grupowanie w rejony jest aktywne: przełącznik „Rejony” / „Wydzielenia” nad listą/mapą (zapamiętywany w `localStorage`) pokazuje domyślnie rejony, gdy analiza je ma, z opcją przejścia do pojedynczych wydzieleń. Nie trzeba przeliczać istniejącej analizy — wystarczy synchronizacja ocen i geometrii.
+Otwórz adres podany przez Vite (domyślnie http://127.0.0.1:5173). Serwer nasłuchuje lokalnie. Żeby otworzyć aplikację na innym komputerze lub telefonie w tej samej sieci, zaznacz w launcherze „Udostępnij w sieci lokalnej” (ustawienie jest zapamiętywane) i uruchom serwer od nowa; launcher wypisze adres w sieci (np. `http://192.168.18.7:5173`; działa adres IP, nazwa komputera nie). Robi to skrypt `npm run dev:lan` (`vite --host 0.0.0.0`). Serwer nie ma hasła, więc używaj go tylko w zaufanej sieci; przy pierwszym uruchomieniu Windows może zapytać o zaporę — zezwól Node.js dla sieci prywatnej. Grupowanie w rejony jest aktywne: przełącznik „Rejony” / „Wydzielenia” nad listą/mapą (zapamiętywany w `localStorage`) pokazuje domyślnie rejony, gdy analiza je ma, z opcją przejścia do pojedynczych wydzieleń. Nie trzeba przeliczać istniejącej analizy — wystarczy synchronizacja ocen i geometrii.
 
 Powyższe polecenia są dla PowerShell. Nazwa modułu to dokładnie `pipeline.prepare_trip`, bez ukośnika przed `_`.
 
