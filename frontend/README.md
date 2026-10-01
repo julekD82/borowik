@@ -1,10 +1,10 @@
 # Borowik — frontend
 
-Lokalna, statyczna aplikacja według `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md`: Vite + TypeScript, MapLibre. Bez serwera API i frameworka UI.
+Lokalna, statyczna aplikacja według `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`: Preact, TypeScript, Vite i MapLibre. Nie ma serwera API; interfejs czyta pliki przygotowane przez `pipeline.prepare_trip`.
 
 ## Uruchomienie
 
-W katalogu głównym repo (`C:\Users\julia\Documents\Grzyby`):
+W katalogu głównym repozytorium:
 
 ```powershell
 # Nowa analiza — wymaga dostępu do źródeł danych. Nie jest potrzebna,

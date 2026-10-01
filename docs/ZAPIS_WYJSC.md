@@ -83,7 +83,7 @@ Archiwum prognoz (`cache/archiwum_prognoz/`) rośnie przy każdej analizie, ale 
 3. Instalacja harmonogramu (PowerShell, jednorazowo; ścieżkę katalogu projektu zamień na swoją):
 
 ```powershell
-$repo = "C:\Users\<uzytkownik>\Documents\Grzyby"
+$repo = "C:\sciezka\do\borowik"
 $action = New-ScheduledTaskAction -Execute "$repo\.venv\Scripts\python.exe" -Argument "scripts\zapisz_prognoze.py" -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Daily -At 6:00
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable

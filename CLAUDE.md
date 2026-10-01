@@ -1,11 +1,25 @@
-# Kontekst kontynuacji projektu
+# Wskazówki dla asystentów AI
 
-Przed dalszą pracą przeczytaj [docs/archiwum/CODEX-HANDOFF.md](docs/archiwum/CODEX-HANDOFF.md): zawiera wykonane przez Codex zmiany frontendu i obsługi promienia, instrukcje, wyniki testów i nadal otwarte ograniczenia. Aktualizuj tę notatkę po zmianach istotnych dla kolejnej sesji. Aktualny stan aplikacji i jej ograniczeń opisuje też `docs/Borowik_opis_techniczny_i_walidacja.md`.
+Borowik: Python (`pipeline/`) liczy ranking wydzieleń leśnych do poszukiwań prawdziwków, a frontend (`frontend/`, Preact + MapLibre + Vite) wyświetla przygotowane pliki. Opis dla ludzi: `README.md`.
 
-Aktualna implementacja znajduje się w tym katalogu roboczym (`Grzyby`, ten sam katalog, w którym leży ten plik) — `pipeline/`, `frontend/`, `tests/` na poziomie repo. Starsza notatka mówiła o osobnym katalogu roboczym `borowik-faza2-mvp-backend` jako jedynej aktualnej implementacji; to nieaktualne, nie kieruj się tym — ten katalog już nie istnieje (albo nigdy nie był tym, do czego odnosiła się ta notatka), a kod tutaj jest aktualny (`--radius-km` działa, wiele kafli i wszystkie przecinane RDLP, grupowanie w rejony aktywne — patrz niżej).
+## Gdzie szukać kontekstu
 
-Specyfikacja frontendu: `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md` (poprzednia: `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md`). Instrukcja użytkowania i odstępstwa wynikające z brakujących danych: `frontend/README.md`.
+- Aktualny stan modelu, źródeł danych i ograniczeń: `docs/Borowik_opis_techniczny_i_walidacja.md`. Przy rozbieżności pierwszeństwo mają kod i `profiles/boletus_edulis.yaml`.
+- Historia decyzji i notatki przekazania między sesjami: `docs/archiwum/CODEX-HANDOFF.md` (numerowane notatki). Dopisuj tam zmiany istotne dla kolejnej sesji.
+- Interfejs i synchronizacja danych: `frontend/README.md`. Specyfikacja obecnego frontendu: `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`.
+- Pozostałe plany, raporty faz i specyfikacje są w `docs/archiwum/`. Opisują historię i mogą być nieaktualne.
 
-Grupowanie w rejony jest aktywne. `pipeline/prepare_trip.py` liczy i eksportuje rejony (`regions_{day}.json`), a frontend ma przełącznik „Rejony” / „Wydzielenia” (zapamiętywany w `localStorage`), domyślnie startujący w widoku rejonów, gdy są dostępne.
+## Polecenia
 
-Plan wdrożenia ulepszeń (Faza 0/1, noc 27/28.09.2026) i jego wynik: `docs/archiwum/PLAN_WDROZENIA.md`, `docs/archiwum/NOC_RAPORT.md`.
+```powershell
+uv run pytest                                   # testy Pythona
+uv run python -m pipeline.prepare_trip --lat 50.53 --lon 18.61 --radius-km 20
+cd frontend; npm test; npm run build; npm run sync-data; npm run dev
+```
+
+## Zasady
+
+- Grupowanie w rejony jest aktywne (`regions_{day}.json`, przełącznik „Rejony” / „Wydzielenia”).
+- Nie zapisuj danych osobowych (e-maile, nazwiska obserwatorów GBIF, prywatne współrzędne) w commitowanych plikach ani w opisach commitów.
+- Dane lokalne i prywatne zostają poza gitem: `cache/`, `BDL/`, `dane_terenowe/`, `dane_telefon/`, `notebooks/output/`, `frontend/public/data/`, `local_config.json`, `launcher/launcher_config.json`.
+- Zmiany wag i progów modelu wprowadza się w profilu YAML z komentarzem wskazującym uzasadnienie.

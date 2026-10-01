@@ -3,8 +3,10 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "grzyby"
+name = "borowik"
 version = "0.1.0"
+description = "Ranking wydzieleń leśnych do poszukiwań prawdziwków z danych BDL, radaru IMGW i prognozy pogody"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "geopandas>=1.0",

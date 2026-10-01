@@ -22,6 +22,63 @@ wheels = [
 ]
 
 [[package]]
+name = "borowik"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "folium" },
+    { name = "geopandas" },
+    { name = "netcdf4" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "openmeteo-requests" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+    { name = "pyogrio" },
+    { name = "pyproj" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "requests-cache" },
+    { name = "retry-requests" },
+    { name = "scipy" },
+    { name = "shapely" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "responses" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "folium", specifier = ">=0.16" },
+    { name = "geopandas", specifier = ">=1.0" },
+    { name = "netcdf4", specifier = ">=1.6" },
+    { name = "networkx", specifier = ">=3.2" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "openmeteo-requests", specifier = ">=1.2" },
+    { name = "openpyxl", specifier = ">=3.1" },
+    { name = "pandas", specifier = ">=2.2" },
+    { name = "pyarrow", specifier = ">=17.0" },
+    { name = "pyogrio", specifier = ">=0.9" },
+    { name = "pyproj", specifier = ">=3.6" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.31" },
+    { name = "requests-cache", specifier = ">=1.2" },
+    { name = "retry-requests", specifier = ">=2.0" },
+    { name = "scipy", specifier = ">=1.13" },
+    { name = "shapely", specifier = ">=2.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "responses", specifier = ">=0.25" },
+]
+
+[[package]]
 name = "branca"
 version = "0.8.2"
 source = { registry = "https://pypi.org/simple" }
@@ -261,63 +318,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/39/a9/0478b74a33aea66827c10baaf6025cb2a17e44b1c117533eecd3e977bb75/geopandas-1.1.4.tar.gz", hash = "sha256:06f2890a07e1a239047daa14b486a7c6ae5ce82dcf7405e13c46bf31f5d0dd66", size = 337445, upload-time = "2026-06-26T17:23:54.497Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/59/a8/bd530cc264e62ddbc1d1bb7225823992e6f2432c664693e9281bb6b9c359/geopandas-1.1.4-py3-none-any.whl", hash = "sha256:1a0c459cbdb1537cd154dafe6174be20d1760844b7f1c967dc8520b180f2e773", size = 343292, upload-time = "2026-06-26T17:23:53.112Z" },
-]
-
-[[package]]
-name = "grzyby"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "folium" },
-    { name = "geopandas" },
-    { name = "netcdf4" },
-    { name = "networkx" },
-    { name = "numpy" },
-    { name = "openmeteo-requests" },
-    { name = "openpyxl" },
-    { name = "pandas" },
-    { name = "pyarrow" },
-    { name = "pyogrio" },
-    { name = "pyproj" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "requests-cache" },
-    { name = "retry-requests" },
-    { name = "scipy" },
-    { name = "shapely" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "responses" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "folium", specifier = ">=0.16" },
-    { name = "geopandas", specifier = ">=1.0" },
-    { name = "netcdf4", specifier = ">=1.6" },
-    { name = "networkx", specifier = ">=3.2" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "openmeteo-requests", specifier = ">=1.2" },
-    { name = "openpyxl", specifier = ">=3.1" },
-    { name = "pandas", specifier = ">=2.2" },
-    { name = "pyarrow", specifier = ">=17.0" },
-    { name = "pyogrio", specifier = ">=0.9" },
-    { name = "pyproj", specifier = ">=3.6" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.31" },
-    { name = "requests-cache", specifier = ">=1.2" },
-    { name = "retry-requests", specifier = ">=2.0" },
-    { name = "scipy", specifier = ">=1.13" },
-    { name = "shapely", specifier = ">=2.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "responses", specifier = ">=0.25" },
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 
 Dokument do analizy i planowania ulepszeń przez AI
 
-Stan przeglądu: 27 września 2026 roku. Wersja kodu: `111ce2e9e4df5bf6453723a5a45e2d4243744f42`. Katalog projektu: `C:/Users/julia/Documents/Grzyby`. Autor opracowania: Codex na podstawie lokalnego kodu, konfiguracji, dokumentacji rozwoju i zapisanych wyników.
+Stan przeglądu: 27 września 2026 roku. Wersja kodu: `111ce2e9e4df5bf6453723a5a45e2d4243744f42`. Autor opracowania: Codex na podstawie lokalnego kodu, konfiguracji, dokumentacji rozwoju i zapisanych wyników.
 
 ## 1 Najważniejsze ustalenia
 

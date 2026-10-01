@@ -1,29 +1,40 @@
-cache/
-.cache/
-*.egg-info/
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
+
+# Cache pobranych danych (BDL, pogoda, radar, OSM, GBIF, E-OBS)
+cache/
+.cache/
+
+# Wyniki analiz i pliki robocze
 notebooks/output/
 notebooks/known_points.yaml
+/output/
+*.log
+
+# Lokalna konfiguracja maszyny (sciezki, ustawienia launchera)
+local_config.json
 launcher/launcher_config.json
 *.lnk
+
+# Paczki BDL nadlesnictw (zamawiane osobno, duze)
 /BDL/
 
-# Prywatne dane z wyjsc (plan 2.1) - nigdy do repozytorium
+# Prywatne dane z wyjsc - nigdy do repozytorium
 /dane_terenowe/
 
-# Worktree sesji Claude
-.claude/worktrees/
-
-# Lokalna konfiguracja maszyny (sciezki), Faza 4
-local_config.json
-
-# Eksport "na telefon" (KMZ do synchronizacji z Dyskiem/OneDrive) - pliki wynikowe, nie kod
+# Eksport "na telefon" (KMZ) - pliki wynikowe, nie kod
 /dane_telefon/
 
-# Oryginalne zamrozone zbiory walidacji 2.4/2.5 (nazwy obserwatorow GBIF) i tabela przypisan pseudonimow - tylko lokalnie
+# Oryginalne zbiory walidacji 2.4/2.5 z nazwami obserwatorow GBIF i tabela pseudonimow - tylko lokalnie
 /dane_walidacyjne/gbif_2_4_2_5/
 
-# Makiety z sesji projektowych (serwer wizualny superpowers)
+# Narzedzia AI i edytory
+.claude/worktrees/
+.claude/settings.local.json
 .superpowers/
+.vscode/
+.idea/
