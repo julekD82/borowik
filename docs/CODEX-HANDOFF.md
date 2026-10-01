@@ -1,5 +1,9 @@
 # Notatki przekazania dla Claude Code
 
+## 2026-10-01 — aktualne (40): serwer deweloperski nie pada przy zapisie migawki; gałąź `telefon-top5`
+
+`npm run dev:lan` padał na Windows z `EBUSY: resource busy or locked, watch …/public/data/trips/<id>/scores.json`, gdy launcher zapisywał migawkę („Zapisz do listy”): obserwator plików Vite (chokidar) próbował śledzić plik zablokowany w trakcie kopiowania, a nieobsłużony błąd kończył proces. Teraz `frontend/scripts/data-files-plugin.mjs` (podpięty w `vite.config.ts`): obserwator pomija `**/public/data/**`, a `/data/…` serwuje własny middleware prosto z dysku (JSON/GeoJSON, brak pliku = 404, bez wychodzenia poza katalog danych — `dev:lan` jest widoczny w sieci). Samo zignorowanie katalogu nie wystarczało: Vite serwuje pliki z `public/` tylko z listy uzupełnianej przez obserwator, więc nowa migawka byłaby dostępna dopiero po restarcie. Testy: `frontend/scripts/data-files-plugin.test.mjs`.
+
 ## 2026-10-01 — aktualne (39): KMZ na telefon tylko z najlepszymi 5% wydzieleń; gałąź `telefon-top5`
 
 Decyzja właściciela: pełny KMZ (4 klasy + ukryty zestaw „bez presji”, ok. 28,7 tys. wielokątów dla Zawadzkie 20 km) importował się na telefonie ok. 20 min i zawieszał aplikację. Teraz `pipeline/phone_kmz.py` eksportuje tylko klasę 1 (najlepsze 5% wśród wydzieleń w masce, wg R z presją — te same co w aplikacji), jeden folder „Najlepsze 5% wydzieleń” w cyjanie, plus rejony i parkingi; bez zestawu „bez presji” (wybór właściciela) i bez limitu `--max-mb`/pomijania klasy 4. Geometrie upraszczane tylko dla eksportowanych wydzieleń. Zawadzkie 20 km: 718 wielokątów, KMZ 0,06 MB (KML 0,36 MB), eksport 1,6 s. Percentyl liczony teraz z wydzieleń w masce z geometrią przed uproszczeniem (wcześniej wydzielenia z pustą geometrią po uproszczeniu wypadały z puli). **Otwarte:** nowa wersja nie była otwierana na telefonie.
