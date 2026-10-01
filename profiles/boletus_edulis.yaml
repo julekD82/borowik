@@ -24,7 +24,7 @@ host_affinity:
   KL: 0.0
   WZ: 0.0
   AK: 0.0
-  # Uzupelnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): codes found
+  # Uzupelnienie 2.1 (docs/archiwum/projekt-borowik.md §5.3, §0.1 audit): codes found
   # in a real 25km run with no profile entry, previously falling back to
   # unknown_host_affinity (0.5) for ~220 stands.
   SO.C: 0.6   # sosna czarna -- obce EcM Pinus, slabo udokumentowane dla B. edulis
@@ -40,7 +40,7 @@ host_affinity:
               # 2.1 step B2: f_tree_species_dic says "pozna", not "pospolita"
               # (that's plain CZM below) -- value unchanged, both non-EcM.
   JB: 0.0     # jarzab -- brak EcM
-  # Uzupelnienie 2.1 step B2 (docs/bdl-paczki-rozpoznanie.md): species found
+  # Uzupelnienie 2.1 step B2 (docs/archiwum/bdl-paczki-rozpoznanie.md): species found
   # in real BDL package DRZEW composition (Bedziemysl area) with no profile
   # entry. Resolved via the package's own f_tree_species_dic (name + Latin
   # binomial), not guessed -- all non-EcM Prunus/Aesculus/Pyrus/Acer/Ulmus
@@ -82,7 +82,7 @@ site_scores:
   OL:   [0.0, 3]
   OLJ:  [0.0, 3]
   LL:   [0.0, 2]
-  # Uzupelnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): highland
+  # Uzupelnienie 2.1 (docs/archiwum/projekt-borowik.md §5.3, §0.1 audit): highland
   # (wyzynny) site types found in a real 25km run, previously falling back
   # to unknown_site_score (0.5) for ~2100 stands. Value = the lowland
   # equivalent of the same fertility/moisture class (plan's explicit
@@ -141,7 +141,7 @@ host:
   # behaviour, DRZEW only) -- this is a HYPOTHESIS about understory
   # composition mattering for B. edulis, not a correction of a known error
   # (unlike 1.6.2's age fix), so it stays off pending Faza 2.2 validation.
-  # docs/RAPORT_FAZA_1_6.md compares 0 / 0.25 / 0.5 on a real run.
+  # docs/archiwum/RAPORT_FAZA_1_6.md compares 0 / 0.25 / 0.5 on a real run.
   lower_storeys_weight: 0.0
 
 fruiting:
@@ -241,13 +241,13 @@ pressure:
   normalization: absolute
   # d_half chosen 2026-09-28 night, offline from cached data (no API calls):
   # real OSM Demand + d_park_m for all 14399 mask-passing Kieleczka 20km
-  # stands (docs/porownania/baseline/scores_2026-09-28.json, cache-only
+  # stands (docs/archiwum/porownania/baseline/scores_2026-09-28.json, cache-only
   # recompute of Demand), searched so median P under "absolute" lands close
   # to that run's actual median P=0.2446 under "local" (got 0.2437-0.2547
   # across the search grid around this value). TEMPORARY, UNCALIBRATED
   # against any real-world pressure measurement -- Bedziemysl's own cache
   # (the plan's original suggestion) no longer exists on this machine
-  # (see docs/NOC_RAPORT.md); this is a same-scale substitute chosen to get
+  # (see docs/archiwum/NOC_RAPORT.md); this is a same-scale substitute chosen to get
   # a working, non-arbitrary constant for tonight, not a validated number.
   d_half: 90000.0
 
@@ -343,28 +343,28 @@ weather:
   # Faza 4.1: odstep siatki pogodowej w km (temperatura, ET0, opad modelu).
   # null = dotychczasowe zachowanie (5 km przy promieniu 25 km, skalowane z
   # promieniem); 10 / 15 = odstep bezwzgledny, mniej wywolan Open-Meteo. Decyzja
-  # o domyslnej wartosci: docs/RAPORT_FAZA_4.md (regula z planu 4.1).
+  # o domyslnej wartosci: docs/archiwum/RAPORT_FAZA_4.md (regula z planu 4.1).
   temp_grid_km: null
 
 radar:
-  # Plan 2026-09-26 A1 (docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
+  # Plan 2026-09-26 A1 (docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
   # IMGW-PIB RainGRS replaces Open-Meteo precipitation for local days in the
   # last window_days days; Open-Meteo fills missing hours and the forecast.
   enabled: true
   window_days: 30                # covers P26w (26 d) + P5
   min_coverage_for_quality: 0.8  # rain_radar_coverage threshold for pogoda_radar_1km
-  # Plan 1.5 (docs/RAPORT_FAZA_1_5.md ma uzasadnienie i liczby):
+  # Plan 1.5 (docs/archiwum/RAPORT_FAZA_1_5.md ma uzasadnienie i liczby):
   # "block" (sprzed 1.5, srednia RainGRS na cala kratke pogodowa, wspolna dla
   # wielu wydzielen) albo "stand" (RainGRS wazona powierzchniowo na WLASNYM
   # wielokacie kazdego wydzielenia, ~1 km). Tylko opad jest per-wydzielenie w
   # trybie stand -- temperatura/ET0/klimatologia zostaja na siatce blokowej.
   mode: stand
   # Promien filtra przestrzennego (komorki 1 km) przed probkowaniem, 0..3.
-  # 0 = surowe dane 1 km. Patrz docs/RAPORT_FAZA_1_5.md 1.5.5 za uzasadnienie.
+  # 0 = surowe dane 1 km. Patrz docs/archiwum/RAPORT_FAZA_1_5.md 1.5.5 za uzasadnienie.
   smoothing_km: 1
 
 flush:
-  # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # Plan 2026-09-27 A2 (docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
   # flush-timing model, pipeline/flush.py. NEVER feeds R.
   # SHIP GATE FAILED 2026-09-27 (Task 3: LOYO held-out mean 0.548 <
   # baseline F_loc bez G_season 0.626; notebooks 08/09 traced the earlier
@@ -386,7 +386,7 @@ flush:
   level_thresholds: [0.1, 0.3, 0.6]
 
 conditions:
-  # Plan 2026-09-27 A2 "Plan-B" (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # Plan 2026-09-27 A2 "Plan-B" (docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
   # pipeline/conditions_timeline.py. Real F per horizon day (F's own
   # components -- the same formula whose per-stand, per-point form scored
   # 0.626 in the GBIF backtest, but computed here from the AREA MEDIAN of
@@ -407,7 +407,7 @@ conditions:
   # w ktoryms dniu). Po poprawce spojnosci panelu z mapa (opad z radaru jak w
   # wydzieleniach, percentyl wzgledem komorki punktu) max roznica metod wynosi 0,043
   # -- regula nie jest spelniona, wiec zostaje dotychczasowa metoda (wczesniejsza
-  # roznica 0,086 wynikala z panelu liczonego z opadu modelu; docs/RAPORT_FAZA_4.md).
+  # roznica 0,086 wynikala z panelu liczonego z opadu modelu; docs/archiwum/RAPORT_FAZA_4.md).
   aggregation: median_of_features
   # Faza 4.4: dobowy opad (mm) uznawany za "silny" w udziale powierzchni z silnym opadem.
   heavy_rain_day_mm: 15.0
@@ -486,7 +486,7 @@ explanation:
   max_negative: 2
 
 regions:
-  # Plan 2.1 step A2 (docs/projekt-borowik.md §5.6 "Nowa definicja rejonu
+  # Plan 2.1 step A2 (docs/archiwum/projekt-borowik.md §5.6 "Nowa definicja rejonu
   # (2.1)"): replaces the 2.0 buffer+unary_union chain-merge, which let one
   # region swallow an entire 187 km2 continuous forest complex on a real
   # 25km run (§0.1 audit, §5.6 "Stan 2.1").

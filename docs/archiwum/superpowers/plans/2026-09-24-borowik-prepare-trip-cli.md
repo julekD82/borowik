@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the hardcoded single-location pipeline run (today only `notebooks/02_mvp.py`, fixed to the Kieleczka tile in RDLP Katowice) with a real command-line entry point — spec §13 priority 2 — that takes `--lat`/`--lon`/`--date`/`--radius-km` and produces `scores_{date}.json` + `regions_{date}.json` + a stand-geometry export for **any** location in Poland, without editing code. This closes the gap identified in `docs/projekt-borowik.md` §6: "Nie da się dziś uruchomić analizy dla innej lokalizacji niż zahardkodowana w `notebooks/02_mvp.py`."
+**Goal:** Replace the hardcoded single-location pipeline run (today only `notebooks/02_mvp.py`, fixed to the Kieleczka tile in RDLP Katowice) with a real command-line entry point — spec §13 priority 2 — that takes `--lat`/`--lon`/`--date`/`--radius-km` and produces `scores_{date}.json` + `regions_{date}.json` + a stand-geometry export for **any** location in Poland, without editing code. This closes the gap identified in `docs/archiwum/projekt-borowik.md` §6: "Nie da się dziś uruchomić analizy dla innej lokalizacji niż zahardkodowana w `notebooks/02_mvp.py`."
 
-**Architecture:** A new `pipeline/rdlp.py` module resolves which of the 17 BDL WFS wydzielenia layers covers a given (lat, lon) — the missing piece that made the location hardcoded in the first place — by point-in-polygon lookup against BDL's own `BDL:RDLP` boundary layer (verified live, see Global Constraints). A new `pipeline/prepare_trip.py` module wires that resolver together with the already-existing, already-tested pipeline (`run_poc`, `enrich_with_mvp_layers`, `group_into_regions`, the `write_*_json`/`export_stand_geometries` exports from `docs/superpowers/plans/2026-09-24-borowik-regions.md`) behind an `argparse` CLI, following the same real-I/O-with-injectable-boundaries shape every other `pipeline/*.py` module already uses. `notebooks/02_mvp.py` is left untouched (see Global Constraints) — this plan adds a new, separate entry point rather than risking the existing, already-manually-verified debug script and its `known_points.yaml` revalidation feature.
+**Architecture:** A new `pipeline/rdlp.py` module resolves which of the 17 BDL WFS wydzielenia layers covers a given (lat, lon) — the missing piece that made the location hardcoded in the first place — by point-in-polygon lookup against BDL's own `BDL:RDLP` boundary layer (verified live, see Global Constraints). A new `pipeline/prepare_trip.py` module wires that resolver together with the already-existing, already-tested pipeline (`run_poc`, `enrich_with_mvp_layers`, `group_into_regions`, the `write_*_json`/`export_stand_geometries` exports from `docs/archiwum/superpowers/plans/2026-09-24-borowik-regions.md`) behind an `argparse` CLI, following the same real-I/O-with-injectable-boundaries shape every other `pipeline/*.py` module already uses. `notebooks/02_mvp.py` is left untouched (see Global Constraints) — this plan adds a new, separate entry point rather than risking the existing, already-manually-verified debug script and its `known_points.yaml` revalidation feature.
 
 **Tech Stack:** Same as the rest of the repo — Python 3.12, `uv`, GeoPandas + Shapely 2 + pyproj, `requests`, `argparse` (standard library, no new dependency), pytest, `responses` for the network-touching `pipeline/rdlp.py` tests (matching `pipeline/bdl.py`/`pipeline/gdos.py`'s existing test style).
 
-**Spec:** `docs/projekt-borowik.md` §6 (implementation status — this plan closes the "brak parametryzacji" gap), §7.2 (architecture: "jedno polecenie na komputerze przed wyjazdem"), §13 priority 2.
+**Spec:** `docs/archiwum/projekt-borowik.md` §6 (implementation status — this plan closes the "brak parametryzacji" gap), §7.2 (architecture: "jedno polecenie na komputerze przed wyjazdem"), §13 priority 2.
 
 ## Global Constraints
 
@@ -419,13 +419,13 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument(
         "--date", type=str, default=None,
         help="Etykieta dnia w nazwach plikow wynikowych (YYYY-MM-DD), domyslnie dzisiaj. "
-             "Nie zmienia okna pogodowego (zawsze 'teraz' -- patrz docs/projekt-borowik.md).",
+             "Nie zmienia okna pogodowego (zawsze 'teraz' -- patrz docs/archiwum/projekt-borowik.md).",
     )
     parser.add_argument(
         "--radius-km", type=float, default=25.0,
         help=f"Deklarowany promien poszukiwan ({MIN_RADIUS_KM:.0f}-{MAX_RADIUS_KM:.0f} km). "
              "Obecnie tylko walidowany -- przetwarzany jest jeden kafel 10x10 km wokol punktu "
-             "(patrz docs/projekt-borowik.md sec.8.1).",
+             "(patrz docs/archiwum/projekt-borowik.md sec.8.1).",
     )
     parser.add_argument("--profile", type=str, default="profiles/boletus_edulis.yaml")
     parser.add_argument("--out-dir", type=str, default="notebooks/output")
@@ -595,7 +595,7 @@ def main(argv=None) -> int:
     if args.date is not None and args.date != today:
         print(
             f"Uwaga: prognoza pogody odzwierciedla dzisiejsze okno Open-Meteo, "
-            f"nie dokladnie dzien {args.date} -- patrz docs/projekt-borowik.md sec.7.2."
+            f"nie dokladnie dzien {args.date} -- patrz docs/archiwum/projekt-borowik.md sec.7.2."
         )
     try:
         summary = run_trip_preparation(
@@ -665,4 +665,4 @@ Three Minor findings deferred (not fixed): `stands_mvp.parquet`'s filename has n
 
 **Next up:**
 1. **RDLP-border multi-layer fetch** (the declined-in-this-fix-pass alternative above) — needs its own small plan: fetch every RDLP layer whose polygon intersects the tile bbox (not just the center-point layer), concatenate, decide how to handle any wydzielenia that appear in both fetches near the shared boundary, and extend the BDL tile cache key to include the layer set.
-2. `docs/projekt-borowik.md` §13 priority 3 (routing-based accessibility for the top-N candidates: confirmed vs. potential entrances, real road-network distance instead of euclidean×1.3) — needs its own plan, not started. Priority 4 (minimal frontend) depends on both this plan and priority 3's region/stand shape being stable.
+2. `docs/archiwum/projekt-borowik.md` §13 priority 3 (routing-based accessibility for the top-N candidates: confirmed vs. potential entrances, real road-network distance instead of euclidean×1.3) — needs its own plan, not started. Priority 4 (minimal frontend) depends on both this plan and priority 3's region/stand shape being stable.

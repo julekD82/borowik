@@ -22,7 +22,7 @@ PROFILE = load_profile("profiles/boletus_edulis.yaml")
 BDL_SITE_TYPES = [
     "BMŚW", "BŚW", "LMŚW", "BMW", "BW", "LMW", "LŚW", "BS",
     "LW", "BMB", "BB", "LMB", "OL", "OLJ", "LŁ",
-    # Uzupełnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): highland
+    # Uzupełnienie 2.1 (docs/archiwum/projekt-borowik.md §5.3, §0.1 audit): highland
     # (wyżynny) site types found in a real 25 km run, previously falling back
     # to unknown_site_score for ~2100 stands. BDL's real site_type spelling
     # for these (confirmed against the encyklopedialesna/Wikipedia habitat
@@ -35,13 +35,13 @@ BDL_SITE_TYPES = [
 BDL_SPECIES = [
     "SO", "ŚW", "BK", "DB", "DB.S", "DB.B", "JD", "BRZ", "GB", "MD",
     "DG", "LP", "OS", "TP", "OL", "JS", "KL", "WZ", "AK",
-    # Uzupełnienie 2.1 (docs/projekt-borowik.md §5.3, §0.1 audit): species
+    # Uzupełnienie 2.1 (docs/archiwum/projekt-borowik.md §5.3, §0.1 audit): species
     # codes found in a real 25 km run with no profile entry. CZM.P and JB
     # were not named in the plan's table (only its "inne pojedyncze"
     # catch-all); user decision 2026-09-24: mask both like OL/JS/KL/WZ/AK
     # (Prunus/Sorbus are AM, not EcM, genera).
     "SO.C", "SO.WE", "DB.C", "JW", "OL.S", "WB", "CZM.P", "JB",
-    # Uzupełnienie 2.1 step B2 (docs/bdl-paczki-rozpoznanie.md): species
+    # Uzupełnienie 2.1 step B2 (docs/archiwum/bdl-paczki-rozpoznanie.md): species
     # found in real BDL package DRZEW composition (Będziemyśl area) with no
     # profile entry, resolved via the package's own f_tree_species_dic
     # (name + Latin binomial) -- see profiles/boletus_edulis.yaml comments.

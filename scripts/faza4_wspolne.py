@@ -88,5 +88,5 @@ def score_with_grid(stands, layer, profile, *, temp_grid_km=None, target_date=No
 
 def open_meteo_weight(n_points, past_days, forecast_days, n_variables=6):
     """Koszt wywolania wg wzoru Open-Meteo: punkty x (dni/14) x (zmienne/10)
-    (docs/CODEX-HANDOFF.md). 5 zmiennych dziennych + 1 godzinowa (gleba)."""
+    (docs/archiwum/CODEX-HANDOFF.md). 5 zmiennych dziennych + 1 godzinowa (gleba)."""
     return n_points * ((past_days + forecast_days) / 14.0) * (n_variables / 10.0)

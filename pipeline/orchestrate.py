@@ -55,7 +55,7 @@ def _nearest_climatology_cell(grid_points, climatology_grid_points, crs) -> dict
     expensive per point than a live weather call (Open-Meteo's own
     weighting formula scales with days-range/14 x variables/10, so a
     30-year pull already weighs ~235 "calls" per point -- see
-    docs/CODEX-HANDOFF.md for the derivation) but varies smoothly over a
+    docs/archiwum/CODEX-HANDOFF.md for the derivation) but varies smoothly over a
     few km, so it's fetched on a coarser grid than weather and several
     weather cells share one climatology cell."""
     weather_gdf = _points_gdf(grid_points, crs)

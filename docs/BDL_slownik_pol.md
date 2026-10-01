@@ -68,7 +68,7 @@ wnioskowania o wykonaniu ani o dokładnej dacie** — zgodnie z wymogiem planu
 ## Nie sprawdzone / do dalszej oceny
 
 - Czy wypełnienie w tych 9 nadleśnictwach (RDLP Katowice) jest reprezentatywne
-  dla innych RDLP — jedna próbka regionalna, jak w B1 (`docs/bdl-paczki-rozpoznanie.md`).
+  dla innych RDLP — jedna próbka regionalna, jak w B1 (`docs/archiwum/bdl-paczki-rozpoznanie.md`).
 - Znaczenie dokładne kodów `degradation_cd` i `stand_struct_cd` (`KO`, `KDO`)
   — wymaga dokumentu `OpisDanych.pdf` BDL lub kontaktu z operatorem, poza
   zakresem tej sesji.

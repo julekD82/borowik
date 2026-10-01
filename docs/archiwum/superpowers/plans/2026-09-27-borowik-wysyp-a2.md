@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (numpy, pandas, pyproj, scipy for the notebook), pytest; TypeScript/Vite frontend (`model.ts`, `main.ts`, `style.css`, Vitest); Node `scripts/sync-data.mjs`; `launcher/trip_archive.py`.
 
-**Spec:** This plan's "Decyzje projektowe" section. Derived in the 2026-09-27 session: user chose (1) separate indicator, R unchanged until GBIF shows the flush model beats F; (2) one area-wide timeline in the „Warunki” bar; (3) 7-day horizon; then approved the model design below. Context: `docs/CODEX-HANDOFF.md` notes (23), (25), (26).
+**Spec:** This plan's "Decyzje projektowe" section. Derived in the 2026-09-27 session: user chose (1) separate indicator, R unchanged until GBIF shows the flush model beats F; (2) one area-wide timeline in the „Warunki” bar; (3) 7-day horizon; then approved the model design below. Context: `docs/archiwum/CODEX-HANDOFF.md` notes (23), (25), (26).
 
 ## Decyzje projektowe (spec)
 
@@ -49,7 +49,7 @@ E1 (area-level only, median over radius) and E4 (timeline always starts today) a
 - `conditions_{day}.json` / `conditions.json` is optional everywhere (sync, frontend, saved trips), same pattern as `regions`/`details`: missing = old „Warunki” text, malformed = loud error.
 - No personal data in the repo (station coordinates stay in `cache/stations/`).
 - User-facing text in Polish; Python prints ASCII-only Polish like the rest of `prepare_trip.py`; JSON/UI strings may use Polish diacritics.
-- Final task: full pytest + frontend test/tsc/build, new top note in `docs/CODEX-HANDOFF.md`.
+- Final task: full pytest + frontend test/tsc/build, new top note in `docs/archiwum/CODEX-HANDOFF.md`.
 
 ## Review Focus
 
@@ -72,7 +72,7 @@ E1 (area-level only, median over radius) and E4 (timeline always starts today) a
 
 ## Task 1: `pipeline/flush.py` core — pulses, thermal clock, intensity
 
-**Status: complete, committed (`84d495d`).** Kept verbatim below for the historical record; do not re-run. `pipeline/flush.py` is now a **frozen experiment** per the Plan-B decision above — Tasks 4+ reuse only its pure pulse-detection/date-formatting exports, never its thermal-clock/Gaussian exports.
+**Status: complete, committed (`bcc1324`).** Kept verbatim below for the historical record; do not re-run. `pipeline/flush.py` is now a **frozen experiment** per the Plan-B decision above — Tasks 4+ reuse only its pure pulse-detection/date-formatting exports, never its thermal-clock/Gaussian exports.
 
 **Files:**
 - Create: `pipeline/flush.py`
@@ -82,13 +82,13 @@ E1 (area-level only, median over radius) and E4 (timeline always starts today) a
 **Interfaces:**
 - Produces: `FlushParams` (frozen dataclass: `wet_day_mm, pulse_min_mm, t_base_c, cold_night_c, cold_night_factor, frost_c, dd_peak, dd_sigma`), `flush_params(profile, rain_scale=1.0) -> FlushParams`, `Pulse` (frozen: `start:int, end:int, rain_mm:float, strength:float`), `detect_pulses(precip, params) -> list[Pulse]`, `degree_days_after(end, tmean, tmin, params) -> np.ndarray` (NaN ≤ end, +inf from first frost day), `wave_intensity(dd, strength, params) -> np.ndarray`, `flush_series(precip, tmean, tmin, params) -> tuple[np.ndarray, list[Pulse], list[np.ndarray]]`.
 
-- [x] **Step 1-5:** written, run RED then GREEN (8 passed), committed. See `git show 84d495d` for the exact diff (identical to the code this plan originally specified).
+- [x] **Step 1-5:** written, run RED then GREEN (8 passed), committed. See `git show bcc1324` for the exact diff (identical to the code this plan originally specified).
 
 ---
 
 ## Task 2: Phases, peak window, area timeline
 
-**Status: complete, committed (`4377beb`).** Kept verbatim below for the historical record; do not re-run. Same frozen-experiment note as Task 1 — `wave_phase`/`peak_window`/`timeline_summary`/`build_area_timeline`/`PHASE_LABELS` are NOT reused by Tasks 4+; only `area_daily_weather`/`fmt_day_range` (also defined here) are.
+**Status: complete, committed (`95d7352`).** Kept verbatim below for the historical record; do not re-run. Same frozen-experiment note as Task 1 — `wave_phase`/`peak_window`/`timeline_summary`/`build_area_timeline`/`PHASE_LABELS` are NOT reused by Tasks 4+; only `area_daily_weather`/`fmt_day_range` (also defined here) are.
 
 **Files:**
 - Modify: `pipeline/flush.py` (append)
@@ -98,7 +98,7 @@ E1 (area-level only, median over radius) and E4 (timeline always starts today) a
 - Consumes: Task 1.
 - Produces: `PHASE_LABELS: dict[str, str]`, `wave_phase(dd_today: float, params) -> str`, `peak_window(dd, dates: list[date], params) -> tuple[date, date] | None`, `fmt_day_range(a: date, b: date) -> str`, `area_daily_weather(daily: pd.DataFrame, points) -> pd.DataFrame` (index = local `date`, columns `precipitation_mm, tmean_c, tmin_c`), `timeline_summary(waves: list[dict], pulse_min_mm: float) -> str`, `build_area_timeline(area: pd.DataFrame, today: date, profile: dict, rain_scale: float = 1.0) -> dict` with keys `generated_for, horizon_days, pulse_min_mm, waves, days, summary` (raises `ValueError` when `today` is not in `area.index`).
 
-- [x] **Step 1-5:** written, run RED then GREEN (24 passed), committed. See `git show 4377beb` for the exact diff (identical to the code this plan originally specified).
+- [x] **Step 1-5:** written, run RED then GREEN (24 passed), committed. See `git show 95d7352` for the exact diff (identical to the code this plan originally specified).
 
 ---
 
@@ -312,7 +312,7 @@ def classify_fruiting_level(f: float, profile: dict) -> int:
 
 ```yaml
 flush:
-  # Plan 2026-09-27 A2 (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # Plan 2026-09-27 A2 (docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
   # flush-timing model, pipeline/flush.py. NEVER feeds R.
   # SHIP GATE FAILED 2026-09-27 (Task 3: LOYO held-out mean 0.548 <
   # baseline F_loc bez G_season 0.626; notebooks 08/09 traced the earlier
@@ -334,7 +334,7 @@ flush:
   level_thresholds: [0.1, 0.3, 0.6]
 
 conditions:
-  # Plan 2026-09-27 A2 "Plan-B" (docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
+  # Plan 2026-09-27 A2 "Plan-B" (docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md):
   # pipeline/conditions_timeline.py. Real F per horizon day (already
   # validated in the GBIF backtest, 0.626) + a fact-only rain summary,
   # reusing only flush.py's pulse DETECTION (not its thermal clock/peak
@@ -351,7 +351,7 @@ conditions:
 
 ```python
 """A2 Plan-B: fact-only conditions timeline -- plan 2026-09-27
-(docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md, "Decyzja
+(docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md, "Decyzja
 2026-09-27: Plan-B" section).
 
 Reuses only pipeline.flush's pulse DETECTION (never its thermal-clock/
@@ -866,7 +866,7 @@ git commit -m "feat: conditions timeline in the conditions bar (plan A2 task 7, 
 ## Task 8: Real run, visual check, docs, final verification
 
 **Files:**
-- Modify: `docs/CODEX-HANDOFF.md`, `frontend/README.md`
+- Modify: `docs/archiwum/CODEX-HANDOFF.md`, `frontend/README.md`
 
 - [ ] **Step 1: Real run + sync**
 
@@ -884,7 +884,7 @@ Expected: a `Warunki: ...` line, `notebooks/output/conditions_{today}.json` writ
 - [ ] **Step 3: Docs**
 
 `frontend/README.md`: one paragraph "Warunki na kolejne dni" — what the tiles mean (poziom 0–3 = klasa F z `fruiting_classes`, nie model fazy wysypu), that the first day is today, later days use the temperature/rain forecast, that the sentence only reports facts about the last rain(s) (no peak prediction), and that `conditions.json` is optional.
-`docs/CODEX-HANDOFF.md`: new top note "(27): A2 -- flush model failed its GBIF ship gate; Plan-B shipped instead" -- the original model (pulse -> thermal clock -> Gaussian), the E3 gate numbers, the two diagnostics and why the apparent signal was a season confound, what Plan-B ships (per-day F + fact-only rain summary), real-run summary/sentence, test counts, open items (per-region timelines -- E1; a possible revisit of the pulse model with a moisture-state precondition, if ever revisited; B pressure from forest tracks still pending).
+`docs/archiwum/CODEX-HANDOFF.md`: new top note "(27): A2 -- flush model failed its GBIF ship gate; Plan-B shipped instead" -- the original model (pulse -> thermal clock -> Gaussian), the E3 gate numbers, the two diagnostics and why the apparent signal was a season confound, what Plan-B ships (per-day F + fact-only rain summary), real-run summary/sentence, test counts, open items (per-region timelines -- E1; a possible revisit of the pulse model with a moisture-state precondition, if ever revisited; B pressure from forest tracks still pending).
 
 - [ ] **Step 4: Final verification**
 
@@ -899,6 +899,6 @@ Expected: all green; put exact counts in the handoff note.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/CODEX-HANDOFF.md frontend/README.md
+git add docs/archiwum/CODEX-HANDOFF.md frontend/README.md
 git commit -m "docs: record A2 Plan-B (flush model failed gate, per-day F + fact rain summary shipped instead)"
 ```

@@ -13,7 +13,7 @@ _NUMERIC_PART_CD = re.compile(r"^\d+$")
 @dataclass(frozen=True)
 class PackageStandDetails:
     """Card-display-only detail for one wydzielenie, from a BDL data package
-    (plan 2.1 step B3, docs/bdl-paczki-rozpoznanie.md). Deliberately
+    (plan 2.1 step B3, docs/archiwum/bdl-paczki-rozpoznanie.md). Deliberately
     separate from pipeline.bdl_packages.PackageComposition (the S_host/H
     scoring path, B2) -- this module is never imported by
     pipeline.orchestrate/habitat/scoring/mvp, which is the structural

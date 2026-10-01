@@ -1,10 +1,10 @@
 # Stan wdrożenia — 2026-09-24
 
-> **Dokument historyczny.** Opisuje interfejs sprzed 2026-10 (Vite + TypeScript bez frameworka: `main.ts`, `map.ts`, `model.ts`), zastąpiony nowym frontendem w Preact. Aktualny projekt: `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`; stan i lista kontrolna: `docs/RAPORT_NOWY_FRONTEND.md`.
+> **Dokument historyczny.** Opisuje interfejs sprzed 2026-10 (Vite + TypeScript bez frameworka: `main.ts`, `map.ts`, `model.ts`), zastąpiony nowym frontendem w Preact. Aktualny projekt: `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`; stan i lista kontrolna: `docs/archiwum/RAPORT_NOWY_FRONTEND.md`.
 
-> **Decyzja użytkownika (2026-09-24): grupowanie wyłączone.** Ranking i mapa działają na pojedynczych wydzieleniach, bez `regions.json` i łączenia geometrii. Opisy rejonów poniżej dokumentują poprzedni etap. Szczegóły: `docs/CODEX-HANDOFF.md` w katalogu projektu.
+> **Decyzja użytkownika (2026-09-24): grupowanie wyłączone.** Ranking i mapa działają na pojedynczych wydzieleniach, bez `regions.json` i łączenia geometrii. Opisy rejonów poniżej dokumentują poprzedni etap. Szczegóły: `docs/archiwum/CODEX-HANDOFF.md` w katalogu projektu.
 
-Podstawa: `docs/superpowers/specs/2026-09-24-borowik-frontend-design.md`, główna dokumentacja wersji 2.0 i kontrakty rzeczywistego eksportu w gałęzi `worktree-borowik-faza2-mvp-backend`.
+Podstawa: `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md`, główna dokumentacja wersji 2.0 i kontrakty rzeczywistego eksportu w gałęzi `worktree-borowik-faza2-mvp-backend`.
 
 - [x] Vite + TypeScript, statyczny frontend bez frameworka.
 - [x] GeoJSON EPSG:4326 obok GeoParquet, automatyczne wywołanie w `prepare_trip`.

@@ -2,7 +2,7 @@
 
 Dokument do analizy i planowania ulepszeń przez AI
 
-Stan przeglądu: 27 września 2026 roku. Wersja kodu: `a777fdaf9c072c73ac1e498d86f931650e075aaa`. Katalog projektu: `C:/Users/julia/Documents/Grzyby`. Autor opracowania: Codex na podstawie lokalnego kodu, konfiguracji, dokumentacji rozwoju i zapisanych wyników.
+Stan przeglądu: 27 września 2026 roku. Wersja kodu: `111ce2e9e4df5bf6453723a5a45e2d4243744f42`. Katalog projektu: `C:/Users/julia/Documents/Grzyby`. Autor opracowania: Codex na podstawie lokalnego kodu, konfiguracji, dokumentacji rozwoju i zapisanych wyników.
 
 ## 1 Najważniejsze ustalenia
 
@@ -750,13 +750,13 @@ Poniższe lokalizacje wskazują główne źródła ustaleń. Nazwa funkcji jest 
 - **S13** `notebooks/03_backtest_gbif.py` — filtr próby, siatki, konstrukcja rang i raport statystyczny.
 - **S14** `pipeline/flush.py`, `notebooks/06_backtest_flush.py`, `notebooks/08_flush_pulse_timing_diagnostic.py`, `notebooks/09_flush_pulse_timing_season_controlled.py` — eksperyment i diagnostyki.
 - **S15** `notebooks/04_radar_vs_stations.py`, `notebooks/05_radar_era5_bias.py` — protokoły porównań opadów; wartości historyczne także w S16.
-- **S16** `docs/CODEX-HANDOFF.md` — szczególnie notatki (27), (26), (25), (23), (22), (20), (19), (15), (14) i (13). Historia wyników i decyzji, nie jednolita aktualna specyfikacja.
+- **S16** `docs/archiwum/CODEX-HANDOFF.md` — szczególnie notatki (27), (26), (25), (23), (22), (20), (19), (15), (14) i (13). Historia wyników i decyzji, nie jednolita aktualna specyfikacja.
 - **S17** `notebooks/output/backtest_gbif_results.csv`, `scores_2026-09-27.json`, `regions_2026-09-27.json`, `conditions_2026-09-27.json` — lokalne artefakty wyników. Trzy nazwy JSON odnoszą się do tego samego katalogu `notebooks/output/`.
 - **S18** `pipeline/export.py`, `frontend/src/model.ts`, `frontend/src/main.ts`, `frontend/src/map.ts`, `frontend/src/storage.ts`, `frontend/scripts/sync-data.mjs` — kontrakty danych i prezentacja.
 - **S19** `launcher/launcher.pyw`, `launcher/trip_archive.py`, `frontend/package.json`, `pyproject.toml` — uruchomienie, migawki i stos technologiczny.
-- **S20** `docs/projekt-borowik.md` — uzasadnienia zakresu, zwłaszcza sekcje 0.1, 5, 11, 13–16; zawiera również opisy już zastąpione.
+- **S20** `docs/archiwum/projekt-borowik.md` — uzasadnienia zakresu, zwłaszcza sekcje 0.1, 5, 11, 13–16; zawiera również opisy już zastąpione.
 - **S21** `tests/`, `frontend/src/model.test.ts`, `frontend/scripts/sync-data.test.mjs` — testy techniczne; wynik ich uruchomienia opisano w rozdziale 17.
-- **S22** `docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md`, `2026-09-26-borowik-radar-opady-a1.md`, `2026-09-25-borowik-fenologia-wilgotnosc-tiebreak.md`, `docs/bdl-paczki-rozpoznanie.md` — plany, bramki i rozpoznanie źródeł. Dwie skrócone nazwy datowane odnoszą się do tego samego katalogu `docs/superpowers/plans/`.
+- **S22** `docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md`, `2026-09-26-borowik-radar-opady-a1.md`, `2026-09-25-borowik-fenologia-wilgotnosc-tiebreak.md`, `docs/archiwum/bdl-paczki-rozpoznanie.md` — plany, bramki i rozpoznanie źródeł. Dwie skrócone nazwy datowane odnoszą się do tego samego katalogu `docs/archiwum/superpowers/plans/`.
 
 ### 20.1 Niespójności dokumentacji które trzeba pamiętać
 

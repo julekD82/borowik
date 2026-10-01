@@ -1,6 +1,6 @@
 # Raport — Faza UI (czytelny interfejs i przełącznik presji)
 
-Gałąź `ulepszenia-ui` (z `master`), 29.09.2026. Plan: `docs/PLAN_WDROZENIA.md`, sekcja „Faza UI”.
+Gałąź `ulepszenia-ui` (z `master`), 29.09.2026. Plan: `docs/archiwum/PLAN_WDROZENIA.md`, sekcja „Faza UI”.
 Model, wagi, α, progi klas i profil **bez zmian**. Nie pushowano, nie scalano, nie usuwano cache ani danych.
 
 ## Status zadań
@@ -103,7 +103,7 @@ Sprawdzone też skryptem w przeglądarce: w karcie wydzielenia, karcie rejonu i 
 - Backend: `python -m pytest` → **794 passed** (było 778; +16 w `tests/test_ui_presja.py`; poprawiony jeden test kształtu karty dostępu o nowy klucz `pressure_contrib`).
 - Frontend: `npx vitest run` → **123 passed** (było 98; +23 `ui.test.ts`, +2 w `sync-data.test.mjs`); `npx tsc --noEmit` czysto; `vite build` OK.
 
-## Zrzuty ekranu (`docs/ui-zrzuty/`)
+## Zrzuty ekranu (`docs/archiwum/ui-zrzuty/`)
 
 Przed: `przed-pulpit-gora.jpg`, `przed-pulpit-rejon.jpg`, `przed-pulpit-wydzielenia.jpg`, `przed-telefon-gora.jpg`, `przed-telefon-lista.jpg`.
 Po: `po-pulpit-gora.jpg`, `po-pulpit-rejon-z-presja.jpg`, `po-pulpit-rejon-bez-presji.jpg`, `po-pulpit-pasek-spokoj-rozwiniety.jpg`, `po-pulpit-wydzielenie-szczegoly.jpg`, `po-pulpit-szczegoly-wynik.png`, `po-pulpit-stara-migawka-przelacznik-nieaktywny.jpg`, `po-telefon-gora.jpg`, `po-telefon-karta-rejonu.jpg`, `po-telefon-mapa.jpg`.

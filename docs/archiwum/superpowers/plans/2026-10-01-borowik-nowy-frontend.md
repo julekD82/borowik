@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3 (pandas, numpy, pytest), E-OBS lokalnie (`pipeline/eobs.py`); Vite 7, TypeScript 5, Preact 10, @preact/signals, MapLibre GL 5, Vitest 3, @testing-library/preact, jsdom.
 
-**Spec:** `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md` (czytaj razem z tym planem).
+**Spec:** `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md` (czytaj razem z tym planem).
 
 ## Global Constraints
 
@@ -4822,7 +4822,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `frontend/index.html`
 - Delete: `frontend/nowy.html`
-- Create: `docs/RAPORT_NOWY_FRONTEND.md`, zrzuty `docs/ui-zrzuty/nowy-*.png`
+- Create: `docs/archiwum/RAPORT_NOWY_FRONTEND.md`, zrzuty `docs/archiwum/ui-zrzuty/nowy-*.png`
 
 - [ ] **Step 1: Wejście**
 
@@ -4876,16 +4876,16 @@ Expected: ok. 42 wiersze `daily`; `rain26` z `normal_mm` (jeśli jest `cache/eob
 
 Dodatkowo: otwórz jedną starą migawkę (np. z 29.09) — panel pogody w trybie zgodności, bez błędów w konsoli (`read_console_messages`).
 
-Zrzuty ekranu (zapisz do `docs/ui-zrzuty/`): `nowy-pulpit-rejony.png`, `nowy-pulpit-karta-wydzielenia.png`, `nowy-pulpit-pogoda-rozwinieta.png`, `nowy-pulpit-wilgotnosc.png`, `nowy-telefon-lista.png`, `nowy-telefon-mapa.png`. Widok telefonu: spróbuj `resize_window` do 390×844; jeśli zrzut nie odzwierciedla zmiany szerokości (znane ograniczenie narzędzia), utwórz tymczasowo `frontend/public/_telefon.html` z `<iframe src="/" width="390" height="844" style="border:0">`, otwórz `http://127.0.0.1:5173/_telefon.html`, zrób zrzuty i usuń plik.
+Zrzuty ekranu (zapisz do `docs/archiwum/ui-zrzuty/`): `nowy-pulpit-rejony.png`, `nowy-pulpit-karta-wydzielenia.png`, `nowy-pulpit-pogoda-rozwinieta.png`, `nowy-pulpit-wilgotnosc.png`, `nowy-telefon-lista.png`, `nowy-telefon-mapa.png`. Widok telefonu: spróbuj `resize_window` do 390×844; jeśli zrzut nie odzwierciedla zmiany szerokości (znane ograniczenie narzędzia), utwórz tymczasowo `frontend/public/_telefon.html` z `<iframe src="/" width="390" height="844" style="border:0">`, otwórz `http://127.0.0.1:5173/_telefon.html`, zrób zrzuty i usuń plik.
 
 - [ ] **Step 4: Raport**
 
-Utwórz `docs/RAPORT_NOWY_FRONTEND.md`: co zmieniono (odwołanie do specu i planu), wypełniona lista kontrolna z Step 3, nowe pola eksportu, liczby testów (pytest, vitest), lista zrzutów, ograniczenia (model bez zmian, mapa wilgotności z wagami K0, widok telefonu sprawdzony w iframe/oknie, pytanie o baner WFS), decyzje doprecyzowane w trakcie (klik na mapie zastępuje kartę wydzielenia na wierzchu stosu; przełączenie presji zamyka kartę rejonu, bo oba warianty rejonów mają te same identyfikatory).
+Utwórz `docs/archiwum/RAPORT_NOWY_FRONTEND.md`: co zmieniono (odwołanie do specu i planu), wypełniona lista kontrolna z Step 3, nowe pola eksportu, liczby testów (pytest, vitest), lista zrzutów, ograniczenia (model bez zmian, mapa wilgotności z wagami K0, widok telefonu sprawdzony w iframe/oknie, pytanie o baner WFS), decyzje doprecyzowane w trakcie (klik na mapie zastępuje kartę wydzielenia na wierzchu stosu; przełączenie presji zamyka kartę rejonu, bo oba warianty rejonów mają te same identyfikatory).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/index.html docs/RAPORT_NOWY_FRONTEND.md docs/ui-zrzuty/nowy-*.png
+git add frontend/index.html docs/archiwum/RAPORT_NOWY_FRONTEND.md docs/archiwum/ui-zrzuty/nowy-*.png
 git rm frontend/nowy.html
 git commit -m "Nowy frontend: przelaczenie wejscia, sprawdzenie w przegladarce, raport z lista kontrolna
 
@@ -4899,7 +4899,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Delete: `frontend/src/main.ts`, `frontend/src/map.ts`, `frontend/src/storage.ts`, `frontend/src/style.css`, `frontend/src/model.ts`
 - Move + Modify: `frontend/src/model.test.ts` → `frontend/src/domain/domain.test.ts`, `frontend/src/ui.test.ts` → `frontend/src/domain/ui-logic.test.ts`
-- Modify: `docs/CODEX-HANDOFF.md`, `CLAUDE.md`, `frontend/IMPLEMENTATION.md`; `frontend/README.md` tylko za zgodą właściciela
+- Modify: `docs/archiwum/CODEX-HANDOFF.md`, `CLAUDE.md`, `docs/archiwum/frontend-IMPLEMENTATION.md`; `frontend/README.md` tylko za zgodą właściciela
 
 - [ ] **Step 1: Usuń stary kod i przenieś testy**
 
@@ -4929,15 +4929,15 @@ Run: `npx vitest run` → PASS; `npx tsc --noEmit` → bez błędów; `npm run b
 
 - [ ] **Step 5: Dokumentacja**
 
-1. `docs/CODEX-HANDOFF.md`: nowa notatka na górze, z datą dnia wykonania, tytuł „aktualne (37): nowy frontend (Preact); gałąź `nowy-frontend`” — co powstało (moduły `src/data`, `src/domain`, `src/state`, `src/map`, `src/components`), nowe pola eksportu, decyzje doprecyzowane w trakcie, liczby testów, otwarte kwestie (baner WFS, K1 po sezonie, widok telefonu).
-2. `CLAUDE.md`: w linii „Specyfikacja frontendu: …” zamień ścieżkę na `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md` i dopisz „(poprzednia: `docs/superpowers/specs/2026-09-24-borowik-frontend-design.md`)”.
-3. `frontend/IMPLEMENTATION.md`: na górze dopisz akapit, że opisuje interfejs sprzed 2026-10 (zastąpiony), z odwołaniem do nowego specu i `docs/RAPORT_NOWY_FRONTEND.md`.
+1. `docs/archiwum/CODEX-HANDOFF.md`: nowa notatka na górze, z datą dnia wykonania, tytuł „aktualne (37): nowy frontend (Preact); gałąź `nowy-frontend`” — co powstało (moduły `src/data`, `src/domain`, `src/state`, `src/map`, `src/components`), nowe pola eksportu, decyzje doprecyzowane w trakcie, liczby testów, otwarte kwestie (baner WFS, K1 po sezonie, widok telefonu).
+2. `CLAUDE.md`: w linii „Specyfikacja frontendu: …” zamień ścieżkę na `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md` i dopisz „(poprzednia: `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md`)”.
+3. `docs/archiwum/frontend-IMPLEMENTATION.md`: na górze dopisz akapit, że opisuje interfejs sprzed 2026-10 (zastąpiony), z odwołaniem do nowego specu i `docs/archiwum/RAPORT_NOWY_FRONTEND.md`.
 4. `frontend/README.md` ma niezacommitowane zmiany właściciela — zaproponuj właścicielowi krótki akapit o nowym interfejsie i edytuj dopiero po zgodzie.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/src/domain/domain.test.ts frontend/src/domain/ui-logic.test.ts docs/CODEX-HANDOFF.md CLAUDE.md frontend/IMPLEMENTATION.md
+git add frontend/src/domain/domain.test.ts frontend/src/domain/ui-logic.test.ts docs/archiwum/CODEX-HANDOFF.md CLAUDE.md docs/archiwum/frontend-IMPLEMENTATION.md
 git commit -m "Nowy frontend: usuniety stary interfejs, testy przeniesione do src/domain, dokumentacja
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"

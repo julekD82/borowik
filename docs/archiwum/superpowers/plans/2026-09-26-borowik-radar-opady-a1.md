@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (numpy, pandas, pyproj, requests, stdlib `tarfile`/`zoneinfo`), pytest; TypeScript frontend (`frontend/src/model.ts`, `main.ts`, Vitest) only for one optional field + attribution.
 
-**Spec:** This plan's own "Decyzje projektowe" section is the spec. It was derived in the 2026-09-26 session (user decisions: flush model = phase today + day ratings (A2, later); rain source = radar primary, Open-Meteo gap-fill + forecast; order A1 then A2) and from a throwaway spike comparing 4 Weathercloud stations vs RainGRS vs Open-Meteo (results in `docs/CODEX-HANDOFF.md` note (23), station data in `cache/stations/weathercloud_2026-09.yaml`, gitignored).
+**Spec:** This plan's own "Decyzje projektowe" section is the spec. It was derived in the 2026-09-26 session (user decisions: flush model = phase today + day ratings (A2, later); rain source = radar primary, Open-Meteo gap-fill + forecast; order A1 then A2) and from a throwaway spike comparing 4 Weathercloud stations vs RainGRS vs Open-Meteo (results in `docs/archiwum/CODEX-HANDOFF.md` note (23), station data in `cache/stations/weathercloud_2026-09.yaml`, gitignored).
 
 ## Decyzje projektowe (spec)
 
@@ -42,7 +42,7 @@ Decisions (D1–D4 need a quick user confirmation in Task 0; D5–D9 are impleme
 - No personal data in the repo: Weathercloud station coordinates stay in `cache/stations/weathercloud_2026-09.yaml`; docs refer to stations only as S1–S4 with a rough area ("ok. 3–4 km od rejonu 1").
 - IMGW attribution text wherever sources are listed: "Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy" + a note that the data were processed.
 - User-facing strings (prints, reasons, UI) in Polish; prints in ASCII-only Polish like the rest of `prepare_trip.py` (e.g. "niedostepny", "dob").
-- Final task: full pytest, `npm test`, `npx tsc --noEmit`, `npx vite build` in `frontend/`, and a new note at the top of `docs/CODEX-HANDOFF.md`.
+- Final task: full pytest, `npm test`, `npx tsc --noEmit`, `npx vite build` in `frontend/`, and a new note at the top of `docs/archiwum/CODEX-HANDOFF.md`.
 
 ## Review Focus
 
@@ -178,10 +178,10 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'pipeline.radar'`.
 # pipeline/radar.py
 """IMGW-PIB RainGRS: hourly precipitation from weather radar merged with
 rain gauges, 1 km grid over Poland, ESRI ASCII. Plan 2026-09-26 A1
-(docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md).
+(docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md).
 
 Why this exists: a 2026-09-26 comparison against 4 independent Weathercloud
-stations near Bedziemysl (docs/CODEX-HANDOFF.md note (23)) gave RainGRS a
+stations near Bedziemysl (docs/archiwum/CODEX-HANDOFF.md note (23)) gave RainGRS a
 1.5-4x lower daily MAE than Open-Meteo; Open-Meteo missed convective days
 (29.08, 31.08, 03.09) and invented rain on others (03.09, 05.09, 15.09).
 
@@ -1119,7 +1119,7 @@ Expected: FAIL — `KeyError: 'pogoda_radar_1km'`, `AssertionError` on SCORE_FIE
 
 ```yaml
 radar:
-  # Plan 2026-09-26 A1 (docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
+  # Plan 2026-09-26 A1 (docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md):
   # IMGW-PIB RainGRS replaces Open-Meteo precipitation for local days in the
   # last window_days days; Open-Meteo fills missing hours and the forecast.
   enabled: true
@@ -1427,7 +1427,7 @@ git commit -m "chore: radar validation notebooks (stations, ERA5 bias) (plan A1 
 ## Task 8: Real run Będziemyśl, before/after, docs, final verification
 
 **Files:**
-- Modify: `docs/CODEX-HANDOFF.md` (new top note (24)), `docs/projekt-borowik.md` (radar sections)
+- Modify: `docs/archiwum/CODEX-HANDOFF.md` (new top note (24)), `docs/archiwum/projekt-borowik.md` (radar sections)
 
 - [ ] **Step 1: Before/after runs**
 
@@ -1442,9 +1442,9 @@ Expected: both complete; the radar run prints `Radar IMGW (RainGRS): ...` and `O
 
 - [ ] **Step 3: Docs**
 
-`docs/projekt-borowik.md`: in the data-sources table row for "IMGW radar" (currently "tylko najnowszy plik ... Poza obecnym zakresem — wymaga pollera"), and the two bullets that say radar needs a permanently running poller (search for "pollera"), replace with: public RainGRS archive (daily tar, 2018→, lag ~2–3 days) + last ~30 h hourly files → no poller needed; integrated in plan A1 (2026-09-26) as the primary source of past precipitation; 4-station comparison summary (MAE radar 0.28–0.91 vs Open-Meteo 1.04–1.65 mm/d, 13–23.09.2026). In §10 data quality, add "0,9 opady z radaru IMGW 1 km (A1)" next to "0,8 NWP ~2 km".
+`docs/archiwum/projekt-borowik.md`: in the data-sources table row for "IMGW radar" (currently "tylko najnowszy plik ... Poza obecnym zakresem — wymaga pollera"), and the two bullets that say radar needs a permanently running poller (search for "pollera"), replace with: public RainGRS archive (daily tar, 2018→, lag ~2–3 days) + last ~30 h hourly files → no poller needed; integrated in plan A1 (2026-09-26) as the primary source of past precipitation; 4-station comparison summary (MAE radar 0.28–0.91 vs Open-Meteo 1.04–1.65 mm/d, 13–23.09.2026). In §10 data quality, add "0,9 opady z radaru IMGW 1 km (A1)" next to "0,8 NWP ~2 km".
 
-`docs/CODEX-HANDOFF.md`: new top note "## 2026-09-2x — aktualne (24): A1 — opady z radaru IMGW RainGRS" — what was built (modules, profile keys, CLI flag), Task 0 CRS/timestamp findings, Task 7 tables (stations + ERA5 ratio), Task 8 before/after table, test counts, open issues (soil moisture still from Open-Meteo — A2; per-stand radar sampling not done; next step A2 flush model, B pressure from cyclists/foot traffic on forest tracks).
+`docs/archiwum/CODEX-HANDOFF.md`: new top note "## 2026-09-2x — aktualne (24): A1 — opady z radaru IMGW RainGRS" — what was built (modules, profile keys, CLI flag), Task 0 CRS/timestamp findings, Task 7 tables (stations + ERA5 ratio), Task 8 before/after table, test counts, open issues (soil moisture still from Open-Meteo — A2; per-stand radar sampling not done; next step A2 flush model, B pressure from cyclists/foot traffic on forest tracks).
 
 - [ ] **Step 4: Final verification**
 
@@ -1459,6 +1459,6 @@ Expected: all green; report exact pass counts in the handoff note.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/CODEX-HANDOFF.md docs/projekt-borowik.md
+git add docs/archiwum/CODEX-HANDOFF.md docs/archiwum/projekt-borowik.md
 git commit -m "docs: record A1 radar precipitation integration and validation"
 ```

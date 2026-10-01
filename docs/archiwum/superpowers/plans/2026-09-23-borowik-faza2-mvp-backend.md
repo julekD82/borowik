@@ -8,7 +8,7 @@
 
 **Tech Stack:** Same as Faza 1 (Python 3.12, `uv`, GeoPandas + Shapely 2 + pyogrio + pyproj, `requests`, PyYAML, pytest, `responses`). No new dependencies — the GDOŚ fetch reuses `pipeline.bdl.fetch_bdl`'s generic WFS 2.0.0 GeoServer pagination, the BDL periodic-ban check and OSM Overpass fetch are plain `requests` JSON calls like `pipeline.weather`'s Open-Meteo boundary.
 
-**Spec:** `docs/projekt-borowik.md` (sections referenced below use its own `§` numbering).
+**Spec:** `docs/archiwum/projekt-borowik.md` (sections referenced below use its own `§` numbering).
 
 ## Global Constraints
 

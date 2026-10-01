@@ -73,7 +73,7 @@ def fetch_cached_gdos(tiles, cache_dir, fetcher):
     `failed` list so the caller can surface a loud, explicit warning:
     this is an optimistic fallback (a stand in a reserve the tile
     couldn't reach stays unmarked), a real tradeoff the caller must not
-    hide, not a silent one. See docs/CODEX-HANDOFF.md."""
+    hide, not a silent one. See docs/archiwum/CODEX-HANDOFF.md."""
     frames = []
     failed = []
     for index, bbox in enumerate(tiles, 1):
@@ -100,7 +100,7 @@ def fetch_cached_gdos(tiles, cache_dir, fetcher):
 def fetch_cached_osm(tiles, cache_dir, profile, fetcher):
     """Per-tile OSM cache. Overpass is the flakiest source this pipeline
     talks to (rate limits and 504s under load even with retry/backoff --
-    see docs/CODEX-HANDOFF.md) and every tile is one HTTP round trip, so
+    see docs/archiwum/CODEX-HANDOFF.md) and every tile is one HTTP round trip, so
     caching here also means a retried CLI invocation resumes past whatever
     tile failed last time instead of re-hitting Overpass for tiles that
     already succeeded. Keyed by tile plus a hash of the profile's osm

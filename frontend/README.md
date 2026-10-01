@@ -1,6 +1,6 @@
 # Borowik — frontend
 
-Lokalna, statyczna aplikacja według `docs/superpowers/specs/2026-09-24-borowik-frontend-design.md`: Vite + TypeScript, MapLibre. Bez serwera API i frameworka UI.
+Lokalna, statyczna aplikacja według `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md`: Vite + TypeScript, MapLibre. Bez serwera API i frameworka UI.
 
 ## Uruchomienie
 
@@ -25,7 +25,7 @@ Wymagany Node.js >=22.12 (sprawdzono Node 24). `npm run build` sprawdza TypeScri
 
 ## Synchronizacja danych
 
-Promień nowej analizy rzeczywiście działa: dodaj do polecenia Pythona `--radius-km 25` (domyślnie 25 km, zakres 10–50 km). Analiza obejmuje wydzielenia ze środkiem w kole o podanym promieniu. Większy promień oznacza więcej pobrań i dłuższe pierwsze uruchomienie. Zmiana promienia wymaga nowej analizy i ponownego `sync-data`; przesuwanie lub oddalanie mapy nie rozszerza danych. Stan backendu i instrukcje dla Claude Code: `../docs/CODEX-HANDOFF.md`.
+Promień nowej analizy rzeczywiście działa: dodaj do polecenia Pythona `--radius-km 25` (domyślnie 25 km, zakres 10–50 km). Analiza obejmuje wydzielenia ze środkiem w kole o podanym promieniu. Większy promień oznacza więcej pobrań i dłuższe pierwsze uruchomienie. Zmiana promienia wymaga nowej analizy i ponownego `sync-data`; przesuwanie lub oddalanie mapy nie rozszerza danych. Stan backendu i instrukcje dla Claude Code: `../docs/archiwum/CODEX-HANDOFF.md`.
 
 `npm run sync-data` kopiuje z `../notebooks/output/` do `public/data/`:
 
@@ -58,11 +58,11 @@ Przygotowane lokalne dane, `node_modules/` i `dist/` są ignorowane przez Git. N
 
 ## Warunki na kolejne dni
 
-Pasek „Warunki” pokazuje 7 kafelków (dziś..dziś+6). Poziom 0–3 to klasa F z profilu (`fruiting_classes`) tego dnia — ta sama formuła wilgotności/temperatury (M/T/K_frost/G_season) co reszta interfejsu, ale liczona z MEDIANY OBSZARU siatki pogodowej zamiast per wydzielenie/punkt — to inna, osobno nie zwalidowana agregacja niż backtestowe 0,626 (patrz `docs/CODEX-HANDOFF.md` note (27)). To **nie** osobny, skalibrowany model fazy wysypu (ten został wypróbowany i odrzucony — też note (27)). Pierwszy kafelek to dziś (dane zmierzone); kolejne używają prognozy temperatury/opadu. Zdanie nad kafelkami podaje wyłącznie fakty o ostatnim większym deszczu (daty, suma mm, ile dni temu) — nie przewiduje szczytu wysypu. `conditions.json` jest opcjonalny jak `regions.json`/`details.json`: brak pliku = tylko baner „Warunki w obszarze” bez kafelków, uszkodzony plik = głośny błąd.
+Pasek „Warunki” pokazuje 7 kafelków (dziś..dziś+6). Poziom 0–3 to klasa F z profilu (`fruiting_classes`) tego dnia — ta sama formuła wilgotności/temperatury (M/T/K_frost/G_season) co reszta interfejsu, ale liczona z MEDIANY OBSZARU siatki pogodowej zamiast per wydzielenie/punkt — to inna, osobno nie zwalidowana agregacja niż backtestowe 0,626 (patrz `docs/archiwum/CODEX-HANDOFF.md` note (27)). To **nie** osobny, skalibrowany model fazy wysypu (ten został wypróbowany i odrzucony — też note (27)). Pierwszy kafelek to dziś (dane zmierzone); kolejne używają prognozy temperatury/opadu. Zdanie nad kafelkami podaje wyłącznie fakty o ostatnim większym deszczu (daty, suma mm, ile dni temu) — nie przewiduje szczytu wysypu. `conditions.json` jest opcjonalny jak `regions.json`/`details.json`: brak pliku = tylko baner „Warunki w obszarze” bez kafelków, uszkodzony plik = głośny błąd.
 
 ## Źródła danych
 
-Opady z ostatnich 30 dni: radar IMGW-PIB RainGRS (1 km, godzinowy), uzupełniany modelem Open-Meteo. Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy; dane zostały przetworzone (sumy dobowe, od Fazy 1.5 domyślnie ważone powierzchniowo na wielokącie każdego wydzielenia — `docs/RAPORT_FAZA_1_5.md` — a nie uśredniane blokowo na całej siatce pogodowej; tryb blokowy nadal dostępny przez `radar.mode: block` w profilu).
+Opady z ostatnich 30 dni: radar IMGW-PIB RainGRS (1 km, godzinowy), uzupełniany modelem Open-Meteo. Źródłem pochodzenia danych jest Instytut Meteorologii i Gospodarki Wodnej – Państwowy Instytut Badawczy; dane zostały przetworzone (sumy dobowe, od Fazy 1.5 domyślnie ważone powierzchniowo na wielokącie każdego wydzielenia — `docs/archiwum/RAPORT_FAZA_1_5.md` — a nie uśredniane blokowo na całej siatce pogodowej; tryb blokowy nadal dostępny przez `radar.mode: block` w profilu).
 
 ## Ważne ograniczenia danych / uwagi do specyfikacji
 
@@ -92,7 +92,7 @@ Gdy analiza używa modelu `pressure.model: access_points`, `pipeline.prepare_tri
 
 ## Interfejs Fazy UI (przełącznik presji, paski, telefon)
 
-Szczegóły i lista kontrolna „stare pole → nowe miejsce”: `../docs/RAPORT_UI.md`.
+Szczegóły i lista kontrolna „stare pole → nowe miejsce”: `../docs/archiwum/RAPORT_UI.md`.
 
 - **Przełącznik „Uwzględniaj presję grzybiarzy”** (nad listą; domyślnie włączony, pamięć w `localStorage` pod `borowik.pressure.v1`) przełącza sortowanie wydzieleń (`R` ↔ `R_bez_presji = 100·H·F_loc`), listę rejonów (`regions.json` ↔ `regions_bez_presji.json`), kolory mapy, wynik w karcie i uzasadnienie. Migawka bez `R_bez_presji` albo bez `regions_bez_presji.json` (starsze eksporty) ma przełącznik nieaktywny z komunikatem. `sync-data` i launcher przenoszą `regions_bez_presji.json` (opcjonalny).
 - **Karta**: nagłówek → trzy paski „więcej = lepiej” (Siedlisko = H, Pogoda = F_loc, Spokój = 1 − P) rozwijane do składowych (S_host/S_site/S_age, M/T/K_frost, do 3 punktów o największym wkładzie w presję) → fakty (parking, wjazd, dukt, powierzchnia) → Zapisz / Nawiguj → zwinięte „Szczegóły” z wszystkim, co było na dawnej karcie i w widoku szczegółów. Osobnego widoku „Szczegóły wydzielenia” już nie ma.
@@ -102,5 +102,5 @@ Szczegóły i lista kontrolna „stare pole → nowe miejsce”: `../docs/RAPORT
 
 ### Tryby kolorowania mapy
 
-Trzy przyciski w legendzie: „Wynik”, „Wynik bez presji” (zsynchronizowane z przełącznikiem presji) i „Wilgotność” (kolor według składowej M z `scores.json`, skala bezwzględna 0–1, wszystkie wydzielenia, poza maską jaśniej; zmienia tylko kolory mapy). Wybór w `localStorage` (`borowik.map-color.v1`). Migawka bez `M` — przycisk Wilgotność nieaktywny z komunikatem. Opis i testy: `../docs/RAPORT_UI.md`, dodatek.
+Trzy przyciski w legendzie: „Wynik”, „Wynik bez presji” (zsynchronizowane z przełącznikiem presji) i „Wilgotność” (kolor według składowej M z `scores.json`, skala bezwzględna 0–1, wszystkie wydzielenia, poza maską jaśniej; zmienia tylko kolory mapy). Wybór w `localStorage` (`borowik.map-color.v1`). Migawka bez `M` — przycisk Wilgotność nieaktywny z komunikatem. Opis i testy: `../docs/archiwum/RAPORT_UI.md`, dodatek.
 

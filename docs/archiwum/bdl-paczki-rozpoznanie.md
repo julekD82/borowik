@@ -1,7 +1,7 @@
 # Rozpoznanie: paczki danych BDL per nadleśnictwo (plan 2.1, krok B1)
 
 > Data: 2026-09-24. Zakres: **rozpoznanie, nie integracja** — kod `pipeline/` nie
-> został zmieniony. Referencje: `docs/projekt-borowik.md` §13.1 (plan 2.1, wiersz
+> został zmieniony. Referencje: `docs/archiwum/projekt-borowik.md` §13.1 (plan 2.1, wiersz
 > B1) i §3.1 "Do sprawdzenia w pierwszej kolejności (2.1)".
 
 ## Skrót wyniku
@@ -167,7 +167,7 @@ ustalić harmonogram odświeżania paczek per nadleśnictwo w regionie domowym.
 Zrealizowane: `pipeline/bdl_packages.py::load_packages` auto-wykrywa
 paczki po `adr_for`; `S_host` liczony z pełnego składu warstwy `DRZEW`
 tam, gdzie paczka jest dostępna, z fallbackiem na dzisiejszą metodę WFS w
-pozostałych przypadkach — szczegóły w `docs/CODEX-HANDOFF.md`.
+pozostałych przypadkach — szczegóły w `docs/archiwum/CODEX-HANDOFF.md`.
 
 **Co znalazłem przy okazji, wcześniej nieoczywiste:**
 - `part_cd_act` (udział) w `f_storey_species` ma nie tylko liczby 1–10

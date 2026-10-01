@@ -39,7 +39,7 @@ bez ponownego uruchamiania pipeline'u.
   wychodzenia z aplikacji.
 - **Zapisane migawki są zamrożone.** Zmiana algorytmu/źródła danych (np.
   planowana zamiana opadów Open-Meteo na radar IMGW,
-  `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`) i ponowne
+  `docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`) i ponowne
   uruchomienie analizy nie zmienia już zapisanych wpisów — to zamierzone,
   właśnie to umożliwia porównanie "przed/po". Warunek: nowe pola w
   `scores.json`/`model.ts` muszą pozostawać opcjonalne (dokładnie tak, jak

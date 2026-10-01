@@ -2,7 +2,7 @@
 
 Data: 30.09.2026. Gałąź: `nowy-frontend`. Status: projekt zatwierdzony w rozmowie z właścicielem (sekcje 1–3), do przeczytania przed planem wdrożenia.
 
-Zastępuje interfejs opisany w `docs/superpowers/specs/2026-09-24-borowik-frontend-design.md` i zmiany z `docs/RAPORT_UI.md`. **Model (H, F, F_loc, P, R, maska, rejony) się nie zmienia.** Backend dostaje tylko dopisane pola eksportu.
+Zastępuje interfejs opisany w `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md` i zmiany z `docs/archiwum/RAPORT_UI.md`. **Model (H, F, F_loc, P, R, maska, rejony) się nie zmienia.** Backend dostaje tylko dopisane pola eksportu.
 
 ## 1. Cel i ustalenia
 
@@ -63,7 +63,7 @@ Tło decyzji o pogodzie: słupki F używały wag opadu K0 (najmocniej dzisiejszy
 ### 3.3 Zachowanie mapy
 
 - Wybór z listy (rejon, wydzielenie) przybliża mapę do jego granic.
-- Kliknięcie na mapie, zmiana zakładki i zmiana trybu **nie zmieniają przybliżenia** (zachowanie z commitów `bc09381`, `aeed2a6`).
+- Kliknięcie na mapie, zmiana zakładki i zmiana trybu **nie zmieniają przybliżenia** (zachowanie z commitów `c25852b`, `23766b5`).
 - Wybrane wydzielenie: wyraźny obrys; wybrany rejon: podświetlenie jego wydzieleń.
 - Najechanie myszą: dymek z nazwą, wynikiem i klasą.
 
@@ -206,14 +206,14 @@ Tylko dopisane pola; istniejące pola i ich znaczenie bez zmian. Model, ranking 
 
 - **Backend (pytest, bez sieci):** `daily` (zakres dat, mediany, `radar_share`, `forecast`), `rain26` (suma, norma i percentyl na syntetycznym E-OBS, brak E-OBS → `null`), `warnings` (oba typy, progi z profilu), `site_type`/`age_years` w details, `mask_reason` dla każdego warunku maski. Pełne `pytest`.
 - **Frontend (vitest):** przeniesione testy czystych funkcji; klasy procentowe na wspólnym pliku testowym `tests/fixtures/klasy_percentyl.json` (generowanym z `classify_by_percentile` i czytanym też przez test Pythona); mapowanie danych pogody (z nowymi polami i bez nich); `mask_reason` → tekst; komponenty (`@testing-library/preact` + jsdom): karta rejonu (mediana 5 najlepszych), karta wydzielenia, karta poza filtrami, panel pogody (nowa i stara migawka), stos nawigacji. `tsc --noEmit` i `vite build` bez błędów.
-- **Ręcznie w przeglądarce:** na prawdziwych danych (aktualna analiza i jedna stara migawka), szerokość komputera i ok. 390 px; zrzuty ekranu do `docs/ui-zrzuty/` i raport z listą kontrolną „stare pole → nowe miejsce” (jak `docs/RAPORT_UI.md`).
+- **Ręcznie w przeglądarce:** na prawdziwych danych (aktualna analiza i jedna stara migawka), szerokość komputera i ok. 390 px; zrzuty ekranu do `docs/archiwum/ui-zrzuty/` i raport z listą kontrolną „stare pole → nowe miejsce” (jak `docs/archiwum/RAPORT_UI.md`).
 
 ## 11. Wdrożenie i kryteria ukończenia
 
 - Praca na gałęzi `nowy-frontend`. Nowy interfejs zastępuje stary w tym samym katalogu `frontend/`; launcher, skrypty npm i ścieżki danych bez zmian.
 - Stary kod (`main.ts`, obecne `style.css`, `storage.ts`, części `model.ts`) usuwany dopiero, gdy lista kontrolna jest zielona.
 - Niezacommitowane zmiany właściciela (tryb LAN w `launcher/launcher.pyw` i `frontend/package.json`, `frontend/README.md`, `docs/Borowik_opis_techniczny_i_walidacja.md`) nie są ruszane ani commitowane w ramach tej pracy.
-- Dokumentacja: `frontend/README.md` (po uzgodnieniu z właścicielem, bo ma niezacommitowane zmiany), nowa notatka w `docs/CODEX-HANDOFF.md`, raport z testów i zrzutów.
+- Dokumentacja: `frontend/README.md` (po uzgodnieniu z właścicielem, bo ma niezacommitowane zmiany), nowa notatka w `docs/archiwum/CODEX-HANDOFF.md`, raport z testów i zrzutów.
 - Gotowe, gdy: wszystkie funkcje z rozdziału 2 działają na aktualnej analizie i starej migawce; testy backendu i frontendu przechodzą; `build` przechodzi; lista kontrolna i zrzuty są w raporcie.
 
 ## 12. Poza zakresem

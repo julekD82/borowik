@@ -1,6 +1,6 @@
 # Raport: dane z Bielefeld (plan 2.8) — wagi opadu w czasie i temperatura w ciągu dnia
 
-Stan: 30.09.2026, gałąź `walidacja-bielefeld`. Model produkcyjny, profil, `pipeline/weather.py` i eksporty **bez zmian**. Reguły: `docs/WALIDACJA_BIELEFELD.md` (zatwierdzone, commit `3079c89` przed analizą); notatnik analizy zacommitowany przed jedynym przebiegiem (`a632a4b`).
+Stan: 30.09.2026, gałąź `walidacja-bielefeld`. Model produkcyjny, profil, `pipeline/weather.py` i eksporty **bez zmian**. Reguły: `docs/WALIDACJA_BIELEFELD.md` (zatwierdzone, commit `b33412e` przed analizą); notatnik analizy zacommitowany przed jedynym przebiegiem (`f5fe253`).
 
 ## Wynik w skrócie
 

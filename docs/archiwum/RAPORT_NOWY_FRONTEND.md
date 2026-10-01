@@ -1,7 +1,7 @@
 # Raport: nowy frontend Borowika (1.10.2026)
 
-Projekt: `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`.
-Plan: `docs/superpowers/plans/2026-10-01-borowik-nowy-frontend.md`.
+Projekt: `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`.
+Plan: `docs/archiwum/superpowers/plans/2026-10-01-borowik-nowy-frontend.md`.
 Gałąź: `nowy-frontend`.
 
 ## Co zmieniono
@@ -108,7 +108,7 @@ Każda poprawka, z wyjątkiem CSS dla telefonu, ma test napisany przed zmianą (
 - `tsc --noEmit`: bez błędów.
 - `npm run build`: bez błędów. Ostrzeżenie o dużym pakiecie (MapLibre) jak wcześniej.
 
-## Zrzuty (`docs/ui-zrzuty/`)
+## Zrzuty (`docs/archiwum/ui-zrzuty/`)
 
 - `nowy-pulpit-pogoda-rozwinieta.jpg`: rozwinięty panel pogody i cały obszar z rejonami i warstwami dostępu.
 - `nowy-pulpit-karta-rejonu.jpg`: karta rejonu 1 z paskami i dojazdem.

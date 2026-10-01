@@ -1,7 +1,7 @@
 # Raport — Faza 1.6 (pełniejsze wykorzystanie danych BDL)
 
 Gałąź: `ulepszenia-faza1-6` (z `master`, po scaleniu Fazy 1 i 1.5).
-Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/PLAN_WDROZENIA.md`).
+Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/archiwum/PLAN_WDROZENIA.md`).
 
 ## Status zadań
 
@@ -12,7 +12,7 @@ Prowadzony na bieżąco w trakcie realizacji (zasada 0.9 z `docs/PLAN_WDROZENIA.
 | 1.6.3 Skład z niższych pięter (korekta, za flagą) | DONE | `host.lower_storeys_weight`, domyślnie 0 |
 | 1.6.4 Cechy do diagnostyki (bez wagi w R) | DONE | `pipeline/bdl_extra_features.py`, `pipeline/compartment_boundary.py` |
 | 1.6.5 Łatwość szukania w karcie | DONE | `pipeline/searchability.py` + frontend `searchability_hint` |
-| 1.6.6 Przebieg i raport | DONE | migawka „Kieleczka — faza 1.6”, `docs/porownania/faza1_6/` |
+| 1.6.6 Przebieg i raport | DONE | migawka „Kieleczka — faza 1.6”, `docs/archiwum/porownania/faza1_6/` |
 
 ## 1.6.1 Inwentaryzacja paczek
 
@@ -156,7 +156,7 @@ paczki BDL z `BDL/`, siatka GUS z cache. Cały przebieg z lokalnego cache
 (pogoda, klimatologia, radar, GDOŚ, OSM, BDL) -- brak nowego zużycia budżetu
 Open-Meteo poza kilkoma bieżącymi godzinami radaru. Migawka **„Kieleczka —
 faza 1.6"** (`frontend/public/data/trips/kieleczka-faza-1-6-2026-09-28/`,
-wpis w `index.json`); eksporty w `docs/porownania/faza1_6/`.
+wpis w `index.json`); eksporty w `docs/archiwum/porownania/faza1_6/`.
 
 Wynik przebiegu: 19716 wydzieleń, 14399 w masce (identycznie jak w
 poprzednich przebiegach Kieleczki 20 km -- Faza 1/1.5), 14631 ze składem z
@@ -246,9 +246,9 @@ bezpośrednio produkcyjnych funkcji `blend_host_with_lower_storeys` i
 - **1.6.6 migawka i eksporty w git:** `frontend/public/data/*` jest objęte
   `frontend/.gitignore` (nigdy nie trafia do repo, potwierdzone
   `git check-ignore`) -- migawka „Kieleczka — faza 1.6” istnieje tylko
-  lokalnie, jak wszystkie pozostałe migawki w `trips/`. `docs/porownania/faza1_6/`
+  lokalnie, jak wszystkie pozostałe migawki w `trips/`. `docs/archiwum/porownania/faza1_6/`
   NIE jest ignorowane i zgodnie z precedensem z Fazy 1/1.5
-  (`docs/porownania/baseline/`, `docs/porownania/faza1_5/` są w repo) --
+  (`docs/archiwum/porownania/baseline/`, `docs/archiwum/porownania/faza1_5/` są w repo) --
   dodane do commitu.
 - **1.6.4 pola pominięte:** `plant_comm_cd` (zbiorowisko roślinne),
   `tree_stock_cd` (zadrzewienie) i zagęszczenie warstw `PODSZ`/`PODR` NIE
@@ -285,7 +285,7 @@ bezpośrednio produkcyjnych funkcji `blend_host_with_lower_storeys` i
   per-wydzieleniowego `a_year` z paczki (tylko skład gatunkowy), a
   `a_year` z WFS jest już niezawodnie obecne na każdym wierszu (używane do
   `stand_id`) i identyczne z `a_year` w paczce dla sprawdzonych wydzieleń
-  (weryfikacja B1: `docs/bdl-paczki-rozpoznanie.md`). Użyto wyłącznie
+  (weryfikacja B1: `docs/archiwum/bdl-paczki-rozpoznanie.md`). Użyto wyłącznie
   `a_year` z WFS jako źródła roku stanu, bez dodawania drugiej ścieżki przez
   metadane paczki. Koszt błędu: żaden znany przypadek realnych danych, w
   którym `a_year` WFS różniłby się od roku stanu paczki dla tego samego

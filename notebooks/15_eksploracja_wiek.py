@@ -4,7 +4,7 @@
     zamrozonych rekordach (od 2021 r.), atrybuty z .cache/gbif_inventory/stand_attrs.json
     (patrz notebooks/14_eksploracja_h.py). Osobno sosna i swierk jako panujacy, gdy w klasie >= 20 rekordow.
 (b) Przelacznik habitat.age_mode = neutral: AUC(H) na zamrozonych danych oraz, offline, wplyw na R
-    i rejony w przebiegu Kieleczki (docs/porownania/faza1_6) wzgledem trybu curve.
+    i rejony w przebiegu Kieleczki (docs/archiwum/porownania/faza1_6) wzgledem trybu curve.
 
 Run: .venv/Scripts/python.exe notebooks/15_eksploracja_wiek.py
 """
@@ -28,7 +28,7 @@ e14 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(e14)
 
 OUT = pathlib.Path("notebooks/output/walidacja")
-KIELECZKA = pathlib.Path("docs/porownania/faza1_6")
+KIELECZKA = pathlib.Path("docs/archiwum/porownania/faza1_6")
 EDGES = [-np.inf, 12, 20, 40, 60, 80, 100, 120.0001, np.inf]
 LABELS = ["<12", "12-20", "20-40", "40-60", "60-80", "80-100", "100-120", ">120"]
 MIN_CLASS_N = 20

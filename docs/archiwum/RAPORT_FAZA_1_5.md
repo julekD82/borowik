@@ -1,6 +1,6 @@
 # Raport Faza 1.5 — opad z radaru w rozdzielczości ~1 km na wydzielenie
 
-Gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`). Realizacja zgodnie z `docs/PLAN_WDROZENIA.md` sekcja "Faza 1.5".
+Gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`). Realizacja zgodnie z `docs/archiwum/PLAN_WDROZENIA.md` sekcja "Faza 1.5".
 
 ## Status zadań
 
@@ -92,7 +92,7 @@ Interpretacja: różnica jest systematyczna i skoncentrowana w niewielkiej mniej
 
 *(Uwaga metodologiczna: "mapa różnic" w sensie wizualnym z planu nie została wygenerowana jako obraz w tej sesji — zastąpiona liczbowym rozkładem różnic względnych powyżej, co odpowiada na to samo pytanie planu: "czy wzór wygląda jak pasy opadu, czy jak szum i artefakty radaru" — brak wydzieleń z ekstremalną różnicą (>30%) i mediana rzędu kilku % wskazują na spójny wzór przestrzenny, nie szum.)*
 
-### Pełny przebieg Kieleczka 20 km, 2026-09-28 — `stand` (nowy kod, smoothing_km=1, `docs/porownania/faza1_5/`) vs `block` (`docs/porownania/nowy/`, sprzed 1.5)
+### Pełny przebieg Kieleczka 20 km, 2026-09-28 — `stand` (nowy kod, smoothing_km=1, `docs/archiwum/porownania/faza1_5/`) vs `block` (`docs/archiwum/porownania/nowy/`, sprzed 1.5)
 
 Ten sam kod Fazy 1 (paczki BDL, siatka GUS, presja absolute), różni się tylko `radar.mode`/`smoothing_km`. 19716 wydzieleń wspólnych, 14399 w masce w obu przebiegach (`scratchpad/eval_block_vs_stand_run.py`).
 
@@ -133,4 +133,4 @@ Tryb `radar.mode: block` pozostaje dostępny (ustawienie profilu) jako opcja pow
 
 `pipeline/radar.py` (nowe funkcje 1.5.1–1.5.3, uogólnienie `key_cols`), `pipeline/weather.py` (`precip_derived_features`, `stand_precip_features_table`, `et026w` w `compute_weather_features`), `pipeline/orchestrate.py` (`stand_precip_daily` w `run_poc`, `DEFAULT_PAST_DAYS`), `pipeline/prepare_trip.py` (`radar_mode`, `nearest_weather_point_per_stand`, wiring, pola manifestu), `pipeline/export.py` (`rain_radar_coverage` w diagnostyce), `profiles/boletus_edulis.yaml` (`radar.mode: stand`, `radar.smoothing_km: 1`), `frontend/README.md` (opis źródła opadu), `tests/test_radar.py`, `tests/test_weather.py`, `tests/test_orchestrate.py`, `tests/test_prepare_trip.py`, `tests/test_export.py`.
 
-Migawki porównawcze: `docs/porownania/nowy/` (block, sprzed 1.5, z nocy 27/28.09), `docs/porownania/faza1_5/` (stand, smoothing_km=1, ten sam punkt/promień/data). Skrypty oceny (nie commitowane do repo, w scratchpadzie sesji): `eval_stations_smoothing.py`, `eval_storm_episode.py`, `eval_block_vs_stand_run.py`.
+Migawki porównawcze: `docs/archiwum/porownania/nowy/` (block, sprzed 1.5, z nocy 27/28.09), `docs/archiwum/porownania/faza1_5/` (stand, smoothing_km=1, ten sam punkt/promień/data). Skrypty oceny (nie commitowane do repo, w scratchpadzie sesji): `eval_stations_smoothing.py`, `eval_storm_episode.py`, `eval_block_vs_stand_run.py`.

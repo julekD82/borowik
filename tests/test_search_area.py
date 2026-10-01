@@ -350,7 +350,7 @@ def test_gdos_tile_failure_does_not_abort_the_run(monkeypatch,tmp_path,capsys):
     # GDOS/OSM per-tile failures are deliberately non-fatal (user request,
     # 2026-09-24): a tile that can't be fetched is skipped and reported,
     # not treated as a crash -- see fetch_cached_gdos/fetch_cached_osm in
-    # pipeline/search_area.py and docs/CODEX-HANDOFF.md.
+    # pipeline/search_area.py and docs/archiwum/CODEX-HANDOFF.md.
     configure_sources(monkeypatch)
     calls=[]
     def fail_once(*args):

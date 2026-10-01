@@ -2,7 +2,7 @@
 
 Gałąź: `ulepszenia-faza3`, worktree `.claude/worktrees/faza3`.
 **Baza = `master`**: sprawdzone `git merge-base --is-ancestor` — Fazy 1, 1.5 i 1.6 są scalone
-(merge `aa0a6cd`, „Merge branch 'ulepszenia-faza1-6' into master”). Nic nie było pushowane,
+(merge `2a9d56b`, „Merge branch 'ulepszenia-faza1-6' into master”). Nic nie było pushowane,
 `master` i gałąź `ulepszenia-faza2` nie były ruszane.
 
 Dane współdzielone z drugą sesją (Faza 2) podłączone jako dowiązania `mklink /J`: `cache/`
@@ -20,7 +20,7 @@ usuwano ani nie czyszczono; do `cache/` doszedł tylko nowy podkatalog `cache/ac
 | 3.3 Zasięg oddziaływania | DONE | jądro `max(0, 1−(d/R)²)²`, parametry startowe właściciela w profilu; odległość w linii prostej (wariant po sieci duktów: opcjonalny, nie zrobiony) |
 | 3.4 Łączenie w P | DONE | suma po punktach, korytarz jako jeden składnik, `P = 1 − exp(−raw/S)`, `S` dobrane offline (huff 0,1385; none 7,0); wkład każdego typu i punkt o największym wkładzie w diagnostyce |
 | 3.5 Mapa i karta wydzielenia | DONE | eksporty `access_points_{day}.geojson` i `forest_roads_{day}.geojson`, warstwy w legendzie, popup, karta, synchronizator i migawki |
-| 3.6 Kontrola i raport | DONE | ten dokument + `docs/porownania/faza3/` |
+| 3.6 Kontrola i raport | DONE | ten dokument + `docs/archiwum/porownania/faza3/` |
 
 Stary model dostępny przez `pressure.model: gravity` (profil `profiles/boletus_edulis.yaml`);
 domyślnie `access_points`. Gdy przebieg nie ma **żadnego** punktu dostępu (np. wszystkie
@@ -75,7 +75,7 @@ Sieć korytarza (zamknięte drogi leśne + dojazdy pożarowe) ma 8926 km. Nawier
 **63,8%** długości; dla dojazdów pożarowych BDL 78,8% z 3954 km. W komórkach 2 × 2 km
 (501 komórek z ≥ 1 km sieci) udział znanej nawierzchni: mediana 62%, kwartyle 34% / 80%,
 10. percentyl 0%; **88 z 501 komórek (18%) ma poniżej 20% znanej nawierzchni**. Mapa:
-`docs/porownania/faza3/mapa_pokrycia_nawierzchni.html` (zielone ≥ 60%, żółte 30–60%,
+`docs/archiwum/porownania/faza3/mapa_pokrycia_nawierzchni.html` (zielone ≥ 60%, żółte 30–60%,
 czerwone < 30%), tabela: `pokrycie_nawierzchni_kafle_2x2.csv`.
 
 **Wrażliwość na „nawierzchnię nieznaną”** (mediana P w masce / udział powierzchni z P > 0,5
@@ -87,7 +87,7 @@ dla Kieleczki i tych parametrów, nie ogólny.
 
 ## Porównanie gravity vs access_points (Kieleczka, 19 716 wydzieleń, 14 399 w masce)
 
-Dane wejściowe: geometrie i H/F/P/R z przebiegu 1.6 (`docs/porownania/faza1_6`),
+Dane wejściowe: geometrie i H/F/P/R z przebiegu 1.6 (`docs/archiwum/porownania/faza1_6`),
 rekonstrukcja R z tych samych H/F_loc i P zgadza się z zapisanym R co do 0,0
 (`R_recompute_check_max_abs_diff_vs_1_6`).
 
@@ -156,7 +156,7 @@ samych miejscach (≤ 1,6 km), piąty przesunięty. Listy rejonów przed/po są 
 
 ## Ręczna kontrola do przejrzenia przez właściciela
 
-`docs/porownania/faza3/kontrola_reczna.csv`: 10 losowych wjazdów/szlabanów i 10 losowych
+`docs/archiwum/porownania/faza3/kontrola_reczna.csv`: 10 losowych wjazdów/szlabanów i 10 losowych
 parkingów (ziarno 42) ze współrzędnymi i linkiem do widoku satelitarnego. Do sprawdzenia
 z ortofotomapą Geoportalu (wpisać współrzędne WGS84 w wyszukiwarce). **Nieprzejrzane.**
 
@@ -211,7 +211,7 @@ python scripts/faza3_raport.py                                                  
 Baza nadal `master` bez Fazy 2 (`ulepszenia-faza2` nie jest scalona). **Rebase na `master`
 po scaleniu Fazy 2 jest jeszcze do zrobienia** (spodziewane konflikty: eksport, manifest,
 launcher, diagnostyka). Liczby poniżej: Kieleczka, 19 716 wydzieleń, 14 399 w masce; skrypt
-`scripts/faza3_huff_raport.py`, dane w `docs/porownania/faza3/raport_huff.json`.
+`scripts/faza3_huff_raport.py`, dane w `docs/archiwum/porownania/faza3/raport_huff.json`.
 Wcześniejsze sekcje tego raportu opisują wariant `none` (jedyny wtedy); po tym kroku domyślny
 jest `huff`.
 
@@ -351,7 +351,7 @@ Backend `pytest`: 699 zaliczonych; nowe testy `population_split` w `tests/test_a
 
 ## Rebase
 
-Warunek spełniony: `master` (`3987901`) zawiera scalone `ulepszenia-faza2` i `ulepszenia-wiek`
+Warunek spełniony: `master` (`1f6cb69`) zawiera scalone `ulepszenia-faza2` i `ulepszenia-wiek`
 (sprawdzone `git merge-base --is-ancestor`). Rebase `ulepszenia-faza3` na `master`: jeden
 konflikt tekstowy (`.gitignore` — zostawiono oba wpisy: `/dane_terenowe/` z mastera i
 `.claude/worktrees/`), konfliktów w eksporcie, manifeście, launcherze i diagnostyce nie było.
@@ -462,7 +462,7 @@ Top-20 zostaje w 14–20 z 20, rejony w 4–5 z 5. Najbardziej wrażliwy jest za
 wagi (działają tylko w podziale) i c prawie nic nie zmieniają — spójne z diagnozą, że w gęstej sieci
 punktów podział rozcieńcza wszystko podobnie, a o wyniku decyduje geometria zasięgów.
 
-Dane: `docs/porownania/faza3/raport_huff_all.json`, `roznice_P_huff_all.csv`; skrypt
+Dane: `docs/archiwum/porownania/faza3/raport_huff_all.json`, `roznice_P_huff_all.csv`; skrypt
 `scripts/faza3_huffall_raport.py`.
 
 ## Przebieg na żywo `huff_all` (2026-09-29)
@@ -610,7 +610,7 @@ lokalną definicję pasa, czy pas > 5 km należy do innego osiedla; (2) `junctio
 (3) potem kalibracja parametrów danymi terenowymi. Jeśli kryterium (b) zostanie uznane za
 spełnione, brakuje tylko przebiegu na żywo i migawki.
 
-Dane: `docs/porownania/faza3/raport_two_stage.json`, `roznice_P_two_stage.csv`;
+Dane: `docs/archiwum/porownania/faza3/raport_two_stage.json`, `roznice_P_two_stage.csv`;
 skrypt `scripts/faza3_two_stage_raport.py`.
 
 ---
@@ -632,7 +632,7 @@ presja w tym pasie.
 
 Zakres: 118 wydzieleń ≤ 8 km od centrum Lublińca i ≥ 5 km od najbliższego dużego osiedla
 (ten sam pas co w profilu). Dla każdego: typ i odległość punktu o największym wkładzie w P
-(`scripts/faza3_pas5km_kontrola.py`, dane: `docs/porownania/faza3/kontrola_pas_5km.json` i `.csv`).
+(`scripts/faza3_pas5km_kontrola.py`, dane: `docs/archiwum/porownania/faza3/kontrola_pas_5km.json` i `.csv`).
 Reguła zaakceptowania ustalona przez właściciela: odsetek wydzieleń, dla których ten punkt leży
 ≤ 2,5 km, ≥ 80%.
 
@@ -668,7 +668,7 @@ zawierającym pole `access` dla wszystkich wydzieleń.
   zostają w kodzie do porównań. Wszystkie parametry (`walk_share_max`, `walk_reach_km`,
   `external_option_c`, `saturation_s`, wagi i zasięgi typów) są tymczasowe i nieskalibrowane.
 - **`junction`: bez zmian do decyzji po ręcznej kontroli właściciela**
-  (`docs/porownania/faza3/kontrola_reczna.csv`, po 5 losowych wjazdów z każdego podtypu). Wjazdy dają
+  (`docs/archiwum/porownania/faza3/kontrola_reczna.csv`, po 5 losowych wjazdów z każdego podtypu). Wjazdy dają
   w `two_stage` ok. 59% presji surowej (w tym `junction` ok. 20%), więc to najważniejsza otwarta kwestia.
 - **BDOT10k `OT_SKDR_L` i `route=bicycle`: BLOCKED**, niski priorytet (klasyfikacja nawierzchni
   prawie nie zmienia P; Spearman ≥ 0,9998 przy skrajnych założeniach).

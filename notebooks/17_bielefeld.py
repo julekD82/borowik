@@ -1,5 +1,5 @@
 """Plan 2.8, etap 3 -- analiza danych z Bielefeld wg ZATWIERDZONYCH regul docs/WALIDACJA_BIELEFELD.md
-(commit 3079c89, przed analiza). JEDEN przebieg analizy glownej; wszystko inne w wyniku jest oznaczone jako
+(commit b33412e, przed analiza). JEDEN przebieg analizy glownej; wszystko inne w wyniku jest oznaczone jako
 opisowe/eksploracyjne. Model produkcyjny bez zmian.
 
 A. Wagi opadu w czasie: K1 (regula wlasciciela) vs K0 (obecne), K2/K3 opisowo.

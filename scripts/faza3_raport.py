@@ -1,8 +1,8 @@
 """Faza 3.6: raport porownawczy gravity vs access_points dla Kieleczki.
 
 Dziala WYLACZNIE na cache (zadnych zapytan sieciowych) i na wynikach
-przebiegu 1.6 z docs/porownania/faza1_6 (geometrie + H/F/P/R per
-wydzielenie). Zapisuje do docs/porownania/faza3/:
+przebiegu 1.6 z docs/archiwum/porownania/faza1_6 (geometrie + H/F/P/R per
+wydzielenie). Zapisuje do docs/archiwum/porownania/faza3/:
   raport_dane.json          -- wszystkie liczby raportu
   roznice_P.csv             -- P_gravity, P_access, R przed/po per wydzielenie
   mapa_roznic_P_*.html      -- mapy roznic P (folium)
@@ -43,8 +43,8 @@ from pipeline.tiles import tile_bbox_2180  # noqa: E402
 
 LAT, LON, RADIUS_KM = 50.527, 18.605, 20.0
 LUBLINIEC = (50.6688, 18.6832)
-RUN_DIR = pathlib.Path("docs/porownania/faza1_6")
-OUT_DIR = pathlib.Path("docs/porownania/faza3")
+RUN_DIR = pathlib.Path("docs/archiwum/porownania/faza1_6")
+OUT_DIR = pathlib.Path("docs/archiwum/porownania/faza3")
 TO_4326 = Transformer.from_crs(2180, 4326, always_xy=True)
 TO_2180 = Transformer.from_crs(4326, 2180, always_xy=True)
 

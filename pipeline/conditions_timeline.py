@@ -1,5 +1,5 @@
 """A2 Plan-B: fact-only conditions timeline -- plan 2026-09-27
-(docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md, "Decyzja
+(docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md, "Decyzja
 2026-09-27: Plan-B" section).
 
 Reuses only pipeline.flush's pulse DETECTION (never its thermal-clock/

@@ -71,7 +71,7 @@ REFERENCE_RADIUS_KM = 25.0
 
 def _radius_scaled_spacing(base_spacing_m: float, radius_km: float) -> float:
     """Scale a grid spacing linearly with the search radius, so total
-    point count (and so API cost/weight -- see docs/CODEX-HANDOFF.md for
+    point count (and so API cost/weight -- see docs/archiwum/CODEX-HANDOFF.md for
     the Open-Meteo weighting derivation) stays roughly constant across the
     whole 10-50km CLI range instead of growing with the search area: a
     15km search gets a finer grid than the 25km-reference spacing rather
@@ -293,7 +293,7 @@ class TripPreparationError(RuntimeError):
 def _is_open_meteo_rate_limit(exc: Exception) -> bool:
     # Distinct from the per-request data-volume error ("Your API call
     # requests too much data") -- that one is not transient and retrying it
-    # unchanged just fails again; see docs/CODEX-HANDOFF.md.
+    # unchanged just fails again; see docs/archiwum/CODEX-HANDOFF.md.
     return isinstance(exc, OpenMeteoRequestsError) and "limit" in str(exc).lower()
 
 

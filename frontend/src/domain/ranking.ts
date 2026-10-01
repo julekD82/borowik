@@ -2,7 +2,7 @@ import type { Region, RegionView, Score, StandView, Stands } from "../data/types
 import { finite } from "./format";
 import { standCentroid } from "./geometry";
 
-// Plan 2.1 step A4 (docs/projekt-borowik.md §5.2/§13.1): a stand this small
+// Plan 2.1 step A4 (docs/archiwum/projekt-borowik.md §5.2/§13.1): a stand this small
 // isn't worth a dedicated trip as a standalone destination -- presentation
 // filter only, never a mask (pipeline.habitat.passes_mask is unaffected):
 // small stands still count toward their region's area (pipeline/regions.py,

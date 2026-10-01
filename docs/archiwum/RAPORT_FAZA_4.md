@@ -1,10 +1,10 @@
 # Raport — Faza 4 (pogoda: przejrzystość, spójność, oszczędność API)
 
-Gałąź: `ulepszenia-faza4` (z `master`, `c907883`). Nic nie było pushowane ani scalane, cache i dane nie były usuwane
+Gałąź: `ulepszenia-faza4` (z `master`, `f1ace0c`). Nic nie było pushowane ani scalane, cache i dane nie były usuwane
 (cache tylko przybył: kilka punktów pogody, 50 punktów archiwum ERA5). Progi klas F, krzywa sezonowości, α i wagi H
 **nie zostały zmienione**. Wszystkie liczby: Kieleczka (50,527 N, 18,605 E), promień 25 km dla analiz 4.1–4.4
 (129 653 wydzielenia → 29 953 w promieniu, 21 716 w masce), 29.09.2026.
-Surowe wyniki: `docs/porownania/faza4/*.json`, skrypty: `scripts/faza4_*.py` (tylko z cache; jedyne wywołania API są opisane niżej).
+Surowe wyniki: `docs/archiwum/porownania/faza4/*.json`, skrypty: `scripts/faza4_*.py` (tylko z cache; jedyne wywołania API są opisane niżej).
 
 ## Status zadań
 
@@ -132,7 +132,7 @@ NIE obowiązuje** — opierała się na różnicy 0,086, która wynikała z bł�
 (`tests/test_panel_spojnosc_z_mapa.py`) sprawdza wprost `median_f_stands` (jak w poleceniu) i pokazuje, że bez poprawki panel rozjeżdża się z mapą
 o > 0,02; dla domyślnej metody dzień 0 również zgadza się z mapą (0,636 vs 0,641 na przebiegu rzeczywistym).
 
-Przed poprawką (opad modelu, pula komórek; przebieg 25 km): 29.09 0,452 / 0,452 / 0,462 / 0,501 (max 0,049) … 02.10 0,237 / 0,235 / 0,247 / 0,321 (max 0,086) … 05.10 0,173 / 0,172 / 0,177 / 0,232 (max 0,060) — patrz `docs/porownania/faza4/nasycenie_agregacja.json`.
+Przed poprawką (opad modelu, pula komórek; przebieg 25 km): 29.09 0,452 / 0,452 / 0,462 / 0,501 (max 0,049) … 02.10 0,237 / 0,235 / 0,247 / 0,321 (max 0,086) … 05.10 0,173 / 0,172 / 0,177 / 0,232 (max 0,060) — patrz `docs/archiwum/porownania/faza4/nasycenie_agregacja.json`.
 
 **Lokalne zjawiska.** Panel ma udział powierzchni lasu z przymrozkiem (tmin3 < 0 °C) i z silnym opadem dobowym (≥ 15 mm). W tym przebiegu oba wynoszą 0% w każdym dniu
 (brak przymrozków i silnych opadów prognozowanych w horyzoncie) — mechanizm przetestowany tylko na danych syntetycznych.
@@ -179,7 +179,7 @@ Migawka **„Kieleczka — faza 4 (paczki)”** (`frontend/public/data/trips/kie
 - **F panelu vs mediana mapy (dziś): 0,636 vs 0,641** (mediana R 47,6; 5 rejonów).
 - Zmiana H/R względem migawek sprzed poprawki jest oczekiwana (skład z paczek zamiast WFS); F i F_loc niezmienione — F jest niezależne od składu, a poprzednia migawka miała identyczne F/F_loc (0 różnic).
 
-**Przeglądarka (zrzuty w `docs/porownania/faza4/zrzuty/`).** Komputer 1536 px: panel z dniami (dni od 4. naprzód wyszarzone „prognoza niepewna”), składniki, notka; karta rejonu z sekcją „Pogoda w tym miejscu”.
+**Przeglądarka (zrzuty w `docs/archiwum/porownania/faza4/zrzuty/`).** Komputer 1536 px: panel z dniami (dni od 4. naprzód wyszarzone „prognoza niepewna”), składniki, notka; karta rejonu z sekcją „Pogoda w tym miejscu”.
 Telefon: okno przeglądarki nie dało się zwęzić narzędziem, więc widok 375 px to ta sama aplikacja w ramce iframe o szerokości 390 px — bez poziomego przewijania (scrollWidth = clientWidth = 375),
 panel, baner i karta czytelne, dni prognozy zawijają się do drugiego wiersza. Poprawka stylu po zrzucie komputerowym: nagłówek „Pogoda w tym miejscu” zmniejszony, baner wyrównany do panelu (bez ponownego zrzutu).
 Karta wydzielenia (widok „Wydzielenia”/szczegóły) używa tej samej funkcji `weatherSection`; sprawdzona tylko na karcie rejonu.

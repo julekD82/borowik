@@ -7,7 +7,7 @@ zapisane w cache pod dzisiejsza data i liczone w raporcie.
 
   python scripts/faza4_siatka_temperatury.py
 
-Wynik: docs/porownania/faza4/siatka_temperatury.json (+ wypis).
+Wynik: docs/archiwum/porownania/faza4/siatka_temperatury.json (+ wypis).
 """
 import json
 import pathlib

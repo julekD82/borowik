@@ -6,7 +6,7 @@
 
 ## 2026-10-01 — aktualne (43): maska wieku od 35 lat (zmiana modelu, decyzja właściciela po wyjeździe); gałąź `wiek-maska-35`
 
-Wyjazd 01.10 do Rejonu 1 „Łaziska” (migawka `zawadzkie-01-10-2026-10-01`, `region_2`; ID rejonów ≠ kolejność w UI, UI sortuje po `rank_score`): mediana wieku 23 lata, 86% powierzchni < 40 lat — prawie brak grzybów. Profil: `age_breakpoints.mask_below: 35` (wcześniej 12), `age_mode: neutral` bez zmian. Zmiana **oparta na założeniu i jednej wizycie**, opis i liczby: `docs/RAPORT_FAZA_2.md`, „Decyzje po walidacji” p. 3 (symulacja offline: z maski wypada ok. 21% powierzchni, 71 z 200 najlepszych wydzieleń, rejon Łaziska poza top-5). Próg 12 lat był też proxy prawnego zakazu wstępu do upraw < 4 m (`docs/projekt-borowik.md` §5.2) — teraz jeden powód `too_young` obejmuje oba przypadki. Etykieta UI: „za młody drzewostan (poniżej progu wieku, obecnie 35 lat)” (`frontend/src/domain/labels.ts`, próg wpisany na sztywno — przy zmianie profilu poprawić). Testy mechaniki krzywej/neutral w `tests/test_habitat.py` ustawiają jawnie `mask_below = 12`; nowy test przypina 35. `docs/Borowik_opis_techniczny_i_walidacja.md` (linia o `a < 12`) ma niezacommitowane zmiany właściciela — nie ruszany. Aby zobaczyć zmianę w aplikacji: nowy przebieg `prepare_trip`. Drogi udostępnione do ruchu (droga z wyjazdu = dojazd pożarowy 8B, poz. 13 wykazu Zawadzkiego) — odłożone, ustalenia w `docs/PLAN_WDROZENIA.md` 3.7.
+Wyjazd 01.10 do Rejonu 1 „Łaziska” (migawka `zawadzkie-01-10-2026-10-01`, `region_2`; ID rejonów ≠ kolejność w UI, UI sortuje po `rank_score`): mediana wieku 23 lata, 86% powierzchni < 40 lat — prawie brak grzybów. Profil: `age_breakpoints.mask_below: 35` (wcześniej 12), `age_mode: neutral` bez zmian. Zmiana **oparta na założeniu i jednej wizycie**, opis i liczby: `docs/RAPORT_FAZA_2.md`, „Decyzje po walidacji” p. 3 (symulacja offline: z maski wypada ok. 21% powierzchni, 71 z 200 najlepszych wydzieleń, rejon Łaziska poza top-5). Próg 12 lat był też proxy prawnego zakazu wstępu do upraw < 4 m (`docs/archiwum/projekt-borowik.md` §5.2) — teraz jeden powód `too_young` obejmuje oba przypadki. Etykieta UI: „za młody drzewostan (poniżej progu wieku, obecnie 35 lat)” (`frontend/src/domain/labels.ts`, próg wpisany na sztywno — przy zmianie profilu poprawić). Testy mechaniki krzywej/neutral w `tests/test_habitat.py` ustawiają jawnie `mask_below = 12`; nowy test przypina 35. `docs/Borowik_opis_techniczny_i_walidacja.md` (linia o `a < 12`) ma niezacommitowane zmiany właściciela — nie ruszany. Aby zobaczyć zmianę w aplikacji: nowy przebieg `prepare_trip`. Drogi udostępnione do ruchu (droga z wyjazdu = dojazd pożarowy 8B, poz. 13 wykazu Zawadzkiego) — odłożone, ustalenia w `docs/archiwum/PLAN_WDROZENIA.md` 3.7.
 
 ## 2026-10-01 — aktualne (42): okres klimatologii 1991–2020 vs 1996–2025 — eksploracyjnie, bez zmiany modelu
 
@@ -32,7 +32,7 @@ Decyzja właściciela: pełny KMZ (4 klasy + ukryty zestaw „bez presji”, ok.
 
 ## 2026-10-01 — aktualne (38): nowy frontend (Preact); gałąź `nowy-frontend`
 
-Spec: `docs/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`, plan: `docs/superpowers/plans/2026-10-01-borowik-nowy-frontend.md`, raport z listą kontrolną „stare pole → nowe miejsce”, zrzutami i pytaniami: `docs/RAPORT_NOWY_FRONTEND.md`. **Model, ranking, R/H/F/P, α bez zmian** — eksport dostał tylko nowe pola.
+Spec: `docs/archiwum/superpowers/specs/2026-09-30-borowik-nowy-frontend-design.md`, plan: `docs/archiwum/superpowers/plans/2026-10-01-borowik-nowy-frontend.md`, raport z listą kontrolną „stare pole → nowe miejsce”, zrzutami i pytaniami: `docs/archiwum/RAPORT_NOWY_FRONTEND.md`. **Model, ranking, R/H/F/P, α bez zmian** — eksport dostał tylko nowe pola.
 
 Interfejs zbudowany od nowa w Preact 11 + `@preact/signals`; stary kod (`main.ts`, `map.ts`, `model.ts`, `storage.ts`, `style.css`) usunięty, jego testy przeniesione do `src/domain/domain.test.ts` i `ui-logic.test.ts`. Moduły:
 - `src/data` — typy, walidacja (`parse.ts`), wczytywanie (`load.ts`: `loadCore` najpierw, `loadBackground` z `details.json` i warstwami dostępu w tle);
@@ -49,7 +49,7 @@ Decyzje doprecyzowane w trakcie: klik wydzielenia na mapie zastępuje kartę wyd
 
 ## 2026-09-30 — aktualne (37): plan 2.8 Bielefeld zrealizowany (bez zmiany modelu); gałąź `walidacja-bielefeld`
 
-Raport: `docs/RAPORT_BIELEFELD.md`, reguły (zatwierdzone przed analizą, `3079c89`): `docs/WALIDACJA_BIELEFELD.md`. **Wynik A (wagi opadu K1 = reguła właściciela vs K0 = obecne 0,5^(j/10)): „nierozstrzygnięte” → K0 zostaje.** NB1 na tygodniach: ΔLL „zostaw jeden rok” +6,3 dla K1 (9/10 lat); 2.5 na zamrożonym zbiorze: K1 − K0 +0,031 (CI 0,006…0,066) / +0,016; ale wzór aplikacji na Bielefeld +0,003 (CI −0,037…0,042) — dolna granica o 0,007 poniżej progu „nie gorsze” (−0,03). K3 („tylko 5–10 dni”) najgorsze; sygnał opadu rozłożony na 0–24 dni. **B (TX/TN, eksploracyjnie):** wyższa temperatura ostatnich 5 dni przy tej samej T20 → więcej owocników, ale to średnia TG, nie TX (`notebooks/17b_…`); bez zmian. Dane trwałe: `dane_walidacyjne/bielefeld/` (owocniki, pogoda autorów, E-OBS v33.0e komórki 52,05/8,45 1991–2024; README z licencjami i podziękowaniem E-OBS), `dane_walidacyjne/gbif_2_4_2_5_pseudonimy/` (zbiory 2.4/2.5 z obs_001…; oryginały i tabela przypisań tylko lokalnie w `dane_walidacyjne/gbif_2_4_2_5/`, w `.gitignore`; notatniki 12–16 nadal czytają `notebooks/output/walidacja/`). `.gitattributes`: `dane_walidacyjne/** -text`. Kod: `scripts/pobierz_bielefeld.py`, `scripts/kopiuj_zbiory_gbif.py`, `pipeline/bielefeld.py` (NB1 z rokiem jako efektem stałym, bloki tygodniowe, LOYO, SE — scipy, bez statsmodels), `pipeline/eobs.py` (`REGIONS` PL/BI, `EobsStore(region=)`, `daily_bilinear`; pliki PL bez zmian nazw), `pipeline/eobs_fruiting.py::precip_weights` (domyślnie K0; produkcja nietknięta), notatniki `17_bielefeld_wczytanie.py`, `17_bielefeld.py`, `17b_bielefeld_eksploracja.py`. Kluczowe o danych: dni wizyt nie ma (zera w dni bez wizyty), brak ID owocników i współrzędnych stanowisk. Testy backend: 877.
+Raport: `docs/RAPORT_BIELEFELD.md`, reguły (zatwierdzone przed analizą, `b33412e`): `docs/WALIDACJA_BIELEFELD.md`. **Wynik A (wagi opadu K1 = reguła właściciela vs K0 = obecne 0,5^(j/10)): „nierozstrzygnięte” → K0 zostaje.** NB1 na tygodniach: ΔLL „zostaw jeden rok” +6,3 dla K1 (9/10 lat); 2.5 na zamrożonym zbiorze: K1 − K0 +0,031 (CI 0,006…0,066) / +0,016; ale wzór aplikacji na Bielefeld +0,003 (CI −0,037…0,042) — dolna granica o 0,007 poniżej progu „nie gorsze” (−0,03). K3 („tylko 5–10 dni”) najgorsze; sygnał opadu rozłożony na 0–24 dni. **B (TX/TN, eksploracyjnie):** wyższa temperatura ostatnich 5 dni przy tej samej T20 → więcej owocników, ale to średnia TG, nie TX (`notebooks/17b_…`); bez zmian. Dane trwałe: `dane_walidacyjne/bielefeld/` (owocniki, pogoda autorów, E-OBS v33.0e komórki 52,05/8,45 1991–2024; README z licencjami i podziękowaniem E-OBS), `dane_walidacyjne/gbif_2_4_2_5_pseudonimy/` (zbiory 2.4/2.5 z obs_001…; oryginały i tabela przypisań tylko lokalnie w `dane_walidacyjne/gbif_2_4_2_5/`, w `.gitignore`; notatniki 12–16 nadal czytają `notebooks/output/walidacja/`). `.gitattributes`: `dane_walidacyjne/** -text`. Kod: `scripts/pobierz_bielefeld.py`, `scripts/kopiuj_zbiory_gbif.py`, `pipeline/bielefeld.py` (NB1 z rokiem jako efektem stałym, bloki tygodniowe, LOYO, SE — scipy, bez statsmodels), `pipeline/eobs.py` (`REGIONS` PL/BI, `EobsStore(region=)`, `daily_bilinear`; pliki PL bez zmian nazw), `pipeline/eobs_fruiting.py::precip_weights` (domyślnie K0; produkcja nietknięta), notatniki `17_bielefeld_wczytanie.py`, `17_bielefeld.py`, `17b_bielefeld_eksploracja.py`. Kluczowe o danych: dni wizyt nie ma (zera w dni bez wizyty), brak ID owocników i współrzędnych stanowisk. Testy backend: 877.
 
 ## 2026-09-30 — aktualne (36): eksport „na telefon” (KMZ dla Locus Map / Guru Maps); gałąź `ulepszenia-telefon`
 
@@ -67,15 +67,15 @@ Skutek na Kieleczce 20 km (30.09, ten sam kod poza progiem): H, F, F_loc, maska 
 
 ## 2026-09-30 — aktualne (34): tryby kolorowania mapy (Wynik / Wynik bez presji / Wilgotność); gałąź `ulepszenia-ui`
 
-Dodatek do `docs/RAPORT_UI.md`. `scores.json` ma teraz `M` i `pct_CWB26` (wszystkie wydzielenia, także poza maską; tylko prezentacja, model bez zmian). Frontend: `MapColorMode`, `chooseColorMode` / `togglePressureControls` / `resolveColorMode` (`model.ts`), źródło mapy = wszystkie wydzielenia z `stands.geojson` (`ForestMap.setAllStands`, `setColorMode`), skala Wilgotności bezwzględna (`MOISTURE_STOPS`). Wilgotność zmienia tylko kolory; przełącznik presji wyprowadza mapę z trybu Wilgotność do a/b. Stare migawki bez `M` / `R_bez_presji` — odpowiednie przyciski nieaktywne. Testy: backend 796, frontend 133. `frontend/public/data` = eksport Kieleczki z 30.09 (kopia poprzedniego w `output/backup_public_data_29_09_ui/`).
+Dodatek do `docs/archiwum/RAPORT_UI.md`. `scores.json` ma teraz `M` i `pct_CWB26` (wszystkie wydzielenia, także poza maską; tylko prezentacja, model bez zmian). Frontend: `MapColorMode`, `chooseColorMode` / `togglePressureControls` / `resolveColorMode` (`model.ts`), źródło mapy = wszystkie wydzielenia z `stands.geojson` (`ForestMap.setAllStands`, `setColorMode`), skala Wilgotności bezwzględna (`MOISTURE_STOPS`). Wilgotność zmienia tylko kolory; przełącznik presji wyprowadza mapę z trybu Wilgotność do a/b. Stare migawki bez `M` / `R_bez_presji` — odpowiednie przyciski nieaktywne. Testy: backend 796, frontend 133. `frontend/public/data` = eksport Kieleczki z 30.09 (kopia poprzedniego w `output/backup_public_data_29_09_ui/`).
 
 ## 2026-09-29 — aktualne (33): Faza UI zrealizowana; gałąź `ulepszenia-ui`
 
-Raport, lista kontrolna „stare pole → nowe miejsce” i zrzuty (przed/po, komputer i telefon): `docs/RAPORT_UI.md`, `docs/ui-zrzuty/`. **Model, F, R, H, α, progi bez zmian** (na prawdziwych danych Kieleczki: |Δ| H/F/F_loc/P/R = 0, `regions.json` identyczny). Nowe w eksporcie: `R_bez_presji` w `scores`, `regions_bez_presji_{day}.json` (ta sama procedura `group_into_regions` na `R_bez_presji`), w `details`: `habitat` (S_host/S_site/S_age/age_mode), `forest_district`, `access.pressure_contrib`; w `regions*.json`: `near_place`; w manifeście: `pressure_alpha`, `counts.region_count_bez_presji`. Frontend: przełącznik presji (`rankEntries`, `regionsNoPressure`), trzy paski, wiersze listy, zwinięte „Szczegóły”, zakładki Lista/Mapa na telefonie (`main.ts`, `model.ts`, `style.css`, testy `ui.test.ts`, `tests/test_ui_presja.py`). Testy: backend 794, frontend 123 + tsc + build. **Otwarte:** `details.json` urósł do ok. 44 MB; widok telefonu sprawdzony tylko w iframe 390 px na komputerze; nazwy nadleśnictw z polskimi znakami tylko dla RDLP Katowice; „koło X” zastąpione „X” (brak odmiany). `frontend/public/data` zawiera nowy eksport Kieleczki (kopia poprzedniego w `output/backup_public_data_przed_ui/`); starsze migawki nie mają nowych pól (przełącznik nieaktywny).
+Raport, lista kontrolna „stare pole → nowe miejsce” i zrzuty (przed/po, komputer i telefon): `docs/archiwum/RAPORT_UI.md`, `docs/archiwum/ui-zrzuty/`. **Model, F, R, H, α, progi bez zmian** (na prawdziwych danych Kieleczki: |Δ| H/F/F_loc/P/R = 0, `regions.json` identyczny). Nowe w eksporcie: `R_bez_presji` w `scores`, `regions_bez_presji_{day}.json` (ta sama procedura `group_into_regions` na `R_bez_presji`), w `details`: `habitat` (S_host/S_site/S_age/age_mode), `forest_district`, `access.pressure_contrib`; w `regions*.json`: `near_place`; w manifeście: `pressure_alpha`, `counts.region_count_bez_presji`. Frontend: przełącznik presji (`rankEntries`, `regionsNoPressure`), trzy paski, wiersze listy, zwinięte „Szczegóły”, zakładki Lista/Mapa na telefonie (`main.ts`, `model.ts`, `style.css`, testy `ui.test.ts`, `tests/test_ui_presja.py`). Testy: backend 794, frontend 123 + tsc + build. **Otwarte:** `details.json` urósł do ok. 44 MB; widok telefonu sprawdzony tylko w iframe 390 px na komputerze; nazwy nadleśnictw z polskimi znakami tylko dla RDLP Katowice; „koło X” zastąpione „X” (brak odmiany). `frontend/public/data` zawiera nowy eksport Kieleczki (kopia poprzedniego w `output/backup_public_data_przed_ui/`); starsze migawki nie mają nowych pól (przełącznik nieaktywny).
 
 ## 2026-09-29 — aktualne (32): Faza 4 (pogoda) zrealizowana; gałąź `ulepszenia-faza4`
 
-Raport i decyzje wg reguł planu: `docs/RAPORT_FAZA_4.md`, surowe liczby `docs/porownania/faza4/`, skrypty `scripts/faza4_*.py`. **F, R, progi klas, α, wagi H bez zmian** (test przypięty `tests/test_faza4_r_niezmienione.py`). Nowe: profil `weather.temp_grid_km` (opcja, domyślnie `null` = jak dotąd; reguła 4.1 nie spełniona: p95 |ΔF| 0,11), `conditions.aggregation` (domyślnie `median_f_stands`, reguła 4.4 spełniona; `median_of_features` = stara metoda), `ui.forecast_uncertain_from_day`/`forecast_indicative_from_day` (4/8, dni naprzód), `conditions.heavy_rain_day_mm`. Nowe kolumny run_poc (tylko prezentacja): `p26_mm`, `cwb26_mm`, `cwb26_typical_mm`, `tmean20_c`, `tmean5_c`, `p5_mm`, `tmin3_c`, `tmin3_date`, `forecast_window_share`; `details_{day}.json` ma blok `weather`, `conditions_{day}.json` ma `components`, `uncertainty`, `frost_area_share`, `heavy_rain_area_share`, `F_by_aggregation` na każdy dzień. Mapowanie kwantylowe radar→ERA5 NIE wdrożone (4.2: mediana |Δpct| 0,095 ≤ 0,10, tuż pod progiem). **Otwarte:** panel 7 dni w trybie `radar.mode: stand` liczy z opadu modelu bez radaru → F panelu (0,45) ≠ mediana F wydzieleń (0,65); zob. raport 4.4.
+Raport i decyzje wg reguł planu: `docs/archiwum/RAPORT_FAZA_4.md`, surowe liczby `docs/archiwum/porownania/faza4/`, skrypty `scripts/faza4_*.py`. **F, R, progi klas, α, wagi H bez zmian** (test przypięty `tests/test_faza4_r_niezmienione.py`). Nowe: profil `weather.temp_grid_km` (opcja, domyślnie `null` = jak dotąd; reguła 4.1 nie spełniona: p95 |ΔF| 0,11), `conditions.aggregation` (domyślnie `median_f_stands`, reguła 4.4 spełniona; `median_of_features` = stara metoda), `ui.forecast_uncertain_from_day`/`forecast_indicative_from_day` (4/8, dni naprzód), `conditions.heavy_rain_day_mm`. Nowe kolumny run_poc (tylko prezentacja): `p26_mm`, `cwb26_mm`, `cwb26_typical_mm`, `tmean20_c`, `tmean5_c`, `p5_mm`, `tmin3_c`, `tmin3_date`, `forecast_window_share`; `details_{day}.json` ma blok `weather`, `conditions_{day}.json` ma `components`, `uncertainty`, `frost_area_share`, `heavy_rain_area_share`, `F_by_aggregation` na każdy dzień. Mapowanie kwantylowe radar→ERA5 NIE wdrożone (4.2: mediana |Δpct| 0,095 ≤ 0,10, tuż pod progiem). **Otwarte:** panel 7 dni w trybie `radar.mode: stand` liczy z opadu modelu bez radaru → F panelu (0,45) ≠ mediana F wydzieleń (0,65); zob. raport 4.4.
 
 ## 2026-09-29 — aktualne (31): `habitat.age_mode: neutral` jest domyślny
 
@@ -91,13 +91,13 @@ Gałąź `ulepszenia-faza2` (z `master` po scaleniu 1.6). Raport: `docs/RAPORT_F
 
 ## 2026-09-28 — (28): Faza 1.5 — opad z radaru per wydzielenie (~1 km, ważony powierzchniowo)
 
-Zrealizowany `docs/PLAN_WDROZENIA.md` sekcja "Faza 1.5", pełny raport w `docs/RAPORT_FAZA_1_5.md`, gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`).
+Zrealizowany `docs/archiwum/PLAN_WDROZENIA.md` sekcja "Faza 1.5", pełny raport w `docs/archiwum/RAPORT_FAZA_1_5.md`, gałąź `ulepszenia-faza1-5` (z `ulepszenia-faza1`).
 
 **Co się zmieniło:** opad (tylko opad — temperatura/ET0/klimatologia zostają na siatce pogodowej) jest teraz domyślnie liczony osobno dla każdego wydzielenia z siatki RainGRS ~1 km, ważony powierzchniowo przecięciem wielokąta wydzielenia z komórkami radaru (macierz rzadka, `pipeline.radar.build_stand_cell_weights`/`sample_stack_weighted`), zamiast jednej wspólnej średniej blokowej dla wielu wydzieleń na tym samym punkcie pogody. Nowy profil: `radar.mode: stand` (domyślnie, `block` = stare zachowanie nadal dostępne) i `radar.smoothing_km: 1` (filtr skrzynkowy NaN-aware przed próbkowaniem, wybrany empirycznie — patrz raport).
 
 **Realna usterka wydajności znaleziona i naprawiona w trakcie oceny:** pierwsza wersja per-wydzieleniowej agregacji (`{sid: g for sid, g in df.groupby("stand_id")}`) materializowała osobny obiekt DataFrame na każde z 19716 wydzieleń Kieleczki — znany antywzorzec pandas, w praktyce ~5 GB pamięci i dziesiątki minut bez końca widocznego postępu. Naprawione wektorowo (`pipeline.weather.stand_precip_features_table` — reshape do macierzy i iloczyn macierzowy zamiast pętli po grupach); bez tej poprawki `radar.mode: stand` byłby praktycznie nieużywalny w realnej skali wyszukiwania.
 
-**Walidacja na realnych danych (bez API — tylko cache lokalny):** porównanie ze stacjami Weathercloud dla `smoothing_km` 0–3 (wybrano 1); porównanie block vs stand na epizodzie burzowym 29.08–03.09 na wszystkich 19716 wydzieleniach Kieleczki (Spearman rho 0,933, różnice skoncentrowane i ograniczone, nie szum); pełny przebieg Kieleczka 20 km 2026-09-28 (`docs/porownania/faza1_5/` vs `docs/porownania/nowy/`): Spearman rho(R) = 0,9835, top-20 pokrywa się w 15/20, wszystkie największe awanse/spadki w rankingu tłumaczone realną zmianą pct_CWB26 (P niezmienione). Spójność percentyli (1.5.4) zmierzona i uznana za niewymagającą korekty — rozkład pct_CWB26 prawie identyczny w obu trybach.
+**Walidacja na realnych danych (bez API — tylko cache lokalny):** porównanie ze stacjami Weathercloud dla `smoothing_km` 0–3 (wybrano 1); porównanie block vs stand na epizodzie burzowym 29.08–03.09 na wszystkich 19716 wydzieleniach Kieleczki (Spearman rho 0,933, różnice skoncentrowane i ograniczone, nie szum); pełny przebieg Kieleczka 20 km 2026-09-28 (`docs/archiwum/porownania/faza1_5/` vs `docs/archiwum/porownania/nowy/`): Spearman rho(R) = 0,9835, top-20 pokrywa się w 15/20, wszystkie największe awanse/spadki w rankingu tłumaczone realną zmianą pct_CWB26 (P niezmienione). Spójność percentyli (1.5.4) zmierzona i uznana za niewymagającą korekty — rozkład pct_CWB26 prawie identyczny w obu trybach.
 
 **Testy:** backend `pytest` 596/596, frontend `npx vitest run` 72/72 + `tsc --noEmit` czysto.
 
@@ -105,7 +105,7 @@ Zrealizowany `docs/PLAN_WDROZENIA.md` sekcja "Faza 1.5", pełny raport w `docs/R
 
 ## 2026-09-27 — (27): A2 — model fazy wysypu NIE przeszedł bramki GBIF; wdrożono Plan-B (F na 7 dni + fakty o deszczu)
 
-Zrealizowany plan `docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-a2-flush` na gałęzi `worktree-borowik-a2-flush`.
+Zrealizowany plan `docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-a2-flush` na gałęzi `worktree-borowik-a2-flush`.
 
 **Model wypróbowany (Task 1-2, `pipeline/flush.py`, skończony i przetestowany, ale NIE wdrożony do produkcji):** deszcz >= `pulse_min_mm` (1 dzień przerwy dozwolony) uruchamia zegar termiczny (stopniodni od `t_base_c`, wolniej w zimne noce, mróz kończy falę) → krzywa Gaussa w stopniodniach (`dd_peak`/`dd_sigma`) → faza (przed_fala/poczatek/szczyt/starzeje_sie/po_fali) i okno szczytu.
 
@@ -129,7 +129,7 @@ Zrealizowany plan `docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md`, wykon
 
 Porównanie eksportów 26.09 (Open-Meteo) / 27.09 (radar) i dodatkowy bieg `--no-radar` z 27.09 (katalog roboczy, poza repo) pokazały, że M miało tylko ~9 różnych wartości na 3656 wydzieleń mimo 71 używanych punktów pogodowych.
 
-**Błąd 1 — percentyle cache'owane per komórka klimatologii (od `43b5a80`, 2026-09-24).** `run_poc` liczył `pct_cwb26`/`pct_sm` z wiersza pogody PIERWSZEGO wydzielenia trafiającego do komórki klimatologii (16 km przy promieniu 20 km) i używał ich dla wszystkich punktów pogody w tej komórce. Naprawa: historia klimatologii nadal cache'owana per komórka (`history_by_cell`), percentyle per punkt pogody (`percentiles_by_point`). Test: `test_run_poc_moisture_percentiles_follow_each_weather_point_not_the_climatology_cell`. **„Skok M przy dł. 21,72” z notatek (23)/(25) to była granica komórek klimatologii, nie artefakt opadu.**
+**Błąd 1 — percentyle cache'owane per komórka klimatologii (od `42dfec9`, 2026-09-24).** `run_poc` liczył `pct_cwb26`/`pct_sm` z wiersza pogody PIERWSZEGO wydzielenia trafiającego do komórki klimatologii (16 km przy promieniu 20 km) i używał ich dla wszystkich punktów pogody w tej komórce. Naprawa: historia klimatologii nadal cache'owana per komórka (`history_by_cell`), percentyle per punkt pogody (`percentiles_by_point`). Test: `test_run_poc_moisture_percentiles_follow_each_weather_point_not_the_climatology_cell`. **„Skok M przy dł. 21,72” z notatek (23)/(25) to była granica komórek klimatologii, nie artefakt opadu.**
 
 **Błąd 2 — wilgotność gleby porównywana z klimatologią z innego modelu.** Po naprawie 1 rozkład per punkt (Będziemyśl 20 km, 144 punkty, 27.09, radar): percentyl bilansu wodnego z radaru jednolity 0,49–0,81 (mediana 0,66); bieżąca wilgotność gleby Open-Meteo (API prognozy, 9–27 cm) 0,135–0,27 m³/m³ vs mediana klimatologii ERA5-Land (archiwum, 7–28 cm) ~0,22–0,33 → `pct_sm` 0,00–0,04 prawie wszędzie, ~0,48 w blokach ~10 km z wartością 0,226. M = f(średnia obu) było więc sterowane blokami gleby modelu (M 0,2 vs 0,72). Wcześniejsze „północny blok najlepszy” (M 0,94 → 0,80 z radarem) wynikało z tego, że pierwsze wydzielenie komórki trafiło w taki blok. **Decyzja użytkownika (wariant 1):** nowy klucz profilu `fruiting.soil_moisture_weight: 0.0` (0,5 = dawna równa średnia), wspólna funkcja `pipeline.scoring.moisture_percentile` używana przez `score_moisture` i przez `pct_m` w `run_poc` (modulacja siedliskowa) oraz w `notebooks/03_backtest_gbif.py`. Do rewizji w A2 (własny bilans wody).
 
@@ -139,7 +139,7 @@ Porównanie eksportów 26.09 (Open-Meteo) / 27.09 (radar) i dodatkowy bieg `--no
 
 ## 2026-09-27 — aktualne (25): A1 — opady z radaru IMGW RainGRS
 
-Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-radar-opady-a1` na gałęzi `worktree-borowik-radar-opady-a1`. Cel: zastąpienie modelowanych opadów Open-Meteo pomiarem z radaru IMGW-PIB RainGRS dla ostatnich 30 dni, z Open-Meteo jako uzupełnieniem luk i prognozą — bez zmiany temperatury/ET0/wilgotności gleby/klimatologii/współczynników scoringu.
+Zrealizowany plan `docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`, wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-radar-opady-a1` na gałęzi `worktree-borowik-radar-opady-a1`. Cel: zastąpienie modelowanych opadów Open-Meteo pomiarem z radaru IMGW-PIB RainGRS dla ostatnich 30 dni, z Open-Meteo jako uzupełnieniem luk i prognozą — bez zmiany temperatury/ET0/wilgotności gleby/klimatologii/współczynników scoringu.
 
 **Uwaga o numeracji:** plan zakładał, że ta notatka będzie "(24)" — w międzyczasie do master trafił plan zapisanych map, który zajął numer (24) jako pierwszy. Ta notatka jest więc (25).
 
@@ -180,7 +180,7 @@ Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md`,
 
 ## 2026-09-26 — aktualne (24): zapisane mapy (lista do porównywania analiz)
 
-Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spec: `docs/superpowers/specs/2026-09-26-borowik-saved-maps-design.md`), wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-saved-maps` na gałęzi `worktree-borowik-saved-maps`. Cel: zapisanie aktualnie wyświetlanej analizy pod nazwą (np. "Będziemyśl - 20km - 26.09") i przełączanie się między zapisanymi analizami w przeglądarce, bez ponownego uruchamiania pipeline'u.
+Zrealizowany plan `docs/archiwum/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spec: `docs/archiwum/superpowers/specs/2026-09-26-borowik-saved-maps-design.md`), wykonanie inline (Native, `superpowers:executing-plans`) w izolowanym worktree `.claude/worktrees/borowik-saved-maps` na gałęzi `worktree-borowik-saved-maps`. Cel: zapisanie aktualnie wyświetlanej analizy pod nazwą (np. "Będziemyśl - 20km - 26.09") i przełączanie się między zapisanymi analizami w przeglądarce, bez ponownego uruchamiania pipeline'u.
 
 **Co powstało:**
 - `launcher/trip_archive.py` — czysta logika (bez GUI, w pełni TDD'owana, `tests/test_trip_archive.py`): `slugify`/`trip_id`, `read_index`/`write_index`/`upsert_entry`, `read_day`, `copy_trip_files`, `trip_exists`, `save_trip`. Kopiuje `scores.json`/`stands.geojson`/opcjonalnie `regions.json`/`details.json` z `frontend/public/data/` do `frontend/public/data/trips/<id>/` i dopisuje wpis do `frontend/public/data/trips/index.json`.
@@ -195,7 +195,7 @@ Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spe
 
 ## 2026-09-26 — aktualne (23): pierwsza obserwacja terenowa, porównanie radar/stacje, decyzje A1/A2/B — **następny krok: plan A1**
 
-**Następna sesja:** wykonać `docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md` (zacząć od Task 0 — decyzje D1–D4 do potwierdzenia + niezacommitowane `pipeline/weather.py`/`notebooks/03_backtest_gbif.py`). **Tryb wykonania wybrany przez użytkownika: Native** (`superpowers:executing-plans`, inline, jeden recenzent całej gałęzi na końcu), model `opusplan`. Kod w tej sesji **nie był zmieniany** (tylko ten plan + notatka).
+**Następna sesja:** wykonać `docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md` (zacząć od Task 0 — decyzje D1–D4 do potwierdzenia + niezacommitowane `pipeline/weather.py`/`notebooks/03_backtest_gbif.py`). **Tryb wykonania wybrany przez użytkownika: Native** (`superpowers:executing-plans`, inline, jeden recenzent całej gałęzi na końcu), model `opusplan`. Kod w tej sesji **nie był zmieniany** (tylko ten plan + notatka).
 
 **Obserwacja terenowa 2026-09-26 (sobota, ~11–13, rejon 1 z eksportu 2026-09-26, wejście od południa od Bratkowic):** 2 h marszu, ok. 10 grzybów wyraźnie starych (głównie podgrzybki, 2 koźlarze) + 2 małe (~3 cm), w tym 1 borowik. W rejonie 1 widoczne ślady innych grzybiarzy — wg użytkownika dojeżdżają rowerami duktami leśnymi. Wnioski użytkownika (przyjęte):
 1. Model F ocenia „czy warunki sprzyjają teraz”, nie „w której fazie jest wysyp” — potrzebny model czasu owocnikowania liczony od konkretnego opadu, z temperaturą (także nocną). Obecnie noce wchodzą tylko przez `tmin3` (przymrozek), `tmean20` to średnia dobowa.
@@ -206,7 +206,7 @@ Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spe
 - **Źródło opadów:** radar IMGW RainGRS jako główne źródło opadów z przeszłości; Open-Meteo uzupełnia luki i daje prognozę.
 - **B (presja: rowery/piesi po duktach):** osobny podprojekt, później.
 
-**Radar IMGW — ustalenia (sprawdzone na żywo):** publiczny produkt RainGRS (radar + deszczomierze, godzinowy, 1 km, ESRI ASCII) — pliki bieżące ~30 h + archiwum dobowych tarów od 2018 (opóźnienie ~2–3 dni), bez klucza. **Sekcja 3.3 `docs/projekt-borowik.md` („tylko najnowszy plik, wymaga pollera”) jest nieaktualna** — do poprawy w A1 Task 8. Szczegóły, URL-e i pułapki (HTML zamiast 404, brak godzin 19–23 UTC w archiwum przed 13.09, `date` Open-Meteo = północ lokalna w UTC) w sekcji „Decyzje projektowe” planu A1.
+**Radar IMGW — ustalenia (sprawdzone na żywo):** publiczny produkt RainGRS (radar + deszczomierze, godzinowy, 1 km, ESRI ASCII) — pliki bieżące ~30 h + archiwum dobowych tarów od 2018 (opóźnienie ~2–3 dni), bez klucza. **Sekcja 3.3 `docs/archiwum/projekt-borowik.md` („tylko najnowszy plik, wymaga pollera”) jest nieaktualna** — do poprawy w A1 Task 8. Szczegóły, URL-e i pułapki (HTML zamiast 404, brak godzin 19–23 UTC w archiwum przed 13.09, `date` Open-Meteo = północ lokalna w UTC) w sekcji „Decyzje projektowe” planu A1.
 
 **Porównanie opadów (spike, 2026-09-26):** 4 niezależne stacje Weathercloud (S1 ok. 3–4 km od rejonu 1, S2 Będziemyśl, S3 pogórze na południu, S4 zachód od Sędziszowa; dane dobowe w `cache/stations/weathercloud_2026-09.yaml`, poza repo — lokalizacje prywatnych stacji). MAE dobowe 13–23.09 (pełne godziny radaru):
 
@@ -225,7 +225,7 @@ Zrealizowany plan `docs/superpowers/plans/2026-09-26-borowik-saved-maps.md` (spe
 
 ## 2026-09-25 — aktualne (22): fenologia (G_season), kalibracja wilgotności, tie-break pokrycia/zadrzewienia
 
-Zrealizowany plan `docs/superpowers/plans/2026-09-25-borowik-fenologia-wilgotnosc-tiebreak.md` (przegląd użytkownika 2026-09-25, wykonanie inline, TDD krok po kroku, 10 zadań implementacyjnych + to podsumowanie). Trzy niezależne zmiany, każda addytywna względem H/R_final:
+Zrealizowany plan `docs/archiwum/superpowers/plans/2026-09-25-borowik-fenologia-wilgotnosc-tiebreak.md` (przegląd użytkownika 2026-09-25, wykonanie inline, TDD krok po kroku, 10 zadań implementacyjnych + to podsumowanie). Trzy niezależne zmiany, każda addytywna względem H/R_final:
 
 **1. G_season (fenologia z GBIF).** Nowy moduł `pipeline/phenology.py::compute_g_season(target_doy, profile)` — statyczna krzywa sezonowości Boletus edulis dla Polski (GBIF, zapytanie na żywo 2026-09-25: `api.gbif.org/v1/occurrence/search?country=PL&scientificName=Boletus%20edulis&limit=0&facet=month&facetLimit=12`, n=1270 rekordów z miesiącem — liczby zweryfikowane, dokładnie zgodne z liczbami podanymi w przeglądzie użytkownika), zapisana statycznie w `profiles/boletus_edulis.yaml` (`phenology.gbif_monthly_counts`), interpolowana liniowo między środkami miesięcy (dzień 15), bez dodatkowego wygładzania (krzywa surowa jest już jednomodalna, dodatkowe wygładzanie zmiękczyłoby realny, ostry spadek po wrześniu — uzasadnienie w docstringu). Dolny limit 0,05. Wpięty w `pipeline/orchestrate.py::run_poc` (zastępuje sztywne `g_season=1.0` w wywołaniu `compute_fruiting`), eksportowany per wydzielenie (`G_season` w `scores_{day}.json`), z notatką w wyjaśnieniach („poza szczytem sezonu (G_season=X,XX)") gdy < 0,5 (`pipeline/explain.py::g_season_note`, `pipeline/mvp.py`).
 
@@ -253,7 +253,7 @@ Testy: 372 Python (352 przed tym planem → 372, +20: nowe `test_phenology.py` (
 
 ## 2026-09-25 — aktualne (21): B3 — karta wydzielenia: skład, sąsiedztwo, budowa/ochronność
 
-Zrealizowany krok B3 z planu 2.1 (`docs/projekt-borowik.md` §5.3 "Różnicowanie H" pkt 3) — **wyłącznie prezentacja na karcie**, zero wpływu na H/F/R. Po B2 (notatki (19)/(20)) było to jedyne, co zostało z "Różnicowania H"; decyzja z (20) — dalszego różnicowania nie robimy bez danych terenowych, C4 (domieszka z sąsiedztwa jako tie-breaker w H) skreślone w §13.1.
+Zrealizowany krok B3 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §5.3 "Różnicowanie H" pkt 3) — **wyłącznie prezentacja na karcie**, zero wpływu na H/F/R. Po B2 (notatki (19)/(20)) było to jedyne, co zostało z "Różnicowania H"; decyzja z (20) — dalszego różnicowania nie robimy bez danych terenowych, C4 (domieszka z sąsiedztwa jako tie-breaker w H) skreślone w §13.1.
 
 **Co zrobione:**
 - Nowy `pipeline/bdl_dictionaries.py::load_dictionaries(packages_dir)` — słowniki (area_type, density, storey, tree_species, soil_subtype, prot_categ, part) z pierwszej dostępnej paczki; zweryfikowane bajt-w-bajt identyczne między nadleśnictwami, więc jedna paczka wystarcza. Brak paczek → `{}` (surowe kody, bez błędu).
@@ -288,7 +288,7 @@ Przebieg po naprawie (z cache, tylko zakazy na żywo): 3 656 w masce, R ≥ 90: 
 
 ## 2026-09-25 — aktualne (19): B2 — pełny skład gatunkowy z paczek BDL do S_host
 
-Zrealizowany krok B2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, §5.3 "Różnicowanie H" pkt 1), na podstawie rozpoznania B1. Przed planem implementacji pokazane i przeanalizowane liczby z realnej paczki Kędzierzyn (patrz `docs/bdl-paczki-rozpoznanie.md`, sekcja "B2 — wdrożenie"); plan skorygowany przez użytkownika trzy razy (kody gatunków, dodatkowa weryfikacja płaskowyżu, zmiana obszaru testowego na Będziemyśl) przed akceptacją.
+Zrealizowany krok B2 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §13.1, §5.3 "Różnicowanie H" pkt 1), na podstawie rozpoznania B1. Przed planem implementacji pokazane i przeanalizowane liczby z realnej paczki Kędzierzyn (patrz `docs/archiwum/bdl-paczki-rozpoznanie.md`, sekcja "B2 — wdrożenie"); plan skorygowany przez użytkownika trzy razy (kody gatunków, dodatkowa weryfikacja płaskowyżu, zmiana obszaru testowego na Będziemyśl) przed akceptacją.
 
 **Co zrobione:**
 - Nowy `pipeline/bdl_packages.py::load_packages(packages_dir)` — auto-wykrywa paczki BDL pod `cache/bdl_packages/*/` po polu `adr_for` (join z `G_SUBAREA.shp`), zwraca `adr_for -> PackageComposition` (skład warstwy `DRZEW`, tylko wiersze z liczbowym `part_cd_act` — kody `MJS`/`PJD` z `f_part_dic` to "poniżej 5%, niezmierzone" i celowo nie wchodzą do sumy). Brak katalogu/pustej paczki → `{}`, bez błędu.
@@ -310,7 +310,7 @@ Zrealizowany krok B2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, §5.3 "Róż
 
 Testy: 310 (280→310, +30: `test_bdl_packages.py` nowy plik + rozszerzenia `test_habitat.py`/`test_confidence.py`/`test_orchestrate.py`/`test_export.py`/`test_profile_coverage.py`), wszystkie bez sieci (syntetyczne fixture'y, nie realne paczki).
 
-**Dokumentacja pobierania paczek:** nowa sekcja w `docs/bdl-paczki-rozpoznanie.md` ("Jak pobrać i rozpakować kolejną paczkę") — formularz, `cache/bdl_packages/<nazwa>/`, auto-wykrywanie po `adr_for`. **Przypomnienie z notatki (18): nigdy nie wpisywać e-maila użytkownika do żadnego pliku w repo.**
+**Dokumentacja pobierania paczek:** nowa sekcja w `docs/archiwum/bdl-paczki-rozpoznanie.md` ("Jak pobrać i rozpakować kolejną paczkę") — formularz, `cache/bdl_packages/<nazwa>/`, auto-wykrywanie po `adr_for`. **Przypomnienie z notatki (18): nigdy nie wpisywać e-maila użytkownika do żadnego pliku w repo.**
 
 **Nie ruszono:** podszyt/zwarcie/gleba do H (B3 najwyżej), pobieranie kolejnych paczek poza już obecnymi 5, rejony/pogoda/R (poza zakresem tego kroku).
 
@@ -318,13 +318,13 @@ Testy: 310 (280→310, +30: `test_bdl_packages.py` nowy plik + rozszerzenia `tes
 
 Decyzja użytkownika: pierwsze wyjazdy testowe z **Będziemyśla** (50.0555, 21.7889, gm. Sędziszów Małopolski), **promień 20 km**. Od B2 wszystkie kryteria z planu 2.1 sprawdzać na tym obszarze, nie na Kieleczce: `prepare_trip --lat 50.0555 --lon 21.7889 --radius-km 20`.
 
-Rozpoznanie (tylko BDL WFS, 22 kafle już w `cache/bdl_tiles_v2`; Open-Meteo, GDOŚ, OSM jeszcze niepobrane): RDLP Krosno + Kraków, 4 153 wydzielenia D-STAN, 0 kodów spoza profilu. Nadleśnictwa: Głogów 2 328, Strzyżów 738, Tuszyma 736, Dębica 179, Kolbuszowa 172. Paczki BDL do B2: Głogów, Strzyżów, Tuszyma (92% obszaru). Szczegóły i obserwacja o `LWYZS` (S_site 0,6 na pogórzu): `docs/projekt-borowik.md` sekcja 0.2.
+Rozpoznanie (tylko BDL WFS, 22 kafle już w `cache/bdl_tiles_v2`; Open-Meteo, GDOŚ, OSM jeszcze niepobrane): RDLP Krosno + Kraków, 4 153 wydzielenia D-STAN, 0 kodów spoza profilu. Nadleśnictwa: Głogów 2 328, Strzyżów 738, Tuszyma 736, Dębica 179, Kolbuszowa 172. Paczki BDL do B2: Głogów, Strzyżów, Tuszyma (92% obszaru). Szczegóły i obserwacja o `LWYZS` (S_site 0,6 na pogórzu): `docs/archiwum/projekt-borowik.md` sekcja 0.2.
 
-Usunięto adres e-mail użytkownika z `docs/bdl-paczki-rozpoznanie.md` i z notatek (16) poniżej — nie wpisywać danych osobowych do repo.
+Usunięto adres e-mail użytkownika z `docs/archiwum/bdl-paczki-rozpoznanie.md` i z notatek (16) poniżej — nie wpisywać danych osobowych do repo.
 
 ## 2026-09-24 — aktualne (17): B1 — potwierdzone na realnej paczce Kędzierzyn (zastępuje notatkę (16))
 
-Ta notatka **zastępuje** poprzednią (16) co do stanu weryfikacji — tamta miała rekomendację warunkową (tylko ze schematu dokumentacji), bez dostępu do realnych danych. Użytkownik przesłał link do pobrania paczki (BDL wysłał go na podany e-mail); paczka `BDL_02_10_KEDZIERZYN_2026.zip` pobrana i przeanalizowana (`cache/bdl_research/kedzierzyn/`, poza repo). Pełne dane: `docs/bdl-paczki-rozpoznanie.md` (przepisana z realnymi liczbami).
+Ta notatka **zastępuje** poprzednią (16) co do stanu weryfikacji — tamta miała rekomendację warunkową (tylko ze schematu dokumentacji), bez dostępu do realnych danych. Użytkownik przesłał link do pobrania paczki (BDL wysłał go na podany e-mail); paczka `BDL_02_10_KEDZIERZYN_2026.zip` pobrana i przeanalizowana (`cache/bdl_research/kedzierzyn/`, poza repo). Pełne dane: `docs/archiwum/bdl-paczki-rozpoznanie.md` (przepisana z realnymi liczbami).
 
 **Kluczowe potwierdzenia na realnych danych (nie tylko schemat):**
 - Skład gatunkowy z udziałami per piętro: **98,3% wydzieleń D-STAN ma >1 gatunek w warstwie `DRZEW`** (mediana ~6-8 gatunków), `part_cd_act`/`species_age` wypełnione w 100% wierszy. Gatunek `sp_rank_order_act=1` zgadza się w 100% (2681/2681) z `species_cd`/`part_cd` z `G_SUBAREA` (= WFS) — ranga 1 to dokładnie dzisiejsze "gatunek panujący".
@@ -340,7 +340,7 @@ Ta notatka **zastępuje** poprzednią (16) co do stanu weryfikacji — tamta mia
 
 ## 2026-09-24 — aktualne (16): B1 — rozpoznanie paczek BDL per nadleśnictwo (bez zmian w kodzie)
 
-Zrealizowany krok B1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, kryterium z §3.1 "Do sprawdzenia w pierwszej kolejności"). To rozpoznanie — `pipeline/` nie zostało dotknięte. Pełna notatka: `docs/bdl-paczki-rozpoznanie.md`.
+Zrealizowany krok B1 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §13.1, kryterium z §3.1 "Do sprawdzenia w pierwszej kolejności"). To rozpoznanie — `pipeline/` nie zostało dotknięte. Pełna notatka: `docs/archiwum/bdl-paczki-rozpoznanie.md`.
 
 **Wynik:** portal `bdl.lasy.gov.pl` udostępnia paczki per nadleśnictwo (SHP + TXT) z pełnym opisem taksacyjnym. Ze schematu danych (`OpisDanych.pdf`, pobrany bez logowania z publicznego linku na `/portal/o-udostepnianiu`, zapisany w `cache/bdl_research/` — poza repo): **`F_STOREY_SPECIES.part_cd_act`** daje pełny skład gatunkowy z udziałami **per piętro drzewostanu** (`F_AROD_STOREY.storey_cd`), **`F_AROD_STOREY.density_cd`** to zwarcie, **`F_SUBAREA.soil_subtype_cd`** to typ+podtyp gleby. `G_SUBAREA` ma pole `adr_for` identyczne z WFS (`pipeline/bdl.py`), więc join wygląda na bezpośredni. Podszyt jako osobna warstwa — prawdopodobne (wniosek pośredni z przykładu filtra w dokumentacji BDL, `storey_cd IN ('DRZEW','IP','IIP')` sugeruje istnienie innych kodów), nie potwierdzone literalnie.
 
@@ -354,7 +354,7 @@ Zrealizowany krok B1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, kryterium z 
 
 ## 2026-09-24 — aktualne (15): A4 — filtr małych wydzieleń + poprawka wyjaśnień S_host
 
-Zrealizowany krok A4 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §5.2 i §5.3 "Poprawka wyjaśnień").
+Zrealizowany krok A4 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §13.1, opis §5.2 i §5.3 "Poprawka wyjaśnień").
 
 **Część 1 — filtr < 0,5 ha:**
 - Sprawdzone: powierzchnia nie była w eksporcie (`stands.geojson` ma tylko `stand_id`+geometrię; `scores_{day}.json` żadnego pola powierzchni). Dodane `area_ha` do `SCORE_FIELDS`/`build_score_record` (`pipeline/export.py`), liczone z geometrii EPSG:2180 (`geometry.area / 10000`) — to samo źródło co `pipeline.regions`' własne `area_ha`, nie pole BDL `sub_area` (nieużywane, potencjalnie nieaktualne). Pole zawsze obecne w nowych eksportach (nie jest maską, więc każde wydzielenie je dostaje).
@@ -373,7 +373,7 @@ Zrealizowany krok A4 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §5.2 i
 
 ## 2026-09-24 — aktualne (14): A3 — pogoda liczona do dnia wyjazdu + porządki (C2)
 
-Zrealizowany krok A3 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §3.3 "Prognoza do dnia wyjazdu" i §5.4 "Zmiany w F"), plus przy okazji C2 (usunięcie martwych zmiennych pogodowych). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu.
+Zrealizowany krok A3 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §13.1, opis §3.3 "Prognoza do dnia wyjazdu" i §5.4 "Zmiany w F"), plus przy okazji C2 (usunięcie martwych zmiennych pogodowych). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu.
 
 **Przyczyna:** `--date` był tylko etykietą nazwy pliku — `pipeline/weather.py` zawsze pytał Open-Meteo o `forecast_days=1` (tylko dziś), a `pipeline/orchestrate.py` liczył percentyle klimatologii dla dnia roku `date.today()`, niezależnie od `--date`. Planując wyjazd za kilka dni użytkownik dostawał więc warunki "na teraz".
 
@@ -394,7 +394,7 @@ Zrealizowany krok A3 z planu 2.1 (`docs/projekt-borowik.md` §13.1, opis §3.3 "
 
 ## 2026-09-24 — aktualne (13): A2 — przebudowa rejonów (kończy z jednym-rejonem-na-cały-las)
 
-Zrealizowany krok A2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, algorytm z §5.6 "Nowa definicja rejonu (2.1)", liczby z §0.1). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu (na wyraźną prośbę).
+Zrealizowany krok A2 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §13.1, algorytm z §5.6 "Nowa definicja rejonu (2.1)", liczby z §0.1). Plan implementacji pokazany i zaakceptowany przez użytkownika przed pisaniem kodu (na wyraźną prośbę).
 
 **Przyczyna:** algorytm 2.0 (`_assign_clusters`: bufor 250 m + `unary_union`) łączy łańcuchowo dowolnie długi ciąg sąsiadujących top-25% wydzieleń bez górnego ograniczenia rozmiaru — stąd rejon 1 = 4 747 wydzieleń / ~187 km² przy realnym przebiegu 25 km (§0.1).
 
@@ -415,7 +415,7 @@ Zrealizowany krok A2 z planu 2.1 (`docs/projekt-borowik.md` §13.1, algorytm z �
 
 ## 2026-09-24 — aktualne (12): A1 — kody siedlisk wyżynnych i gatunków w profilu
 
-Zrealizowany krok A1 z planu 2.1 (`docs/projekt-borowik.md` §13.1, wartości z §5.3 "Uzupełnienie 2.1").
+Zrealizowany krok A1 z planu 2.1 (`docs/archiwum/projekt-borowik.md` §13.1, wartości z §5.3 "Uzupełnienie 2.1").
 
 **Sprawdzenie przed zmianą (bez nowego pobierania z sieci — limit archive-api nadal wyczerpany):** wszystkie kody `site_type`/`species_cd` spoza profilu wypisane z `cache/bdl_tiles_v2` (30 kafli, 43 908 zdeduplikowanych wydzieleń). Kody siedlisk zgadzają się dokładnie z audytem §0.1 (`LWYZS` 899, `LWYZW` 822, `LMWYZW` 213, `LMWYZ` 170, `LLWYZ` 7, `OLJWYZ` 5, `BMWYZ` 1). Sprawdzone w źródłach zewnętrznych (encyklopedialesna/Wikipedia typologia siedlisk, nie zgadywane): dla „Las wyżynny” wilgotność to pojedyncza litera-sufiks (Ś/W), dla „Bór/Las mieszany wyżynny” brak sufiksu = świeży (domyślny), „W” = wilgotny — to wyjaśnia pozornie „obcięte” kody (np. `LWYZS` zamiast `LWYZSW`) i potwierdza mapowania z planu bez zmian.
 
@@ -431,7 +431,7 @@ Kody gatunków: znaleziono jeden kod spoza planu — `JB` (jarząb, 1 wydzieleni
 
 ## 2026-09-24 — aktualne (11): audyt wyników i plan 2.1 (tylko dokumentacja, bez zmian w kodzie)
 
-Audyt realnego eksportu 25 km (50.5318, 18.6055) opisany w `docs/projekt-borowik.md` sekcja 0.1. Nowa kolejność prac: sekcja 13.1 (A1–A4 naprawy, B1–B3 różnicowanie H, C1–C4 walidacja/porządki).
+Audyt realnego eksportu 25 km (50.5318, 18.6055) opisany w `docs/archiwum/projekt-borowik.md` sekcja 0.1. Nowa kolejność prac: sekcja 13.1 (A1–A4 naprawy, B1–B3 różnicowanie H, C1–C4 walidacja/porządki).
 
 Kluczowe ustalenia: czołówka = wyłącznie SO na BMSW (745 wydzieleń z R ≥ 90), rejon 1 = 4 747 wydzieleń / ~187 km², ~2 300 wydzieleń na fallbacku 0,5 przez brakujące kody wyżynne (`LWYZS`, `LWYZW`, `LMWYZW`, `LMWYZ`…) i gatunki (`DB.C`, `JW`, `SO.C`…), `--date` nie wpływa na pogodę, confidence stałe.
 
@@ -616,12 +616,12 @@ Prace wykonano w `.claude/worktrees/borowik-faza2-mvp-backend`, nie na starszym 
 
 ### Frontend (wcześniejszy etap)
 
-- `frontend/`: Vite + TypeScript + MapLibre + Turf, na podstawie `docs/superpowers/specs/2026-09-24-borowik-frontend-design.md`.
+- `frontend/`: Vite + TypeScript + MapLibre + Turf, na podstawie `docs/archiwum/superpowers/specs/2026-09-24-borowik-frontend-design.md`.
 - Karty i obrysy rejonów, panel wydzieleń, klasy F, H, pewność i powody, zapis lokalny i Google Maps, układ mobilny, obsługa błędów/pustych wyników.
 - `pipeline/export.py`: `export_stand_geometries_geojson` (EPSG:4326) i `d_park_m` w wynikach. `prepare_trip` eksportuje GeoJSON obok GeoParquet.
 - `frontend/scripts/sync-data.mjs`: kontrolowana synchronizacja jednego kompletnego zestawu wyników.
 - Sprawdzone: 19 testów JS, budowanie produkcyjne i ręczna kontrola w przeglądarce, w tym 390 px i zapis po odświeżeniu. Backend przed zmianą promienia: 207 testów.
-- Szczegółowe uwagi: `frontend/README.md` i `frontend/IMPLEMENTATION.md`. Punkty orientacyjne nie są współrzędnymi wejść. Zapis lokalny nie jest PWA/offline. Stare wyniki nie zyskują automatycznie odległości.
+- Szczegółowe uwagi: `frontend/README.md` i `docs/archiwum/frontend-IMPLEMENTATION.md`. Punkty orientacyjne nie są współrzędnymi wejść. Zapis lokalny nie jest PWA/offline. Stare wyniki nie zyskują automatycznie odległości.
 
 ### Promień — zmiana zlecona przez użytkownika
 
@@ -665,18 +665,18 @@ npm.cmd run dev
 - Cache BDL sprawdza istnienie pliku, nie wiek danych; brak nowej polityki odświeżania.
 - Awaria źródła przerywa analizę, zanim zacznie się eksport. Sam zestaw plików nie ma jeszcze transakcyjnego manifestu publikacji (awaria dysku podczas eksportu może wymagać ponownego uruchomienia).
 - Brak serwera uruchamiającego Python z przeglądarki, brak nowych suwaków w UI, brak hostingu i pełnego trybu offline.
-- Nie zmieniać historycznych planów tak, jakby wcześniej obejmowały tę implementację. Aktualizacje stanu znajdują się tutaj oraz na początku `docs/projekt-borowik.md`.
+- Nie zmieniać historycznych planów tak, jakby wcześniej obejmowały tę implementację. Aktualizacje stanu znajdują się tutaj oraz na początku `docs/archiwum/projekt-borowik.md`.
 
 ## Faza 3 (presja v2: punkty dostępu) — stan z 2026-09-29, gałąź `ulepszenia-faza3`
 
-Raport i liczby: `docs/RAPORT_FAZA_3.md`, materiały: `docs/porownania/faza3/`. Skrót dla kolejnej sesji:
+Raport i liczby: `docs/archiwum/RAPORT_FAZA_3.md`, materiały: `docs/archiwum/porownania/faza3/`. Skrót dla kolejnej sesji:
 - `pressure.model: access_points` (domyślny w profilu) liczy P z punktów dostępu (`pipeline/access_*.py`); `pressure.model: gravity` przywraca stary model. Kolumna `pressure_model` i manifest (`pressure_model_used`) mówią, który zadecydował; brak jakichkolwiek punktów dostępu = powrót do gravity z komunikatem.
 - Źródła: ArcGIS WFS BDL (turystyczny: kody `PARKING`, `MSC POST`; dojazdy pożarowe) i osobne zapytanie Overpass (drogi z tagami nawierzchni, szlabany), cache w `cache/access_tiles/`. Główny WFS BDL tych warstw nie ma; ArcGIS zwraca cp1250 zamiast UTF‑8; BBOX w kolejności N,E.
 - BDOT10k (`OT_SKDR_L`) i relacje `route=bicycle` NIE są zaimplementowane (BLOCKED, patrz raport).
 - `saturation_s: 7.0` i wszystkie `pressure.access_points.*` to nieskalibrowana hipoteza. Zasięg poprzeczny dróg leśnych 0,3 km i tak obejmuje ~95% lasu Kieleczki, więc korytarze prawie nie różnicują wydzieleń.
 - Testy integracyjne `run_trip_preparation` muszą mockować `pipeline.prepare_trip._default_bdl_get` i `_default_overpass_call` (patrz `configure_sources` w `tests/test_search_area.py`), inaczej wychodzą do sieci.
 - Pełny przebieg `prepare_trip` z modelem `access_points` na żywych danych pogodowych jeszcze nie był uruchomiony (raport liczono offline z cache i wyników 1.6).
-- Faza 3, ciąg dalszy: `population_split: huff` (domyślny; ludność oczka dzielona między punkty samochodowe), `saturation_s` jest słownikiem `{huff, none}` (osobne S do tej samej mediany P). W huff osiedla dominują presję (45%), bo `a_half` typów samochodowych nie był ponownie dobrany — decyzja właściciela. Rebase na `master` po scaleniu Fazy 2 nadal do zrobienia. Szczegóły: `docs/RAPORT_FAZA_3.md` („Ciąg dalszy”).
-- Faza 3, rebase i `huff_all` (2026-09-29): `ulepszenia-faza3` jest po rebase na `master` (Faza 2 i `ulepszenia-wiek` scalone). Domyślne `population_split: huff_all` (jednolity Huff z opcją zewnętrzną `external_option_c`, A w osobach, waga typu tylko w podziale, `saturation_s.huff_all`) — **wyzerowuje wpływ osiedli** (mediana A osiedla 0,75 osoby, bo oczko dzieli ludność między ~300 punktów); diagnoza i warianty naprawy w `docs/RAPORT_FAZA_3.md` („Ciąg dalszy 2”). Do decyzji właściciela przed kalibracją. `huff` i `none` dostępne przez profil. `junction` bez zmian do ręcznej kontroli.
-- Faza 3, `two_stage` (2026-09-29): domyślne `population_split: two_stage` (etap 1: pieszo `p_walk_max·max(0,1−d_las/1,5 km)` reszta autem; etap 2: pieszo między osiedla bez c, autem jak `huff_all` z c). `saturation_s.two_stage` = 1997. Kryterium sensowności ustalone z góry: (a) spełnione, (b) niespełnione tylko w pasie > 5 km od osiedla przy Lublińcu (0,45 vs 0,35; 118 wydzieleń), stabilność top-20 min. 16/20. Zgodnie z decyzją właściciela NIE robiono przebiegu na żywo ani migawki i nie próbowano kolejnych wariantów. Szczegóły: `docs/RAPORT_FAZA_3.md` („Ciąg dalszy 3”). `two_stage` wymaga `pop_d_forest` w `build_access_model` (liczy je `pipeline.prepare_trip`).
-- Faza 3 zamknięta (2026-09-29): `two_stage` zaakceptowany po kontroli pasa > 5 km (kryterium (b) uznane przez właściciela za źle zdefiniowane po obejrzeniu wyników — zapisane w raporcie jako zmiana oceny; kontrola: 118/118 wydzieleń ma główny punkt presji ≤ 2,5 km). `junction` do decyzji po ręcznej kontroli, BDOT10k i `route=bicycle` BLOCKED. Sekcja „Decyzje” w `docs/RAPORT_FAZA_3.md`.
+- Faza 3, ciąg dalszy: `population_split: huff` (domyślny; ludność oczka dzielona między punkty samochodowe), `saturation_s` jest słownikiem `{huff, none}` (osobne S do tej samej mediany P). W huff osiedla dominują presję (45%), bo `a_half` typów samochodowych nie był ponownie dobrany — decyzja właściciela. Rebase na `master` po scaleniu Fazy 2 nadal do zrobienia. Szczegóły: `docs/archiwum/RAPORT_FAZA_3.md` („Ciąg dalszy”).
+- Faza 3, rebase i `huff_all` (2026-09-29): `ulepszenia-faza3` jest po rebase na `master` (Faza 2 i `ulepszenia-wiek` scalone). Domyślne `population_split: huff_all` (jednolity Huff z opcją zewnętrzną `external_option_c`, A w osobach, waga typu tylko w podziale, `saturation_s.huff_all`) — **wyzerowuje wpływ osiedli** (mediana A osiedla 0,75 osoby, bo oczko dzieli ludność między ~300 punktów); diagnoza i warianty naprawy w `docs/archiwum/RAPORT_FAZA_3.md` („Ciąg dalszy 2”). Do decyzji właściciela przed kalibracją. `huff` i `none` dostępne przez profil. `junction` bez zmian do ręcznej kontroli.
+- Faza 3, `two_stage` (2026-09-29): domyślne `population_split: two_stage` (etap 1: pieszo `p_walk_max·max(0,1−d_las/1,5 km)` reszta autem; etap 2: pieszo między osiedla bez c, autem jak `huff_all` z c). `saturation_s.two_stage` = 1997. Kryterium sensowności ustalone z góry: (a) spełnione, (b) niespełnione tylko w pasie > 5 km od osiedla przy Lublińcu (0,45 vs 0,35; 118 wydzieleń), stabilność top-20 min. 16/20. Zgodnie z decyzją właściciela NIE robiono przebiegu na żywo ani migawki i nie próbowano kolejnych wariantów. Szczegóły: `docs/archiwum/RAPORT_FAZA_3.md` („Ciąg dalszy 3”). `two_stage` wymaga `pop_d_forest` w `build_access_model` (liczy je `pipeline.prepare_trip`).
+- Faza 3 zamknięta (2026-09-29): `two_stage` zaakceptowany po kontroli pasa > 5 km (kryterium (b) uznane przez właściciela za źle zdefiniowane po obejrzeniu wyników — zapisane w raporcie jako zmiana oceny; kontrola: 118/118 wydzieleń ma główny punkt presji ≤ 2,5 km). `junction` do decyzji po ręcznej kontroli, BDOT10k i `route=bicycle` BLOCKED. Sekcja „Decyzje” w `docs/archiwum/RAPORT_FAZA_3.md`.

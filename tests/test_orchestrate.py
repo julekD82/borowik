@@ -158,7 +158,7 @@ def test_run_poc_fetches_climatology_on_a_coarser_grid_than_weather():
     # Climatology's 30-year archive is far more expensive per point than a
     # live weather call (Open-Meteo's own weighting formula: weight scales
     # with days-range/14 x variables/10, so a 30-year pull already weighs
-    # ~235 "calls" per point -- see docs/CODEX-HANDOFF.md). Climatology
+    # ~235 "calls" per point -- see docs/archiwum/CODEX-HANDOFF.md). Climatology
     # varies smoothly over a few km, so it's fetched on a coarser grid and
     # each weather cell borrows its nearest climatology cell's history.
     weather_points_seen = []

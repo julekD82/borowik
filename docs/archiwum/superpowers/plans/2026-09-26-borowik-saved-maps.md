@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (stdlib only: `json`, `re`, `shutil`, `dataclasses`, `pathlib`, `datetime`), pytest, existing `tkinter` launcher; TypeScript frontend (`frontend/src/model.ts`, `main.ts`, `style.css`), Vitest.
 
-**Spec:** `docs/superpowers/specs/2026-09-26-borowik-saved-maps-design.md`
+**Spec:** `docs/archiwum/superpowers/specs/2026-09-26-borowik-saved-maps-design.md`
 
 ## Global Constraints
 
@@ -822,7 +822,7 @@ git commit -m "feat: Zapisane mapy panel to browse and switch saved analyses (pl
 
 **Files:**
 - Modify: `frontend/README.md`
-- Modify: `docs/CODEX-HANDOFF.md`
+- Modify: `docs/archiwum/CODEX-HANDOFF.md`
 
 - [ ] **Step 1: Document the feature in `frontend/README.md`**
 
@@ -832,7 +832,7 @@ In the "Zachowanie interfejsu" section (after the existing bullet about `localSt
 - Pasek „Zapisane mapy” nad listą/mapą pozwala przełączać się między „Aktualną” (dane z `data/`, zawsze dostępne) a analizami zapisanymi przez launcher (`frontend/public/data/trips/<id>/`, wymienione w `data/trips/index.json`). Zapisany wpis jest zamrożoną migawką: ponowna analiza tego samego miejsca nie zmienia wcześniej zapisanych wpisów. Zapis/usuwanie wpisów odbywa się w launcherze/Eksploratorze, nie w przeglądarce.
 ```
 
-- [ ] **Step 2: Add a top note to `docs/CODEX-HANDOFF.md`**
+- [ ] **Step 2: Add a top note to `docs/archiwum/CODEX-HANDOFF.md`**
 
 Add a new top-of-file note (matching this doc's existing "newest note at the top" convention) summarizing: what was built (`launcher/trip_archive.py`, launcher's "Nazwa miejsca"/"Zapisz do listy", frontend's `loadTrips`/`loadData(basePath)`/"Zapisane mapy" panel), that it's purely additive (no change to `pipeline/`, no change to any existing exported field), and the YAGNI cuts (no delete/rename from the app, no cap on saved trips).
 
@@ -854,6 +854,6 @@ Expected: all pass; build succeeds.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/README.md docs/CODEX-HANDOFF.md
+git add frontend/README.md docs/archiwum/CODEX-HANDOFF.md
 git commit -m "docs: document saved-maps comparison list (plan step 6)"
 ```

@@ -1,5 +1,5 @@
 """A2: flush (wysyp) timing model -- plan 2026-09-27
-(docs/superpowers/plans/2026-09-27-borowik-wysyp-a2.md).
+(docs/archiwum/superpowers/plans/2026-09-27-borowik-wysyp-a2.md).
 
 Rain pulse -> thermal clock (cold nights slow it, frost stops it) ->
 Gaussian flush curve in degree-days. Answers "kiedy", never "gdzie":

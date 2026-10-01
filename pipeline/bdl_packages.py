@@ -29,7 +29,7 @@ _MIN_SHARE_SUM = 0.9
 @dataclass(frozen=True)
 class PackageComposition:
     """DRZEW-storey species composition for one wydzielenie from a BDL data
-    package (plan 2.1 step B2, docs/bdl-paczki-rozpoznanie.md). `species` is
+    package (plan 2.1 step B2, docs/archiwum/bdl-paczki-rozpoznanie.md). `species` is
     [(normalized species_cd, share 0-1), ...] -- share is part_cd_act/10,
     numeric rows only. The same species can appear more than once (distinct
     age cohorts within an uneven-aged stand, verified in B2 research) --
@@ -137,7 +137,7 @@ def load_packages(packages_dir: Path) -> dict[str, PackageComposition]:
     """Auto-discovers every unpacked BDL data package under `packages_dir`
     (plan 2.1 step B2) -- each subdirectory is one package (directory name
     is free-form, not parsed; in practice BDL_<rdlp>_<nadl>_<NAME>_<year>,
-    see docs/bdl-paczki-rozpoznanie.md), keyed by `adr_for` so callers can
+    see docs/archiwum/bdl-paczki-rozpoznanie.md), keyed by `adr_for` so callers can
     look a wydzielenie up directly, the same field pipeline.bdl.fetch_bdl's
     WFS rows carry (verified byte-identical in B1 research).
 
@@ -174,7 +174,7 @@ def forest_district_code(adr_for: str) -> str:
     """First two dash-separated segments of adr_for ("RDLP-Nadlesnictwo-...",
     e.g. "02-10-1-05-317   -d   -00" -> "02-10") -- the same RDLP+nadlesnictwo
     pairing BDL_<rdlp>_<nadl>_<NAME>_<year> package directory names encode
-    (docs/bdl-paczki-rozpoznanie.md), used by coverage_report below to group
+    (docs/archiwum/bdl-paczki-rozpoznanie.md), used by coverage_report below to group
     stands by district without needing a separate WFS attribute for it."""
     parts = adr_for.split("-")
     return "-".join(parts[:2]) if len(parts) >= 2 else adr_for

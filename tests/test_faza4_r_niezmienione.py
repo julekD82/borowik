@@ -1,6 +1,6 @@
 """Faza 4.3/4.5: skladniki pogody i oznaczenia niepewnosci to WYLACZNIE prezentacja --
 F, F_loc i R (run_poc) nie moga sie zmienic. Wartosci przypiete sa policzone na kodzie
-sprzed Fazy 4 (commit c907883) na wejsciu ponizej; kazda zmiana wzoru F/R je zlamie."""
+sprzed Fazy 4 (commit f1ace0c) na wejsciu ponizej; kazda zmiana wzoru F/R je zlamie."""
 from datetime import date
 
 import geopandas as gpd

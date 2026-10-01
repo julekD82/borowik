@@ -11,7 +11,7 @@
 
 **Tech Stack:** Python (pandas/geopandas, existing `pipeline/*` modules, pytest), TypeScript/Vite frontend (`frontend/src/model.ts`, `main.ts`, Vitest).
 
-**Spec:** This plan's own text is the spec (derived from a 2026-09-25 user review, `docs/CODEX-HANDOFF.md` notes (18)-(21), and `docs/projekt-borowik.md`). No separate spec document exists for these three changes; the user confirmed there is no missing "Zmiana 3" (numbering in the original review jumped from 2 to 4).
+**Spec:** This plan's own text is the spec (derived from a 2026-09-25 user review, `docs/archiwum/CODEX-HANDOFF.md` notes (18)-(21), and `docs/archiwum/projekt-borowik.md`). No separate spec document exists for these three changes; the user confirmed there is no missing "Zmiana 3" (numbering in the original review jumped from 2 to 4).
 
 ## Global Constraints
 
@@ -22,7 +22,7 @@
 - Do not change `profiles/boletus_edulis.yaml`'s `fruiting.moisture_slope` (only `moisture_midpoint`).
 - Do not change `profiles/boletus_edulis.yaml`'s `fruiting_classes` without explicit user approval — if the before/after table in Task 5 suggests they need adjusting, propose it and stop; do not edit the file.
 - No personal data (emails, etc.) in any file this plan touches.
-- Final task: full `pytest`, frontend `npm test`, `tsc --noEmit`, `vite build`, and an update to the top of `docs/CODEX-HANDOFF.md`.
+- Final task: full `pytest`, frontend `npm test`, `tsc --noEmit`, `vite build`, and an update to the top of `docs/archiwum/CODEX-HANDOFF.md`.
 
 ## Review Focus
 
@@ -1657,7 +1657,7 @@ git commit -m "feat: frontend tie_break sort key + ground-cover/density card fie
 ## Task 11: Full verification, real-data before/after, docs handoff
 
 **Files:**
-- Modify: `docs/CODEX-HANDOFF.md` (new note at the top, per this repo's `CLAUDE.md` instruction)
+- Modify: `docs/archiwum/CODEX-HANDOFF.md` (new note at the top, per this repo's `CLAUDE.md` instruction)
 
 - [ ] **Step 1: Full Python test suite**
 
@@ -1685,9 +1685,9 @@ Reuse the exact network-free rerun script from Task 5 Step 5 (same cache, same t
 
 Report all three in the completion summary — this is the "Pokaż mi, jak zmienia się top-20 i kolejność członków 5 rejonów" the user asked for.
 
-- [ ] **Step 4: Update docs/CODEX-HANDOFF.md**
+- [ ] **Step 4: Update docs/archiwum/CODEX-HANDOFF.md**
 
-Add a new note at the very top of `docs/CODEX-HANDOFF.md` (above the current "## 2026-09-25 — aktualne (21)" entry), following the file's existing note format (see the existing entries for the exact style: `## YYYY-MM-DD — aktualne (N): title`, then "Co zrobione:", real numbers, "Nie ruszono:"). Include:
+Add a new note at the very top of `docs/archiwum/CODEX-HANDOFF.md` (above the current "## 2026-09-25 — aktualne (21)" entry), following the file's existing note format (see the existing entries for the exact style: `## YYYY-MM-DD — aktualne (N): title`, then "Co zrobione:", real numbers, "Nie ruszono:"). Include:
 - What changed (G_season module + wiring, moisture_midpoint 0.35→0.50, tie_break module + wiring into regions/export/frontend).
 - The before/after numbers from Task 5 Step 5 and this task's Step 3.
 - Test counts (Python: old count → new count; frontend: old → new).
@@ -1697,6 +1697,6 @@ Add a new note at the very top of `docs/CODEX-HANDOFF.md` (above the current "##
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/CODEX-HANDOFF.md
+git add docs/archiwum/CODEX-HANDOFF.md
 git commit -m "docs: record G_season + moisture calibration + tie_break implementation in CODEX-HANDOFF"
 ```

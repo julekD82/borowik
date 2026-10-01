@@ -3,7 +3,7 @@ Tylko z cache. Bez zmian w modelu: liczy F z surowych skladnikow po zaburzeniu
 parametru, progi klas zostaja z profilu.
 
   python scripts/faza4_nasycenie_agregacja.py
-Wynik: docs/porownania/faza4/nasycenie_agregacja.json
+Wynik: docs/archiwum/porownania/faza4/nasycenie_agregacja.json
 """
 import copy
 import functools

@@ -1,9 +1,9 @@
 """IMGW-PIB RainGRS: hourly precipitation from weather radar merged with
 rain gauges, 1 km grid over Poland, ESRI ASCII. Plan 2026-09-26 A1
-(docs/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md).
+(docs/archiwum/superpowers/plans/2026-09-26-borowik-radar-opady-a1.md).
 
 Why this exists: a 2026-09-26 comparison against 4 independent Weathercloud
-stations near Bedziemysl (docs/CODEX-HANDOFF.md note (23)) gave RainGRS a
+stations near Bedziemysl (docs/archiwum/CODEX-HANDOFF.md note (23)) gave RainGRS a
 1.5-4x lower daily MAE than Open-Meteo; Open-Meteo missed convective days
 (29.08, 31.08, 03.09) and invented rain on others (03.09, 05.09, 15.09).
 

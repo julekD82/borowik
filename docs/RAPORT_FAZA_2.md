@@ -6,7 +6,7 @@ Stan: 29.09.2026. Faza 2 (gałąź `ulepszenia-faza2`) jest scalona do `master`;
 
 | Zadanie | Status | Uwagi |
 |---|---|---|
-| 2.0 Reguły decyzyjne | ZATWIERDZONE (wersja 2, commit `6d9349a`, przed analizą) | `docs/WALIDACJA_REGULY.md`, doprecyzowania: `docs/WALIDACJA_IMPLEMENTACJA.md` |
+| 2.0 Reguły decyzyjne | ZATWIERDZONE (wersja 2, commit `37c145c`, przed analizą) | `docs/WALIDACJA_REGULY.md`, doprecyzowania: `docs/WALIDACJA_IMPLEMENTACJA.md` |
 | 2.1 Zapis własnych wyjść | DONE | `pipeline/field_data.py`, `scripts/sprawdz_dane_terenowe.py`, `docs/ZAPIS_WYJSC.md`, szablony w `dane_terenowe_szablony/`, przypomnienie w launcherze, `dane_terenowe/` w `.gitignore`; 4 testy |
 | 2.2 Archiwum prognoz | DONE | `pipeline/forecast_archive.py`, wywoływane z `fetch_weather_raw`; `cache/archiwum_prognoz/prognoza_RRRR-MM-DD.parquet`; 3 testy |
 | 2.3 Inwentaryzacja GBIF | DONE | `notebooks/10_gbif_inventory.py`, `notebooks/11_gbif_edulis_forest_coverage.py`; wyniki poniżej |
@@ -133,7 +133,7 @@ Zliczenie w zamrożonych rekordach 2.4 od 2021 r. (rekordów z co najmniej jedny
 
 Nieznanych kodów jest 17,0% pozytywów (poniżej progu 20%, więc analiza główna ich nie pomijała). Prawie wszystkie to kody siedlisk z „G” w środku (prawdopodobnie warianty górskie, np. LGSW, LMGSW, BMGSW; interpretacja kodów do potwierdzenia w słowniku BDL, nie w profilu). Zaznaczam: takie wydzielenia dostają `unknown_site_score` z profilu.
 
-Przebieg Kieleczki (manifesty w `docs/porownania/{nowy,faza1_5,faza1_6}/`): `unknown_site_count` = 0 i `unknown_species_count` = 0 (19 716 wydzieleń); problem kodów nieznanych dotyczy więc obszarów górskich/podgórskich z 2.4, nie Kieleczki.
+Przebieg Kieleczki (manifesty w `docs/archiwum/porownania/{nowy,faza1_5,faza1_6}/`): `unknown_site_count` = 0 i `unknown_species_count` = 0 (19 716 wydzieleń); problem kodów nieznanych dotyczy więc obszarów górskich/podgórskich z 2.4, nie Kieleczki.
 
 ## 2.4 — analiza EKSPLORACYJNA: wiek i tryb `habitat.age_mode`
 
@@ -160,7 +160,7 @@ Podział na gatunek panujący (największe wydzielenie w buforze), tylko klasy z
 Dodano do profilu (wtedy `habitat.age_mode: curve`, kod w `pipeline/habitat.py::score_age`): `neutral` daje S_age = 1 dla każdego wydzielenia przechodzącego maskę wieku (< 12 lat nadal odpada; również bez kary 0,9 dla > 120 lat). W tej analizie domyślny tryb nie był zmieniany (zmianę wprowadza dopiero decyzja właściciela poniżej). 4 nowe testy w `tests/test_habitat.py`.
 
 - **AUC(H) na zamrożonych danych:** `neutral`: 0,574 (CI 0,528–0,611) vs tło (a), 0,615 (0,556–0,668) vs tło (b); `curve` (2.4): 0,571 i 0,610. Różnica pomijalna (o 0,003–0,005 na korzyść `neutral`, dużo poniżej szerokości CI).
-- **Przebieg Kieleczki offline** (`docs/porownania/faza1_6`; R = 100·H·F_loc·(1 − αP), H bez S_age; bez zmiany F_loc, P i maski). Kontrola: odtworzone R w trybie `curve` równa się R z eksportu (maks. różnica 0,0) i odtworzone rejony mają te same rozmiary co zapisane (23/21/15/13/38):
+- **Przebieg Kieleczki offline** (`docs/archiwum/porownania/faza1_6`; R = 100·H·F_loc·(1 − αP), H bez S_age; bez zmiany F_loc, P i maski). Kontrola: odtworzone R w trybie `curve` równa się R z eksportu (maks. różnica 0,0) i odtworzone rejony mają te same rozmiary co zapisane (23/21/15/13/38):
 
 | Miara | Wynik `neutral` względem `curve` |
 |---|---|
@@ -179,14 +179,14 @@ Decyzja właściciela (29.09.2026), wdrożona na gałęzi `ulepszenia-wiek`:
    **Uzasadnienie:**
    - S_age nie odróżnia miejsc znalezisk od tła (AUC 0,486 / 0,498, CI obejmują 0,5),
    - rozkład wieku znalezisk przeczy karze dla drzewostanów 12–35 lat (klasa 20–40 lat: 13,3% znalezisk wobec 7,1% i 6,7% w tłach),
-   - to **usunięcie niepotwierdzonego założenia, nie dopasowanie nowej krzywej**; potwierdza to wcześniejsze stanowisko z `docs/projekt-borowik.md` (brak podstaw do penalizowania wieku 20–120 lat, funkcja „celowo płaska”).
+   - to **usunięcie niepotwierdzonego założenia, nie dopasowanie nowej krzywej**; potwierdza to wcześniejsze stanowisko z `docs/archiwum/projekt-borowik.md` (brak podstaw do penalizowania wieku 20–120 lat, funkcja „celowo płaska”).
    Skutek na Kieleczce (offline, z analizy eksploracyjnej): Spearman R 0,952 względem `curve`, 10 z 20 wspólnych w top-20, 78 ze 110 wydzieleń wspólnych w rejonach; AUC(H) na zamrożonych danych 0,574 / 0,615 (wobec 0,571 / 0,610).
 2. **Świadomie NIE wprowadzamy krzywej faworyzującej 20–60 lat.** Byłoby to dopasowanie do analizy eksploracyjnej (te same dane, po zobaczeniu wyników, z możliwym skrzywieniem dostępnością — młodsze drzewostany blisko dróg). Ewentualne oceny wieku należą do Fazy 5 (dane terenowe z zerami).
 3. **Maska wieku od 35 lat** (decyzja właściciela 01.10.2026, gałąź `wiek-maska-35`; profil `age_breakpoints.mask_below: 35`, wcześniej 12). Drzewostany młodsze niż 35 lat odpadają z rankingu i rejonów (na mapie szare, powód `too_young`, w interfejsie „za młody drzewostan (poniżej progu wieku, obecnie 35 lat)”). `age_mode: neutral` bez zmian, więc od 35 lat S_age = 1.
    **Powód:** wyjazd 01.10.2026 do Rejonu 1 „Łaziska” (migawka `zawadzkie-01-10-2026-10-01`, `region_2`: 20 wydzieleń, 81 ha, mediana wieku 23 lata, 86% powierzchni < 40 lat, głównie sosna 18–23 lata) — prawie brak grzybów. Pogoda tego nie tłumaczy (30,7 mm 20–24.09, F wydzieleń 0,79–0,80).
    **Status: zmiana oparta na założeniu i jednej wizycie, NIE potwierdzona danymi.** Eksploracja GBIF (2.4, sekcja wiek) nie pokazała słabszych młodych drzewostanów (klasa 20–40 lat: 13,3% znalezisk wobec 7,1% / 6,7% w tłach), choć GBIF może być skrzywiony dostępnością (młodsze drzewostany bliżej dróg). Do sprawdzenia na danych z Fazy 5 (wizyty z zerami).
    **Skutek (symulacja offline na migawce z 01.10, Zawadzkie 20 km):** z maski wypada 3844 z 14 347 wydzieleń (10 385 z 50 313 ha, ok. 21% powierzchni); z dawnych 200 najlepszych wydzieleń odpada 71; rejon Łaziska wypada z pierwszej piątki, nowa piątka ma średni wiek 61–87 lat. Dla porównania: dawna krzywa `curve` też usuwała ten rejon, łagodniej (udział < 30 lat wśród 200 najlepszych 31% → 6%); maska 30 lat: 79% maski, 40 lat: 67%.
-   **Uwaga:** próg 12 lat był też ostrożnym przybliżeniem prawnego zakazu wstępu do upraw < 4 m (`docs/projekt-borowik.md` §5.2). Przy 35 latach jeden powód `too_young` obejmuje oba przypadki — interfejs nie odróżnia już „prawdopodobna uprawa (zakaz wstępu)” od „za młody na borowiki”. Przywrócenie poprzedniego zachowania: `mask_below: 12`.
+   **Uwaga:** próg 12 lat był też ostrożnym przybliżeniem prawnego zakazu wstępu do upraw < 4 m (`docs/archiwum/projekt-borowik.md` §5.2). Przy 35 latach jeden powód `too_young` obejmuje oba przypadki — interfejs nie odróżnia już „prawdopodobna uprawa (zakaz wstępu)” od „za młody na borowiki”. Przywrócenie poprzedniego zachowania: `mask_below: 12`.
 
 Wpływ na analizy: wyniki 2.4 i 2.5 w tym raporcie były liczone przed tą zmianą; H w 2.4 (`curve`) i tryb `neutral` różnią się o ≤ 0,005 AUC. Manifest i diagnostyka nowych przebiegów odzwierciedlają tryb neutral (S_age = 1).
 

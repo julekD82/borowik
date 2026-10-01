@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, `uv`, GeoPandas + Shapely 2, pytest. **New dependency: `networkx`** (pure-Python graph library, no C-extension build chain, added via `uv add networkx`) for the routing graph and shortest-path search.
 
-**Spec:** `docs/projekt-borowik.md` §5.5.2 ("Szacowana popularność rejonu"), §13 priority 3.
+**Spec:** `docs/archiwum/projekt-borowik.md` §5.5.2 ("Szacowana popularność rejonu"), §13 priority 3.
 
 ## Global Constraints
 
@@ -1033,7 +1033,7 @@ git commit -m "feat: wire entrance detection and top-N routing into prepare_trip
 Also declined-and-documented: full multi-layer RDLP fetch (unrelated, carried over from the `prepare_trip` CLI plan's own "Next up").
 
 **Next up:**
-1. `docs/projekt-borowik.md` §13 priority 4 (minimal frontend: map of regions + stand detail panel) — needs its own plan, not started; it can finally show something other than raw JSON, and can display the `distance_method`/`entrance_status`/entrance confirmed-vs-potential fields this plan adds.
+1. `docs/archiwum/projekt-borowik.md` §13 priority 4 (minimal frontend: map of regions + stand detail panel) — needs its own plan, not started; it can finally show something other than raw JSON, and can display the `distance_method`/`entrance_status`/entrance confirmed-vs-potential fields this plan adds.
 2. The RDLP-border multi-layer-fetch gap noted in the `prepare_trip` CLI plan's own "Next up" — still open, independent of this plan.
 3. Worth a look before further accessibility work: this plan's own routing network is now `track`-only (no `path`/`footway`) due to the Overpass query-size limit found here — if that proves too narrow in practice, the real fix is splitting the Overpass query into smaller sub-areas, not just re-adding the broader type list.
 4. Run `uv lock`/`uv sync` once a session with a real `uv` binary picks this up, to bring `uv.lock` back in sync with `pyproject.toml`'s `networkx` addition (from this plan) — deferred since Task 4, still open.

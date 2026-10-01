@@ -1,6 +1,6 @@
 # Walidacja 2.4 / 2.5 — decyzje implementacyjne (przed analizą)
 
-Uzupełnienie `docs/WALIDACJA_REGULY.md` (zatwierdzone, commit `6d9349a`). Dotyczy tylko szczegółów wykonania, które reguły pozostawiły otwarte; **nie zmienia progów, hipotez ani reguł decyzji**. Commit tego pliku poprzedza uruchomienie jakiejkolwiek analizy 2.4/2.5.
+Uzupełnienie `docs/WALIDACJA_REGULY.md` (zatwierdzone, commit `37c145c`). Dotyczy tylko szczegółów wykonania, które reguły pozostawiły otwarte; **nie zmienia progów, hipotez ani reguł decyzji**. Commit tego pliku poprzedza uruchomienie jakiejkolwiek analizy 2.4/2.5.
 
 ## Wspólne
 - Ziarno losowania: 20260928. Bootstrap: 2000 powtórzeń, przedział percentylowy 2,5–97,5%.

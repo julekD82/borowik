@@ -34,7 +34,7 @@ Zadano jedną serię pytań przed zmianami w kodzie (zgodnie z poleceniem). Odpo
 
 ## 0.2 Lokalizacja paczek BDL
 
-Patrz punkt 3 powyżej. `docs/bdl-paczki-rozpoznanie.md` potwierdza konwencję: `pipeline.bdl_packages.load_packages` auto-wykrywa podkatalogi `cache/bdl_packages/*/` zawierające `G_SUBAREA.shp` + `f_storey_species.txt`. Katalog wskazany przez właściciela (`BDL/`) ma dokładnie taką strukturę w każdym z 9 podkatalogów (zweryfikowano zawartość `BDL_02_25_RUDZINIEC_2026/`).
+Patrz punkt 3 powyżej. `docs/archiwum/bdl-paczki-rozpoznanie.md` potwierdza konwencję: `pipeline.bdl_packages.load_packages` auto-wykrywa podkatalogi `cache/bdl_packages/*/` zawierające `G_SUBAREA.shp` + `f_storey_species.txt`. Katalog wskazany przez właściciela (`BDL/`) ma dokładnie taką strukturę w każdym z 9 podkatalogów (zweryfikowano zawartość `BDL_02_25_RUDZINIEC_2026/`).
 
 ## 1.5: rozkład P dla Kieleczki 20 km, oba tryby (realne dane z cache, bez API)
 
@@ -47,7 +47,7 @@ Mediana zbliżona (zgodnie z celem doboru D_half); maksimum w trybie absolute wy
 
 ## 1.9: raport porównawczy — Kieleczka 28.09, stary kod vs nowy kod
 
-Wszystkie liczby z realnych eksportów obu przebiegów (`docs/porownania/baseline/`, `docs/porownania/nowy/`), 19716 wydzieleń dopasowanych po `stand_id` w obu.
+Wszystkie liczby z realnych eksportów obu przebiegów (`docs/archiwum/porownania/baseline/`, `docs/archiwum/porownania/nowy/`), 19716 wydzieleń dopasowanych po `stand_id` w obu.
 
 **Korelacja Spearmana R:**
 - wszystkie dopasowane wydzielenia (19716): rho = 0,9898
@@ -81,7 +81,7 @@ We wszystkich sześciu przypadkach zmiana wynika ze **znanej, celowej przyczyny*
 |---|---|---|
 | 0.1 | DONE | patrz wyżej |
 | 0.2 | DONE | patrz wyżej |
-| 0.3 | DONE | migawka „Kieleczka 28.09 — baseline (stary kod)”, eksporty w `docs/porownania/baseline/`. 19716 wydzieleń, 14399 w masce, 5 rejonów, 0% składu z paczek (kod nie umiał wskazać `BDL/`) |
+| 0.3 | DONE | migawka „Kieleczka 28.09 — baseline (stary kod)”, eksporty w `docs/archiwum/porownania/baseline/`. 19716 wydzieleń, 14399 w masce, 5 rejonów, 0% składu z paczek (kod nie umiał wskazać `BDL/`) |
 | 0.4 | DONE | gałąź `ulepszenia-faza1` |
 | 1.1 | DONE | `run_manifest_{day}.json`: id/commit/dirty/profile hash, statusy źródeł, liczniki. `population_source`/`pressure_normalization` — pola-zaślepki do 1.4/1.5 |
 | 1.2 | DONE | `diagnostics_{day}.json`/`.parquet` (próg 20 MB na realnym pliku). Test kluczowy: R_final odtworzony z diagnostyki, tolerancja 1e-9. Przy okazji naprawiony realny (choć dotąd nieszkodliwy) błąd w `orchestrate.py`: `cell` (komórka klimatologii) była czytana tylko przy cache miss |
@@ -96,7 +96,7 @@ We wszystkich sześciu przypadkach zmiana wynika ze **znanej, celowej przyczyny*
 | 1.8d | DONE | Zrealizowane w ramach 1.7 (patrz wyżej): `percentile_rank` ignoruje NaN, `climatology_window_insufficient` (puste lub <50% ważnych) zasila etykietę pewności |
 | 1.8e | DONE | Klucze cache pogody i klimatologii zawierają teraz `past_days`/zakres lat i numer wersji formatu (`_v1`) — stare pliki cache zostają, po prostu nie są już dopasowywane (nowe zapytanie zapisze nowe pliki obok). Realny koszt dziś: pełny bieg 1.9 przeliczy klimatologię Kieleczki na nowo (~25 punktów, mały koszt) |
 | 1.8f | DONE | Poprawione teksty: `--date` (realna data wyjazdu, nie etykieta), `CLAUDE.md` (usunięty odniesienie do nieistniejącego katalogu `borowik-faza2-mvp-backend`), `frontend/README.md` (ścieżka uruchomienia, lista plików `sync-data`, status grupowania, zakaz_status/gdos_status), uzasadnienie wilgotności w `pipeline/explain.py` („mediana obszaru” zamiast mylącej „normy dla tej pory roku”) |
-| 1.9 | DONE | Przebieg końcowy Kieleczka 20 km, 2026-09-28, z całym kodem Fazy 1 + realnymi paczkami BDL i siatką GUS. Migawka „Kieleczka 28.09 — nowy kod”, eksporty w `docs/porownania/nowy/`. Panel warunków pominięty (503 z Open-Meteo przy osobnym zapytaniu, nie wpłynęło na główny wynik). Pełne porównanie niżej |
+| 1.9 | DONE | Przebieg końcowy Kieleczka 20 km, 2026-09-28, z całym kodem Fazy 1 + realnymi paczkami BDL i siatką GUS. Migawka „Kieleczka 28.09 — nowy kod”, eksporty w `docs/archiwum/porownania/nowy/`. Panel warunków pominięty (503 z Open-Meteo przy osobnym zapytaniu, nie wpłynęło na główny wynik). Pełne porównanie niżej |
 
 ## Ruling: pole „w launcherze” dla ścieżki paczek BDL
 

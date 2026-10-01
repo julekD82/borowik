@@ -1,6 +1,6 @@
 # Borowik — plan wdrożenia ulepszeń
 
-Wersja 8, 29.09.2026 (dodane Fazy 1.5, 1.6 i UI; przebudowane Fazy 2, 3 i 4). Plik przeznaczony do umieszczenia w `docs/PLAN_WDROZENIA.md` i realizacji przez Claude Code / Codex.
+Wersja 8, 29.09.2026 (dodane Fazy 1.5, 1.6 i UI; przebudowane Fazy 2, 3 i 4). Plik przeznaczony do umieszczenia w `docs/archiwum/PLAN_WDROZENIA.md` i realizacji przez Claude Code / Codex.
 Kontekst techniczny: `docs/Borowik_opis_techniczny_i_walidacja.md` (numery rozdziałów [§] odnoszą się do tego dokumentu).
 
 Fazy 0 i 1 są przeznaczone do pracy autonomicznej (noc 27/28.09). Faza 1.5 (opad z radaru ~1 km) i Faza 1.6 (pełniejsze dane BDL) również mogą być realizowane autonomicznie, po Fazie 1, w dowolnej kolejności. Fazy 2–6 wymagają decyzji właściciela lub danych terenowych i są realizowane w kolejnych sesjach.
@@ -17,7 +17,7 @@ Fazy 0 i 1 są przeznaczone do pracy autonomicznej (noc 27/28.09). Faza 1.5 (opa
 6. **Testy.** Każde zadanie kończy się dodanymi/zaktualizowanymi testami i przejściem pełnego zestawu: backend (`uv run pytest` lub odpowiednik z `pyproject.toml`) oraz frontend (skrypty testów i sprawdzenia TypeScript z `frontend/package.json`). Jeśli testów nie da się uruchomić z powodu środowiska, napraw środowisko bez zmiany wersji zależności w `uv.lock`; gdy się nie da — oznacz BLOCKED i opisz.
 7. **Budżet API.** Open-Meteo w wersji darmowej: < 10 000 wywołań/dzień, 5 000/h, 600/min, koszt rośnie z liczbą dni/zmiennych i każdy punkt liczy się osobno. W nocy maksymalnie dwa pełne przebiegi analizy (baseline + końcowy) plus małe testy integracyjne na cache. Nie uruchamiaj backtestów, które pobierają pogodę z API.
 8. **Blokady.** Gdy zadanie utknie (brak danych, niejasność, błąd zewnętrznego serwisu), oznacz je BLOCKED z powodem i przejdź do następnego. Nie pytaj właściciela w nocy — decyzję zapisz w raporcie.
-9. **Raport.** Na bieżąco prowadź `docs/NOC_RAPORT.md`: status każdego zadania (DONE / BLOCKED / SKIPPED), podjęte decyzje, liczby przed/po, lista zmienionych plików. Na samej górze sekcja **„Na rano”** (maks. 15 linijek): którą migawkę użyć na wyjazd i dlaczego, oraz co trzeba wiedzieć.
+9. **Raport.** Na bieżąco prowadź `docs/archiwum/NOC_RAPORT.md`: status każdego zadania (DONE / BLOCKED / SKIPPED), podjęte decyzje, liczby przed/po, lista zmienionych plików. Na samej górze sekcja **„Na rano”** (maks. 15 linijek): którą migawkę użyć na wyjazd i dlaczego, oraz co trzeba wiedzieć.
 10. **Język i dokumentacja.** Komunikaty, raport i opisy po polsku. Każda zmiana zachowania aktualizuje odpowiedni fragment README/CLAUDE.md, jeśli ten fragment ją opisuje.
 
 ---
@@ -34,7 +34,7 @@ Fazy 0 i 1 są przeznaczone do pracy autonomicznej (noc 27/28.09). Faza 1.5 (opa
 - data: 2026-09-28,
 - z paczkami BDL, jeśli obecny kod pozwala je wskazać.
 
-Zapisz wynik jako migawkę launchera o nazwie **„Kieleczka 28.09 — baseline (stary kod)”** oraz skopiuj eksporty do `docs/porownania/baseline/`.
+Zapisz wynik jako migawkę launchera o nazwie **„Kieleczka 28.09 — baseline (stary kod)”** oraz skopiuj eksporty do `docs/archiwum/porownania/baseline/`.
 
 **0.4 Gałąź.** Utwórz `ulepszenia-faza1`.
 
@@ -121,8 +121,8 @@ Każdy punkt: minimalny test reprodukcyjny, dopiero potem poprawka [§18.4].
 **Akceptacja:** testy a–e; teksty zgodne z kodem.
 
 ### 1.9 Przebieg końcowy i raport porównawczy
-- Pełna analiza Kieleczki na nowym kodzie z tymi samymi parametrami co 0.3. Migawka **„Kieleczka 28.09 — nowy kod”**, eksporty w `docs/porownania/nowy/`.
-- Raport porównawczy w `docs/NOC_RAPORT.md`:
+- Pełna analiza Kieleczki na nowym kodzie z tymi samymi parametrami co 0.3. Migawka **„Kieleczka 28.09 — nowy kod”**, eksporty w `docs/archiwum/porownania/nowy/`.
+- Raport porównawczy w `docs/archiwum/NOC_RAPORT.md`:
   - top-20 wydzieleń (≥ 0,5 ha) i rejony: przed / po,
   - korelacja Spearmana R przed/po,
   - ile wydzieleń zmieniło źródło składu, jak zmienił się rozkład H i P,
@@ -163,7 +163,7 @@ Przesłanki: porównanie ze stacjami [§14.3] było robione na pojedynczej komó
 
 Nowy tryb staje się domyślny, jeśli wybrane wygładzenie daje MAE nie gorsze niż obecny blok, a mapa różnic nie jest zdominowana przez artefakty. W przeciwnym razie zostaje jako opcja `radar.mode: stand` obok `radar.mode: block`.
 
-**Akceptacja:** testy próbkowania (wielokąt, małe wydzielenie, braki komórek, doba zmiany czasu), wpis w manifeście i diagnostyce, raport w `docs/RAPORT_FAZA_1_5.md` z rekomendacją.
+**Akceptacja:** testy próbkowania (wielokąt, małe wydzielenie, braki komórek, doba zmiany czasu), wpis w manifeście i diagnostyce, raport w `docs/archiwum/RAPORT_FAZA_1_5.md` z rekomendacją.
 
 **Oczekiwany efekt:** największy przy opadach burzowych (czerwiec–sierpień), mały przy frontalnych opadach jesiennych, które są przestrzennie gładkie. Przy obecnym nasyceniu M w mokrym okresie zmiana rankingu może być niewielka — to nie jest powód do zmiany progów.
 
@@ -173,7 +173,7 @@ Nowy tryb staje się domyślny, jeśli wybrane wygładzenie daje MAE nie gorsze 
 
 Cel: wykorzystać pola paczek BDL, które dziś trafiają tylko do kart informacyjnych albo w ogóle nie są czytane [§5.1, §7]. Dwie zmiany (1.6.2, 1.6.3) to korekty oczywistych braków i mogą zmienić H. Wszystkie pozostałe pola trafiają **wyłącznie do eksportu diagnostycznego, bez wagi w R**, do czasu oceny w Fazie 2.4 i Fazie 5.
 
-Wymaga ukończonych zadań 1.2 (eksport diagnostyczny) i 1.3 (paczki w głównym przepływie). Może być realizowana autonomicznie według zasad z sekcji 0, na gałęzi `ulepszenia-faza1-6` utworzonej z ostatniej ukończonej gałęzi. Raport w `docs/RAPORT_FAZA_1_6.md`.
+Wymaga ukończonych zadań 1.2 (eksport diagnostyczny) i 1.3 (paczki w głównym przepływie). Może być realizowana autonomicznie według zasad z sekcji 0, na gałęzi `ulepszenia-faza1-6` utworzonej z ostatniej ukończonej gałęzi. Raport w `docs/archiwum/RAPORT_FAZA_1_6.md`.
 
 **1.6.1 Inwentaryzacja paczek.** Dla paczek z nadleśnictw, których używa właściciel:
 - lista tabel i pól, typ, słownik kodów (z paczki lub `pipeline/bdl_dictionaries.py`),
@@ -336,7 +336,7 @@ Zenodo, DOI 10.5281/zenodo.20591123 (V1.2, 08.06.2026; wersja pierwsza 10.5281/z
 
 Obecny model zostaje dostępny przez `pressure.model: gravity`; nowy to `pressure.model: access_points`. Wzór R_final bez zmian. Wszystkie parametry poniżej są **nieskalibrowane** i trafiają do profilu.
 
-Wymaga ukończonych Faz 1 (manifest, diagnostyka, siatka GUS, normalizacja bezwzględna) i 1.6. Raport w `docs/RAPORT_FAZA_3.md`.
+Wymaga ukończonych Faz 1 (manifest, diagnostyka, siatka GUS, normalizacja bezwzględna) i 1.6. Raport w `docs/archiwum/RAPORT_FAZA_3.md`.
 
 ### 3.1 Dane punktów dostępu
 
@@ -436,7 +436,7 @@ Co ustalono (do wykorzystania później):
 3. mniejsze zużycie API,
 4. uczciwe oznaczanie niepewności prognozy.
 
-Progi klas F, krzywa sezonowości, α i wagi H pozostają bez zmian. Każda zmiana zmieniająca wartość F idzie za flagą, z raportem przed/po. Raport w `docs/RAPORT_FAZA_4.md`. Gałąź `ulepszenia-faza4` z `master`.
+Progi klas F, krzywa sezonowości, α i wagi H pozostają bez zmian. Każda zmiana zmieniająca wartość F idzie za flagą, z raportem przed/po. Raport w `docs/archiwum/RAPORT_FAZA_4.md`. Gałąź `ulepszenia-faza4` z `master`.
 
 ### 4.1 Rzadsza siatka temperatury i ET0
 
@@ -482,7 +482,7 @@ Przebieg Kieleczki na nowym kodzie, migawka **„Kieleczka — faza 4”**. Rapo
 
 ## Faza UI — czytelny interfejs i przełącznik presji
 
-Po Fazie 4 (panel pogody z 4.3/4.5 jest bazą). Cel: aplikacja pokazuje **wizualnie**, co wpływa na wynik, a tekst schodzi na drugi plan. Zasada: **nic nie jest usuwane, tylko chowane** — każda dzisiejsza informacja zostaje dostępna w rozwijanych „Szczegółach”. Gałąź `ulepszenia-ui` z `master`. Raport w `docs/RAPORT_UI.md` ze zrzutami ekranu (szerokość komputera i telefonu, przed/po).
+Po Fazie 4 (panel pogody z 4.3/4.5 jest bazą). Cel: aplikacja pokazuje **wizualnie**, co wpływa na wynik, a tekst schodzi na drugi plan. Zasada: **nic nie jest usuwane, tylko chowane** — każda dzisiejsza informacja zostaje dostępna w rozwijanych „Szczegółach”. Gałąź `ulepszenia-ui` z `master`. Raport w `docs/archiwum/RAPORT_UI.md` ze zrzutami ekranu (szerokość komputera i telefonu, przed/po).
 
 Zastępuje opcjonalne zadanie 1.10 (suwak α).
 

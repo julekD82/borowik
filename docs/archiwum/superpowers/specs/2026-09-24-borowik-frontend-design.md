@@ -1,12 +1,12 @@
 # Borowik GIS — Minimal Frontend (priority 4) Design
 
-> Design doc for `docs/projekt-borowik.md` §13 priority 4: "Minimalny frontend (mapa rejonów + panel szczegółów)". Brainstormed and approved section-by-section 2026-09-24; this document is the spec `writing-plans` argues from.
+> Design doc for `docs/archiwum/projekt-borowik.md` §13 priority 4: "Minimalny frontend (mapa rejonów + panel szczegółów)". Brainstormed and approved section-by-section 2026-09-24; this document is the spec `writing-plans` argues from.
 
 ## Goal
 
 Today the pipeline's output (regions, per-stand scores, stand geometries) exists only as JSON/GeoParquet files on disk, printed as summary lines in a terminal. Priority 4's completion criterion (§13): *"Strona otwarta lokalnie w przeglądarce pokazuje ≥1 rejon na mapie z polami z sekcji 9.2, zbudowana z realnych danych z kroku 1–3."* This design covers both the region view (§9.2, the primary screen) and the wydzielenie detail view (§9.3, secondary) in one plan, per explicit direction — priority 4's own criterion only requires the region view, but the fuller scope was chosen deliberately.
 
-**Out of scope for this plan** (unchanged from `docs/projekt-borowik.md`'s own existing scope decisions):
+**Out of scope for this plan** (unchanged from `docs/archiwum/projekt-borowik.md`'s own existing scope decisions):
 - Deployment to static hosting / phone access (§13 priority 5) — this plan only needs to run locally (`npm run dev`).
 - PMTiles/tippecanoe (§6, §18) — plain GeoJSON instead (see Data flow), because tippecanoe has no Windows build and isn't installed on this machine, and at today's scale (~1–2k stands, one tile) GeoJSON is simpler with no build-tool dependency. Revisit only if/when tile counts grow enough that this becomes a real bottleneck.
 - `localStorage` save + navigation-link export (§7.2 point 4, §9.2) are IN scope (they're part of the §9.2 card fields), but full offline PWA/cached-tile support is not (§14, explicitly deferred there already).

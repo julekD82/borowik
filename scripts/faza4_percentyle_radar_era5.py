@@ -12,7 +12,7 @@ B. E-OBS vs ERA5 (2.6, opisowo): dobowe archiwum ERA5 z cache (lata 2018/2020/20
    porownac z radarem 2026 (BLOCKED dla trojki radar/ERA5/E-OBS na tym samym okresie).
 
   python scripts/faza4_percentyle_radar_era5.py
-Wynik: docs/porownania/faza4/percentyle_radar_era5.json
+Wynik: docs/archiwum/porownania/faza4/percentyle_radar_era5.json
 """
 import glob
 import json
